@@ -19,14 +19,36 @@ const (
 	V4aName = "socks4a"
 	V5aName = "socks5"
 
-	CmdConnect Cmd = 0x01
-	CmdBind    Cmd = 0x02
+	CmdConnect  Cmd = 0x01
+	CmdBind     Cmd = 0x02
+	CmdUDPAssoc Cmd = 0x03
 
 	Cmdr4Granted       CmdResp4 = 90
 	Cmdr4Rejected      CmdResp4 = 91
 	Cmdr4IdentRequired CmdResp4 = 92
 	Cmdr4IdentFailed   CmdResp4 = 93
+
+	NoAuth    AuthMethod = 0x0
+	GSSAuth   AuthMethod = 0x1
+	PassAuth  AuthMethod = 0x02
+	NoAccAuth AuthMethod = 0xff
+
+	IP4Addr AddrType = 0x01
+	IP6Addr AddrType = 0x04
+	DomAddr AddrType = 0x03
+
+	SuccReply        ReplyStatus = 0x0
+	FailReply        ReplyStatus = 0x1
+	DisallowReply    ReplyStatus = 0x2
+	NetUnreachReply  ReplyStatus = 0x3
+	HostUnreachReply ReplyStatus = 0x4
+	ConnRefusedReply ReplyStatus = 0x5
+	TTLExpiredReply  ReplyStatus = 0x6
+	CmdNotSuppReply  ReplyStatus = 0x7
+	AddrNotSuppReply ReplyStatus = 0x8
 )
+
+// TODO: Implement splitHostPort(address string) (string, int, error)
 
 type Resolver interface {
 	LookupPort(ctx context.Context, network, service string) (port int, err error)
@@ -61,6 +83,71 @@ func DirectLoopback(_, address string) bool {
 	return true
 }
 
+type ReplyStatus uint8
+
+func (r ReplyStatus) String() string {
+	switch r {
+	case SuccReply:
+		return "succeeded"
+	case FailReply:
+		return "general SOCKS server failure"
+	case DisallowReply:
+		return "connection not allowed by ruleset"
+	case NetUnreachReply:
+		return "hetwork unreachable"
+	case HostUnreachReply:
+		return "host unreachable"
+	case ConnRefusedReply:
+		return "connection refused"
+	case TTLExpiredReply:
+		return "TTL expired"
+	case CmdNotSuppReply:
+		return "command not supported"
+	case AddrNotSuppReply:
+		return "address type not supported"
+	default:
+		return "reply code no" + strconv.Itoa(int(r))
+	}
+}
+
+type AddrType uint8
+
+func (a AddrType) String() string {
+	switch a {
+	case IP4Addr:
+		return "IPv4 addr"
+	case IP6Addr:
+		return "IPv6 addr"
+	case DomAddr:
+		return "domain name addr"
+	default:
+		return "addr type no" + strconv.Itoa(int(a))
+	}
+}
+
+type AuthMethod uint8
+
+func (a AuthMethod) String() string {
+	if a >= 0x3 && a <= 0x7f {
+		return "IANA assiged auth"
+	}
+	if a >= 0x80 && a <= 0xfe {
+		return "private auth method"
+	}
+	switch a {
+	case NoAuth:
+		return "no auth required"
+	case GSSAuth:
+		return "GSS auth"
+	case PassAuth:
+		return "user-pass auth"
+	case NoAccAuth:
+		return "no acceptable auth methods"
+	default:
+		return "auth method no" + strconv.Itoa(int(a))
+	}
+}
+
 type Cmd uint8
 
 func (cmd Cmd) String() string {
@@ -69,6 +156,8 @@ func (cmd Cmd) String() string {
 		return "cmd connect"
 	case CmdBind:
 		return "cmd bind"
+	case CmdUDPAssoc:
+		return "cmd UDP associate"
 	default:
 		return "cmd no" + strconv.Itoa(int(cmd))
 	}
@@ -123,6 +212,280 @@ func (a addr) String() string {
 // 	}
 // 	return c.LAddr
 // }
+
+type Credentials struct {
+	User, Password string
+}
+
+// NOTE: Do we need this?
+func readBytes(conn net.Conn, count int) ([]byte, error) {
+	pack := make([]byte, count)
+	_, err := io.ReadFull(conn, pack)
+	if err != nil {
+		return nil, err
+	}
+	return pack, nil
+}
+
+type reply5 struct {
+	Rep  ReplyStatus
+	Atyp AddrType
+	Addr []byte
+	Port uint16
+}
+
+func readResponse5(conn net.Conn) (reply5, error) {
+	header, err := readBytes(conn, 4)
+	if err != nil {
+		return reply5{}, err
+	}
+	// TODO: Check that first byte is 0x05
+	rep := ReplyStatus(header[1])
+	atyp := AddrType(header[3])
+	if rep != SuccReply {
+		return reply5{}, fmt.Errorf("%s", rep.String())
+	}
+	var addr []byte
+	var port uint16
+	switch atyp {
+	case IP4Addr:
+		host, err := readBytes(conn, 6)
+		if err != nil {
+			return reply5{}, err
+		}
+		addr = host[0:4]
+		port = binary.BigEndian.Uint16(host[4:6])
+	case IP6Addr:
+		host, err := readBytes(conn, 18)
+		if err != nil {
+			return reply5{}, err
+		}
+		addr = host[0:16]
+		port = binary.BigEndian.Uint16(host[16:18])
+	case DomAddr:
+		// TODO: Optimise
+		ln, err := readBytes(conn, 1)
+		if err != nil {
+			return reply5{}, err
+		}
+		addr, err = readBytes(conn, int(ln[0]))
+		if err != nil {
+			return reply5{}, err
+		}
+	default:
+		return reply5{}, fmt.Errorf("unknown address type: %s", atyp.String())
+	}
+	return reply5{
+		Rep:  rep,
+		Atyp: atyp,
+		Addr: addr,
+		Port: port,
+	}, nil
+}
+
+type Client5 struct {
+	ProxyNet    string
+	ProxyAddr   string
+	Dialer      Dialer
+	Credentials *Credentials
+	Resolver    Resolver
+}
+
+func (c *Client5) dialer() Dialer {
+	if c.Dialer == nil {
+		return func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		}
+	}
+	return c.Dialer
+}
+
+func (c *Client5) proxynet() string {
+	if c.ProxyNet == "" {
+		return "tcp"
+	}
+	return c.ProxyNet
+}
+
+func (c *Client5) proxyaddr() string {
+	if !strings.Contains(c.ProxyAddr, ":") {
+		// Default port
+		return net.JoinHostPort(c.ProxyAddr, "1080")
+	}
+	return c.ProxyAddr
+}
+
+func (c *Client5) resolver() Resolver {
+	if c.Resolver == nil {
+		return net.DefaultResolver
+	}
+	return c.Resolver
+}
+
+func (c *Client5) lookupPort(ctx context.Context, network, strport string) (port int, err error) {
+	// TODO: If strport is "" -> err missinng port
+	port, err = strconv.Atoi(strport)
+	if err == nil {
+		return port, nil
+	}
+	port, err = c.resolver().LookupPort(ctx, network, strport)
+	return port, err
+}
+
+func (c *Client5) passAuth(conn net.Conn) error {
+	user := []byte(c.Credentials.User)
+	pass := []byte(c.Credentials.Password)
+	if len(user) > 255 {
+		return fmt.Errorf("too big username: %d bytes", len(user))
+	}
+	if len(pass) > 255 {
+		return fmt.Errorf("too big password: %d bytes", len(pass))
+	}
+
+	pack := make([]byte, 0, 3+len(user)+len(pass))
+	pack = append(pack, 1)
+	pack = append(pack, byte(len(user)))
+	pack = append(pack, user...)
+	pack = append(pack, byte(len(pass)))
+	pack = append(pack, pass...)
+
+	_, err := io.Copy(conn, bytes.NewReader(pack))
+	if err != nil {
+		// TODO: Better error
+		return err
+	}
+
+	var resp [2]byte
+	i, err := conn.Read(resp[:])
+	if err != nil {
+		// TODO: Better error
+		return err
+	} else if i != 2 {
+		// TODO: Better error
+		return fmt.Errorf("Unexpected EOF")
+	}
+
+	if resp[1] != 0 {
+		// TODO: Better error
+		return fmt.Errorf("user/pass auth failed")
+	}
+
+	return nil
+}
+
+func (c *Client5) auth(conn net.Conn) error {
+	var pack []byte
+	if c.Credentials == nil {
+		pack = []byte{V5, 1, byte(NoAuth)}
+	} else {
+		pack = []byte{V5, 2, byte(NoAuth), byte(PassAuth)}
+	}
+	_, err := io.Copy(conn, bytes.NewReader(pack))
+	if err != nil {
+		// TODO: Better error
+		return err
+	}
+	var resp [2]byte
+	i, err := conn.Read(resp[:])
+	if err != nil {
+		return err
+	} else if i != 2 {
+		// TODO: Better error
+		return fmt.Errorf("Unexpected EOF")
+	}
+	method := AuthMethod(resp[1])
+	switch method {
+	case NoAuth:
+		return nil
+	case PassAuth:
+		if c.Credentials == nil {
+			// TODO: Better error
+			return fmt.Errorf("wrong auth method reqested by server: %s", method)
+		}
+		return c.passAuth(conn)
+	default:
+		// TODO: Better error
+		return fmt.Errorf("wrong auth method reqested by server: %s", method)
+	}
+}
+
+func (c *Client5) request(ctx context.Context, cmd Cmd, network, address string) ([]byte, error) {
+	// TODO: Check network type
+	host, strport, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	if len(host) > 255 {
+		return nil, fmt.Errorf("too long hostname: %s", host)
+	}
+	port, err := c.lookupPort(ctx, network, strport)
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+	atyp := DomAddr
+	addrlen := len([]byte(host)) + 1
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.To4() != nil {
+			atyp = IP4Addr
+			addrlen = 4
+		} else {
+			atyp = IP6Addr
+			addrlen = 16
+		}
+	}
+	request := make([]byte, 0, 6+addrlen)
+	request = append(request, V5, byte(cmd), 0, byte(atyp))
+	switch atyp {
+	case IP4Addr:
+		request = append(request, ip.To4()...)
+	case IP6Addr:
+		request = append(request, ip.To16()...)
+	case DomAddr:
+		request = append(request, byte(len(host)))
+		request = append(request, []byte(host)...)
+	}
+	request = binary.BigEndian.AppendUint16(request, uint16(port))
+
+	return request, nil
+}
+
+func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	// TODO: Filter
+	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	err = c.auth(proxy)
+	if err != nil {
+		proxy.Close()
+		return nil, err
+	}
+
+	request, err := c.request(ctx, CmdConnect, network, address)
+	if err != nil {
+		proxy.Close()
+		return nil, err
+	}
+
+	_, err = io.Copy(proxy, bytes.NewReader(request))
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	_, err = readResponse5(proxy)
+	if err != nil {
+		proxy.Close()
+		return nil, err
+	}
+
+	return proxy, nil
+}
 
 func readResponse4(conn net.Conn) (net.IP, uint16, error) {
 	var resp [8]byte
