@@ -227,11 +227,62 @@ func readBytes(conn net.Conn, count int) ([]byte, error) {
 	return pack, nil
 }
 
+type listener5 struct {
+	addr net.Addr
+	conn net.Conn
+}
+
+func (l *listener5) Addr() net.Addr {
+	return l.addr
+}
+
+func (l *listener5) Close() error {
+	return l.conn.Close()
+}
+
+func (l *listener5) Accept() (net.Conn, error) {
+	// TODO: Use addr & port as RemoteAddr
+	_, err := readResponse5(l.conn)
+	if err != nil {
+		l.conn.Close()
+	}
+	return l.conn, err
+}
+
 type reply5 struct {
 	Rep  ReplyStatus
 	Atyp AddrType
 	Addr []byte
 	Port uint16
+}
+
+func (r reply5) toNetAddr(network string) net.Addr {
+	switch r.Atyp {
+	case IP4Addr:
+		n := "tcp4"
+		if strings.HasPrefix(network, "udp") {
+			n = "udp4"
+		}
+		return addr{
+			Net:  n,
+			Host: net.JoinHostPort(net.IP(r.Addr).To4().String(), strconv.Itoa(int(r.Port))),
+		}
+	case IP6Addr:
+		n := "tcp6"
+		if strings.HasPrefix(network, "udp") {
+			n = "udp6"
+		}
+		return addr{
+			Net:  n,
+			Host: net.JoinHostPort(net.IP(r.Addr).To16().String(), strconv.Itoa(int(r.Port))),
+		}
+	case DomAddr:
+		return addr{
+			Net:  network,
+			Host: string(r.Addr),
+		}
+	}
+	return nil
 }
 
 func readResponse5(conn net.Conn) (reply5, error) {
@@ -485,6 +536,46 @@ func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, 
 	}
 
 	return proxy, nil
+}
+
+func (c *Client5) Listen(ctx context.Context, network, address string) (net.Listener, error) {
+	// TODO: Filter
+
+	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	err = c.auth(proxy)
+	if err != nil {
+		proxy.Close()
+		return nil, err
+	}
+
+	request, err := c.request(ctx, CmdBind, network, address)
+	if err != nil {
+		proxy.Close()
+		return nil, err
+	}
+
+	_, err = io.Copy(proxy, bytes.NewReader(request))
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	reply, err := readResponse5(proxy)
+	if err != nil {
+		proxy.Close()
+		return nil, err
+	}
+
+	return &listener5{
+		conn: proxy,
+		addr: reply.toNetAddr(network),
+	}, nil
 }
 
 func readResponse4(conn net.Conn) (net.IP, uint16, error) {
