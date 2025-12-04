@@ -161,6 +161,211 @@ func Read5TCPResponse(reader io.Reader) (Socks5Reply, error) {
 	}, nil
 }
 
+type ReaderConn interface {
+	Read(b []byte) (n int, err error)
+	LocalAddr() net.Addr
+}
+
+func Read5UDP(
+	pool common.BufferPool,
+	conn ReaderConn,
+	p []byte,
+	needAddr bool, // If false addr is allways nil. (optimisation option)
+) (n int, addr net.Addr, err error) {
+	buf := common.GetBuffer(pool, len(p)+22) // heuristic
+	defer common.PutBuffer(pool, buf)
+loop:
+	for {
+		nn, err := conn.Read(buf)
+		if err != nil {
+			return 0, nil, err
+		}
+		if nn < 8 {
+			// Packet is too small to contain any meaningfull socks5 header
+			continue
+		}
+		// TODO: Check that buf[0] == buf[1] == 0
+		if buf[2] != 0 {
+			// TODO: Implement fragmentation support
+			continue
+		}
+		start := 0
+		switch common.AddrType(buf[3]) {
+		case common.IP4Addr:
+			if nn < 10 {
+				// Packet is too small
+				continue loop
+			}
+			start = 10
+
+			if needAddr {
+				ip := net.IP(append([]byte(nil), buf[4:8]...))
+				port := binary.BigEndian.Uint16(buf[8:10])
+				addr = &net.UDPAddr{
+					IP:   ip,
+					Port: int(port),
+				}
+			}
+		case common.IP6Addr:
+			if nn < 22 {
+				// Packet is too small
+				continue loop
+			}
+			start = 22
+
+			if needAddr {
+				ip := net.IP(append([]byte(nil), buf[4:20]...))
+				port := binary.BigEndian.Uint16(buf[20:22])
+				addr = &net.UDPAddr{
+					IP:   ip,
+					Port: int(port),
+				}
+			}
+		case common.DomAddr:
+			ln := int(buf[4])
+			if nn < 7+ln {
+				// Packet is too small
+				continue loop
+			}
+			start = 7 + ln
+
+			if needAddr {
+				dom := string(buf[5 : 5+ln])
+				port := binary.BigEndian.Uint16(buf[5+ln : 5+ln+2])
+				host := net.JoinHostPort(dom, strconv.Itoa(int(port)))
+				addr = NetAddr{
+					Net:  conn.LocalAddr().Network(),
+					Host: host,
+				}
+			}
+		default:
+			// Unknown address type
+			continue loop
+		}
+		n = copy(p, buf[start:])
+		return n, addr, nil
+	}
+}
+
+// Header5UDP writes a socks5 UDP header to buf.
+// buf must have len == 0 and cap == len(header) + len(payload)
+// TODO: Rewrite this comment
+func Header5UDP(buf []byte, atyp common.AddrType, addr []byte, port uint16) []byte {
+	buf = append(
+		buf,
+		0, 0, // Reserved
+		0,          // No fragmentation
+		byte(atyp), // Addr type
+	)
+	if atyp == common.DomAddr {
+		buf = append(buf, byte(len(addr)))
+	}
+	buf = append(buf, addr...)
+	buf = binary.BigEndian.AppendUint16(buf, uint16(port))
+	return buf
+}
+
+func BuildHeader5UDP(addr string) ([]byte, error) {
+	host, strport, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: If strport is "" -> err missinng port
+	port, err := strconv.Atoi(strport)
+	if err != nil {
+		return nil, err
+	}
+
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip4 := ip.To4(); ip4 != nil {
+			return Header5UDP([]byte{}, common.IP4Addr, ip4, uint16(port)), nil
+		}
+		if ip6 := ip.To16(); ip6 != nil {
+			return Header5UDP([]byte{}, common.IP6Addr, ip6, uint16(port)), nil
+		}
+	}
+
+	if len(host) > 255 {
+		// TODO: Better error
+		return nil, fmt.Errorf("too long hostname")
+	}
+
+	return Header5UDP([]byte{}, common.DomAddr, []byte(host), uint16(port)), nil
+}
+
+func Write5ToUDPaddr(
+	pool common.BufferPool,
+	writer io.Writer,
+	p []byte,
+	ip net.IP,
+	port uint16,
+) (n int, err error) {
+	if ip4 := ip.To4(); ip4 != nil {
+		buf := common.GetBuffer(pool, len(p)+10)
+		defer common.PutBuffer(pool, buf)
+		buf = buf[:0]
+		buf = Header5UDP(buf, common.IP4Addr, ip4, uint16(port))
+
+		n, err := writer.Write(buf)
+		if err != nil {
+			return 0, err
+		}
+		n = max(0, n-10-len(p))
+		return n, nil
+	}
+
+	buf := common.GetBuffer(pool, len(p)+22)
+	defer common.PutBuffer(pool, buf)
+	buf = buf[:0]
+	buf = Header5UDP(buf, common.IP6Addr, ip.To16(), uint16(port))
+
+	n, err = writer.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+	n = max(0, n-22)
+	return n, nil
+}
+
+func Write5ToUDPFQDN(
+	pool common.BufferPool,
+	writer io.Writer,
+	p []byte,
+	addr string,
+) (n int, err error) {
+	host, strport, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, err
+	}
+	// TODO: If strport is "" -> err missinng port
+	port, err := strconv.Atoi(strport)
+	if err != nil {
+		return 0, err
+	}
+
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return Write5ToUDPaddr(pool, writer, p, ip, uint16(port))
+	}
+
+	if len(host) > 255 {
+		// TODO: Better error
+		return 0, fmt.Errorf("too long hostname")
+	}
+
+	buf := common.GetBuffer(pool, len(p)+7+len(host))
+	defer common.PutBuffer(pool, buf)
+	buf = buf[:0]
+	buf = Header5UDP(buf, common.DomAddr, []byte(host), uint16(port))
+	n, err = writer.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+	n = max(0, n-7)
+	return n, nil
+}
+
 func Run5PassAuthHandshake(conn net.Conn, uid, password string) error {
 	user := []byte(uid)
 	pass := []byte(password)
