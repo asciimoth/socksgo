@@ -13,6 +13,7 @@ import (
 
 	"github.com/asciimoth/socks/common"
 	"github.com/asciimoth/socks/internal"
+	"github.com/xtaci/smux"
 )
 
 func PassAll(_, _ string) bool {
@@ -95,6 +96,8 @@ func (pc *packetConn5) Read(b []byte) (n int, err error) {
 	return
 }
 
+// TODO: ReadFromUDP, WrtiteToUDP with FQDN packets ignoring
+
 func (pc *packetConn5) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	return internal.Read5UDP(pc.pool, pc.conn, p, true)
 }
@@ -134,6 +137,24 @@ func (l *listener5) Accept() (net.Conn, error) {
 	return l.conn, err
 }
 
+type listener5mux struct {
+	addr    net.Addr
+	session *smux.Session
+}
+
+func (l *listener5mux) Addr() net.Addr {
+	return l.addr
+}
+
+func (l *listener5mux) Close() error {
+	return l.session.Close()
+}
+
+func (l *listener5mux) Accept() (net.Conn, error) {
+	// TODO: Use addr & port as RemoteAddr
+	return l.session.AcceptStream()
+}
+
 type Client5 struct {
 	ProxyNet    string
 	ProxyAddr   string
@@ -141,6 +162,7 @@ type Client5 struct {
 	Credentials *Credentials
 	Resolver    common.Resolver
 	Pool        common.BufferPool
+	GostMbind   bool
 }
 
 func (c *Client5) dialer() common.Dialer {
@@ -372,7 +394,11 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 		return nil, err
 	}
 
-	request, err := c.request(ctx, common.CmdBind, network, address)
+	cmd := common.CmdBind
+	if c.GostMbind {
+		cmd = common.CmdGostMuxBind
+	}
+	request, err := c.request(ctx, cmd, network, address)
 	if err != nil {
 		// TODO: Better error
 		proxy.Close()
@@ -395,6 +421,19 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 
 	if reply.Rep != common.SuccReply {
 		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
+	}
+
+	if c.GostMbind {
+		session, err := smux.Server(proxy, nil)
+		if err != nil {
+			// TODO: Better error
+			proxy.Close()
+			return nil, err
+		}
+		return &listener5mux{
+			session: session,
+			addr:    reply.ToNetAddr(network),
+		}, nil
 	}
 
 	return &listener5{

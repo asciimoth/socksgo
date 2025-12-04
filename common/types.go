@@ -26,9 +26,11 @@ const (
 	V4aName = "socks4a"
 	V5aName = "socks5"
 
-	CmdConnect  Cmd = 0x01
-	CmdBind     Cmd = 0x02
-	CmdUDPAssoc Cmd = 0x03
+	CmdConnect     Cmd = 0x01
+	CmdBind        Cmd = 0x02
+	CmdUDPAssoc    Cmd = 0x03
+	CmdGostMuxBind Cmd = 0xF2
+	CmdGostUDPTun  Cmd = 0xF3
 
 	Cmdr4Granted       CmdResp4 = 90
 	Cmdr4Rejected      CmdResp4 = 91
