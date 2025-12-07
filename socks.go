@@ -182,14 +182,15 @@ func (l *listener5mux) Accept() (net.Conn, error) {
 }
 
 type Client5 struct {
-	ProxyNet    string
-	ProxyAddr   string
-	Dialer      common.Dialer
-	Credentials *Credentials
-	Resolver    common.Resolver
-	Pool        common.BufferPool
-	GostMbind   bool
-	GostUDPTun  bool
+	ProxyNet        string
+	ProxyAddr       string
+	Dialer          common.Dialer
+	Credentials     *Credentials
+	Resolver        common.Resolver
+	Pool            common.BufferPool
+	GostMbind       bool
+	GostUDPTun      bool
+	SpawnUDPProbber bool
 }
 
 func (c *Client5) dialer() common.Dialer {
@@ -410,12 +411,28 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 		return nil, err
 	}
 
-	return &packetConn5{
+	pc := &packetConn5{
 		conn:          udpconn,
 		defaultHeader: header,
 		pool:          c.Pool,
 		onclose:       onclose,
-	}, nil
+	}
+
+	if c.SpawnUDPProbber {
+		go func() {
+			buf := []byte{0}
+			for {
+				_, err := proxy.Read(buf)
+				if err != nil {
+					_ = proxy.Close()
+					_ = pc.Close()
+					return
+				}
+			}
+		}()
+	}
+
+	return pc, nil
 }
 
 func (c *Client5) setupUDPTun(ctx context.Context, network, laddr, raddr string) (*packetConn5, error) {
@@ -501,7 +518,7 @@ func (c *Client5) setupUDPTun(ctx context.Context, network, laddr, raddr string)
 	}, nil
 }
 
-func (c *Client5) tisten(ctx context.Context, network, address string) (net.Listener, error) {
+func (c *Client5) Listen(ctx context.Context, network, address string) (net.Listener, error) {
 	// TODO: Filter
 
 	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
