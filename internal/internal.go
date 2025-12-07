@@ -12,6 +12,19 @@ import (
 	"github.com/asciimoth/socks/common"
 )
 
+const MAX_HEADER_LEN = 262
+
+func writeAll(w io.Writer, data []byte) error {
+	for len(data) > 0 {
+		n, err := w.Write(data)
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	return nil
+}
+
 type NetAddr struct {
 	Net  string
 	Host string
@@ -30,6 +43,13 @@ type Socks5Reply struct {
 	Atyp common.AddrType
 	Addr []byte
 	Port uint16
+}
+
+func (r Socks5Reply) IsUnspecified() bool {
+	if r.Atyp == common.IP4Addr || r.Atyp == common.IP6Addr {
+		return net.IP(r.Addr).IsUnspecified()
+	}
+	return false
 }
 
 func (r Socks5Reply) ToNetAddr(network string) net.Addr {
@@ -132,7 +152,7 @@ func Read5TCPResponse(reader io.Reader) (Socks5Reply, error) {
 		addr = host[0:4]
 		port = binary.BigEndian.Uint16(host[4:6])
 	case common.IP6Addr:
-		host := make([]byte, 6)
+		host := make([]byte, 18)
 		_, err := io.ReadFull(reader, host)
 		if err != nil {
 			return Socks5Reply{}, err
@@ -172,7 +192,8 @@ func Read5UDP(
 	p []byte,
 	needAddr bool, // If false addr is allways nil. (optimisation option)
 ) (n int, addr net.Addr, err error) {
-	buf := common.GetBuffer(pool, len(p)+22) // heuristic
+	// TODO: Rewrite bufffer handling
+	buf := common.GetBuffer(pool, len(p)+MAX_HEADER_LEN)
 	defer common.PutBuffer(pool, buf)
 loop:
 	for {
@@ -247,14 +268,126 @@ loop:
 	}
 }
 
+func Read5UDPTun(
+	pool common.BufferPool,
+	conn ReaderConn,
+	p []byte,
+	needAddr bool, // If false addr is allways nil. (optimisation option)
+) (n int, addr net.Addr, err error) {
+	hbuf := p // Header buffer
+	if len(hbuf) < MAX_HEADER_LEN {
+		hbuf = make([]byte, MAX_HEADER_LEN)
+	}
+	for {
+		skip := false
+
+		_, err = io.ReadFull(conn, hbuf[:5])
+		if err != nil {
+			return 0, nil, err
+		}
+
+		plen := int(binary.BigEndian.Uint16(hbuf[:2])) // payload length
+		atyp := common.AddrType(hbuf[3])               // Addr type
+		fb := hbuf[4]                                  // First byte of addr
+
+		// If frag, then we should just read whole package and drop it
+		frag := hbuf[2] != 0 && hbuf[2] != 255
+
+		if frag {
+			skip = true
+		}
+
+		switch atyp {
+		case common.IP4Addr:
+			_, err = io.ReadFull(conn, hbuf[:5]) // ip4 + port - 1
+			if err != nil {
+				return 0, nil, err
+			}
+			if needAddr && !skip {
+				ip := net.IP([]byte{fb, hbuf[0], hbuf[1], hbuf[2]})
+				port := binary.BigEndian.Uint16(hbuf[3:5])
+				addr = &net.UDPAddr{
+					IP:   ip,
+					Port: int(port),
+				}
+			}
+		case common.IP6Addr:
+			_, err = io.ReadFull(conn, hbuf[:17]) // ip6 + port - 1
+			if err != nil {
+				return 0, nil, err
+			}
+			if needAddr && !skip {
+				ip := net.IP([]byte{
+					fb, hbuf[0], hbuf[1], hbuf[2],
+					hbuf[3], hbuf[4], hbuf[5], hbuf[6],
+					hbuf[7], hbuf[8], hbuf[9], hbuf[10],
+					hbuf[11], hbuf[12], hbuf[13], hbuf[14],
+				})
+				port := binary.BigEndian.Uint16(hbuf[15:17])
+				addr = &net.UDPAddr{
+					IP:   ip,
+					Port: int(port),
+				}
+			}
+		case common.DomAddr:
+			ln := int(fb)
+			_, err = io.ReadFull(conn, hbuf[:ln+2]) // dom + port
+			if err != nil {
+				return 0, nil, err
+			}
+			if needAddr && !skip {
+				port := binary.BigEndian.Uint16(hbuf[ln : ln+2])
+				host := net.JoinHostPort(string(hbuf[:ln]), strconv.Itoa(int(port)))
+				addr = NetAddr{
+					Net:  conn.LocalAddr().Network(),
+					Host: host,
+				}
+			}
+		default:
+			// Unknown address type
+			// TODO: Better errror
+			return 0, nil, fmt.Errorf("Unknown atyp: %s", atyp)
+		}
+		if len(p) < plen {
+			// Read with tmp buffer
+			tmpbuf := common.GetBuffer(pool, plen)
+			_, err = io.ReadFull(conn, tmpbuf)
+			if err == nil {
+				n = copy(p, tmpbuf)
+			}
+			common.PutBuffer(pool, tmpbuf)
+		} else {
+			n, err = io.ReadFull(conn, p[:plen])
+		}
+		if err != nil {
+			return 0, nil, err
+		}
+		if skip {
+			continue
+		}
+		return n, addr, err
+	}
+}
+
 // Header5UDP writes a socks5 UDP header to buf.
 // buf must have len == 0 and cap == len(header) + len(payload)
 // TODO: Rewrite this comment
-func Header5UDP(buf []byte, atyp common.AddrType, addr []byte, port uint16) []byte {
+func Header5UDP(
+	buf []byte,
+	atyp common.AddrType,
+	addr []byte,
+	port uint16,
+	plen uint16,
+) []byte {
+	buf = binary.BigEndian.AppendUint16(buf, uint16(plen))
+	frag := byte(0)
+	if plen != 0 {
+		frag = 255
+	}
 	buf = append(
 		buf,
-		0, 0, // Reserved
-		0,          // No fragmentation
+		//0, 0, // Reserved
+		frag,       // No fragmentation
 		byte(atyp), // Addr type
 	)
 	if atyp == common.DomAddr {
@@ -265,7 +398,8 @@ func Header5UDP(buf []byte, atyp common.AddrType, addr []byte, port uint16) []by
 	return buf
 }
 
-func BuildHeader5UDP(addr string) ([]byte, error) {
+func BuildHeader5UDP(addr string, gostTun bool) ([]byte, error) {
+	// TODO: Support gost tun
 	host, strport, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -279,10 +413,16 @@ func BuildHeader5UDP(addr string) ([]byte, error) {
 	ip := net.ParseIP(host)
 	if ip != nil {
 		if ip4 := ip.To4(); ip4 != nil {
-			return Header5UDP([]byte{}, common.IP4Addr, ip4, uint16(port)), nil
+			if gostTun {
+				return Header5UDP([]byte{}, common.IP4Addr, ip4, uint16(port), 1)[:2], nil
+			}
+			return Header5UDP([]byte{}, common.IP4Addr, ip4, uint16(port), 0), nil
 		}
 		if ip6 := ip.To16(); ip6 != nil {
-			return Header5UDP([]byte{}, common.IP6Addr, ip6, uint16(port)), nil
+			if gostTun {
+				return Header5UDP([]byte{}, common.IP6Addr, ip6, uint16(port), 1)[:2], nil
+			}
+			return Header5UDP([]byte{}, common.IP6Addr, ip6, uint16(port), 0), nil
 		}
 	}
 
@@ -291,7 +431,10 @@ func BuildHeader5UDP(addr string) ([]byte, error) {
 		return nil, fmt.Errorf("too long hostname")
 	}
 
-	return Header5UDP([]byte{}, common.DomAddr, []byte(host), uint16(port)), nil
+	if gostTun {
+		return Header5UDP([]byte{}, common.DomAddr, []byte(host), uint16(port), 1)[:2], nil
+	}
+	return Header5UDP([]byte{}, common.DomAddr, []byte(host), uint16(port), 0), nil
 }
 
 func Write5ToUDPaddr(
@@ -300,14 +443,27 @@ func Write5ToUDPaddr(
 	p []byte,
 	ip net.IP,
 	port uint16,
+	gostUDPTun bool,
 ) (n int, err error) {
+	plen := uint16(0)
+	if gostUDPTun {
+		if len(p) > 65535 {
+			p = p[:65535]
+		}
+		plen = uint16(len(p))
+	}
+
 	if ip4 := ip.To4(); ip4 != nil {
 		buf := common.GetBuffer(pool, len(p)+10)
 		defer common.PutBuffer(pool, buf)
 		buf = buf[:0]
-		buf = Header5UDP(buf, common.IP4Addr, ip4, uint16(port))
+		buf = Header5UDP(buf, common.IP4Addr, ip4, uint16(port), plen)
+		buf = append(buf, p...)
 
-		n, err := writer.Write(buf)
+		if gostUDPTun {
+			return len(p), writeAll(writer, buf)
+		}
+		n, err = writer.Write(buf)
 		if err != nil {
 			return 0, err
 		}
@@ -318,7 +474,12 @@ func Write5ToUDPaddr(
 	buf := common.GetBuffer(pool, len(p)+22)
 	defer common.PutBuffer(pool, buf)
 	buf = buf[:0]
-	buf = Header5UDP(buf, common.IP6Addr, ip.To16(), uint16(port))
+	buf = Header5UDP(buf, common.IP6Addr, ip.To16(), uint16(port), plen)
+	buf = append(buf, p...)
+
+	if gostUDPTun {
+		return len(p), writeAll(writer, buf)
+	}
 
 	n, err = writer.Write(buf)
 	if err != nil {
@@ -333,6 +494,7 @@ func Write5ToUDPFQDN(
 	writer io.Writer,
 	p []byte,
 	addr string,
+	gostUDPTun bool,
 ) (n int, err error) {
 	host, strport, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -346,7 +508,7 @@ func Write5ToUDPFQDN(
 
 	ip := net.ParseIP(host)
 	if ip != nil {
-		return Write5ToUDPaddr(pool, writer, p, ip, uint16(port))
+		return Write5ToUDPaddr(pool, writer, p, ip, uint16(port), gostUDPTun)
 	}
 
 	if len(host) > 255 {
@@ -354,10 +516,24 @@ func Write5ToUDPFQDN(
 		return 0, fmt.Errorf("too long hostname")
 	}
 
+	plen := uint16(0)
+	if gostUDPTun {
+		if len(p) > 65535 {
+			p = p[:65535]
+		}
+		plen = uint16(len(p))
+	}
+
 	buf := common.GetBuffer(pool, len(p)+7+len(host))
 	defer common.PutBuffer(pool, buf)
 	buf = buf[:0]
-	buf = Header5UDP(buf, common.DomAddr, []byte(host), uint16(port))
+	buf = Header5UDP(buf, common.DomAddr, []byte(host), uint16(port), plen)
+	buf = append(buf, p...)
+
+	if gostUDPTun {
+		return len(p), writeAll(writer, buf)
+	}
+
 	n, err = writer.Write(buf)
 	if err != nil {
 		return 0, err

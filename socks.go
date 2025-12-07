@@ -48,6 +48,8 @@ type packetConn5 struct {
 	defaultHeader []byte
 	pool          common.BufferPool
 	onclose       func()
+	gostTun       bool // If enabled, defaultHeader should bt provided without RSV
+	la, ra        net.Addr
 }
 
 func (pc *packetConn5) Close() error {
@@ -56,11 +58,17 @@ func (pc *packetConn5) Close() error {
 }
 
 func (pc *packetConn5) LocalAddr() net.Addr {
+	if pc.la != nil {
+		return pc.la
+	}
 	return pc.conn.LocalAddr()
 }
 
 func (pc *packetConn5) RemoteAddr() net.Addr {
-	return pc.conn.RemoteAddr() // TODO: Add alt RemoteAddr
+	if pc.la != nil {
+		return pc.ra
+	}
+	return pc.conn.RemoteAddr()
 }
 
 func (pc *packetConn5) SetDeadline(t time.Time) error {
@@ -76,10 +84,17 @@ func (pc *packetConn5) SetWriteDeadline(t time.Time) error {
 }
 
 func (pc *packetConn5) Write(b []byte) (n int, err error) {
+	if pc.gostTun && len(b) > 65535 {
+		b = b[:65535]
+	}
+
 	buf := common.GetBuffer(pc.pool, len(pc.defaultHeader)+len(b))
 	defer common.PutBuffer(pc.pool, buf)
 	buf = buf[:0]
 
+	if pc.gostTun {
+		buf = binary.BigEndian.AppendUint16(buf, uint16(len(b)))
+	}
 	buf = append(buf, pc.defaultHeader...)
 	buf = append(buf, b...)
 
@@ -87,27 +102,38 @@ func (pc *packetConn5) Write(b []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	n = max(0, n-len(pc.defaultHeader))
+	if pc.gostTun {
+		n = max(0, n-len(pc.defaultHeader)-2)
+	} else {
+		n = max(0, n-len(pc.defaultHeader))
+	}
 	return n, nil
 }
 
 func (pc *packetConn5) Read(b []byte) (n int, err error) {
-	n, _, err = internal.Read5UDP(pc.pool, pc.conn, b, false)
+	if pc.gostTun {
+		n, _, err = internal.Read5UDPTun(pc.pool, pc.conn, b, false)
+	} else {
+		n, _, err = internal.Read5UDP(pc.pool, pc.conn, b, false)
+	}
 	return
 }
 
 // TODO: ReadFromUDP, WrtiteToUDP with FQDN packets ignoring
 
 func (pc *packetConn5) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	if pc.gostTun {
+		return internal.Read5UDPTun(pc.pool, pc.conn, p, true)
+	}
 	return internal.Read5UDP(pc.pool, pc.conn, p, true)
 }
 
 func (pc *packetConn5) WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error) {
-	return internal.Write5ToUDPaddr(pc.pool, pc.conn, p, ip, port)
+	return internal.Write5ToUDPaddr(pc.pool, pc.conn, p, ip, port, pc.gostTun)
 }
 
 func (pc *packetConn5) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	return internal.Write5ToUDPFQDN(pc.pool, pc.conn, p, addr.String())
+	return internal.Write5ToUDPFQDN(pc.pool, pc.conn, p, addr.String(), pc.gostTun)
 }
 
 type Credentials struct {
@@ -163,6 +189,7 @@ type Client5 struct {
 	Resolver    common.Resolver
 	Pool        common.BufferPool
 	GostMbind   bool
+	GostUDPTun  bool
 }
 
 func (c *Client5) dialer() common.Dialer {
@@ -300,7 +327,20 @@ func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, 
 func (c *Client5) DialPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
 	// TODO: Filter addr
 	// TODO: Check network
+	if c.GostUDPTun {
+		return c.setupUDPTun(ctx, network, "", address)
+	}
 	return c.dialPacket(ctx, network, address)
+}
+
+func (c *Client5) ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
+	// TODO: Filter addr
+	// TODO: Check network
+	if c.GostUDPTun {
+		return c.setupUDPTun(ctx, network, address, "")
+	}
+	// Standart UDP ASSOC doesn't support listen addr specification
+	return c.dialPacket(ctx, network, "")
 }
 
 func (c *Client5) dialPacket(ctx context.Context, network, address string) (*packetConn5, error) {
@@ -312,7 +352,7 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 		}
 	}
 
-	header, err := internal.BuildHeader5UDP(address)
+	header, err := internal.BuildHeader5UDP(address, false)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -378,7 +418,90 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 	}, nil
 }
 
-func (c *Client5) Listen(ctx context.Context, network, address string) (net.Listener, error) {
+func (c *Client5) setupUDPTun(ctx context.Context, network, laddr, raddr string) (*packetConn5, error) {
+	var (
+		header []byte
+		err    error
+	)
+	if raddr != "" {
+		header, err = internal.BuildHeader5UDP(raddr, true)
+		if err != nil {
+			// TODO: Better error
+			return nil, err
+		}
+	}
+	if laddr == "" {
+		if network == "udp6" {
+			laddr = "[::]:0"
+		} else {
+			laddr = "0.0.0.0:0"
+		}
+	}
+
+	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	err = internal.Run5Auth(proxy, &c.Credentials.User, &c.Credentials.Password)
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	request, err := c.request(ctx, common.CmdGostUDPTun, network, laddr)
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	_, err = io.Copy(proxy, bytes.NewReader(request))
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	reply, err := internal.Read5TCPResponse(proxy)
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	if reply.Rep != common.SuccReply {
+		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
+	}
+
+	var n net.Addr
+	if reply.IsUnspecified() {
+		h, _, err := net.SplitHostPort(proxy.RemoteAddr().String())
+		if err != nil {
+			// TODO: Better error
+			proxy.Close()
+			return nil, err
+		}
+		n = internal.NetAddr{
+			Host: net.JoinHostPort(h, strconv.Itoa(int(reply.Port))),
+			Net:  proxy.RemoteAddr().Network(),
+		}
+	} else {
+		n = reply.ToNetAddr(network)
+	}
+
+	return &packetConn5{
+		conn:          proxy,
+		defaultHeader: header,
+		pool:          c.Pool,
+		gostTun:       true,
+		la:            n,
+	}, nil
+}
+
+func (c *Client5) tisten(ctx context.Context, network, address string) (net.Listener, error) {
 	// TODO: Filter
 
 	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())

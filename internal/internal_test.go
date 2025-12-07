@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -13,15 +14,15 @@ import (
 	"github.com/asciimoth/socks/internal"
 )
 
-// fakeConn implements internal.ReaderConn. It returns a sequence of byte slices
+// fakePacketConn implements internal.ReaderConn. It returns a sequence of byte slices
 // on successive Read calls and provides a LocalAddr.
-type fakeConn struct {
+type fakePacketConn struct {
 	seq   [][]byte
 	index int
 	local net.Addr
 }
 
-func (f *fakeConn) Read(b []byte) (int, error) {
+func (f *fakePacketConn) Read(b []byte) (int, error) {
 	if f.index >= len(f.seq) {
 		return 0, nil
 	}
@@ -30,7 +31,14 @@ func (f *fakeConn) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (f *fakeConn) LocalAddr() net.Addr { return f.local }
+func (f *fakePacketConn) LocalAddr() net.Addr { return f.local }
+
+type fakeStreamConn struct {
+	io.Reader
+	local net.Addr
+}
+
+func (f *fakeStreamConn) LocalAddr() net.Addr { return f.local }
 
 // recordingWriter is a fake writer that records the bytes actually written.
 // It can simulate partial writes and/or returning an error.
@@ -138,7 +146,7 @@ func TestHeader5UDP(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := make([]byte, 0, len(tc.want))
-			got := internal.Header5UDP(buf, tc.atyp, tc.addr, tc.port)
+			got := internal.Header5UDP(buf, tc.atyp, tc.addr, tc.port, 0)
 
 			if len(got) != len(tc.want) {
 				t.Fatalf("len mismatch: want=%d got=%d", len(tc.want), len(got))
@@ -147,6 +155,128 @@ func TestHeader5UDP(t *testing.T) {
 				if got[i] != tc.want[i] {
 					t.Fatalf("byte %d mismatch: want=%#02x got=%#02x\nwant=% x\ngot= % x",
 						i, tc.want[i], got[i], tc.want, got)
+				}
+			}
+		})
+	}
+}
+
+func TestRead5UDPTun(t *testing.T) {
+	type read struct {
+		pSize             int
+		errStr            string
+		needAddr          bool
+		wantAddrString    string
+		wantPayloadString string
+	}
+	tests := []struct {
+		name   string
+		stream []byte
+		reads  []read
+	}{
+		{
+			name: "Happy Path",
+			stream: []byte{
+				// Pkg 0
+				0, 12, // Payload length
+				0,            // No fragmentation
+				1,            // Atyp IPv4
+				127, 0, 0, 1, // Addr
+				0, 1, // Port
+				// Payload: Hello World!
+				0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+
+				// Pkg 1
+				0, 12, // Payload length
+				0,                                              // No fragmentation
+				4,                                              // Atyp IPv6
+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, // Addr
+				0, 1, // Port
+				// Payload: Hello World!
+				0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+
+				// Pkg 2
+				0, 0, // Payload length
+				0,                      // No fragmentation
+				3,                      // Atyp FQDN
+				4,                      // Addr len
+				0x68, 0x6f, 0x73, 0x74, // Addr
+				0, 10, // Port
+				// No Payload
+
+				// Pkg 3
+				0, 12, // Payload length
+				0,            // No fragmentation
+				1,            // Atyp IPv4
+				127, 0, 0, 1, // Addr
+				0, 1, // Port
+				// Payload: Hello World!
+				0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+			},
+			reads: []read{
+				{
+					pSize:             1024,
+					needAddr:          true,
+					wantAddrString:    "127.0.0.1:1",
+					wantPayloadString: "Hello World!",
+				},
+				{
+					pSize:             12,
+					needAddr:          true,
+					wantAddrString:    "[::1]:1",
+					wantPayloadString: "Hello World!",
+				},
+				{
+					pSize:          12,
+					needAddr:       true,
+					wantAddrString: "host:10",
+				},
+				{
+					pSize:             5,
+					needAddr:          true,
+					wantAddrString:    "127.0.0.1:1",
+					wantPayloadString: "Hello",
+				},
+			},
+		},
+		// TODO: More cases
+	}
+
+	pSize := 0
+	for _, tc := range tests {
+		for _, r := range tc.reads {
+			pSize = max(r.pSize, pSize)
+		}
+	}
+
+	rbuf := make([]byte, pSize)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &fakeStreamConn{
+				Reader: bytes.NewBuffer(tc.stream),
+				local:  &net.UDPAddr{IP: net.IPv4(10, 0, 0, 1), Port: 9999},
+			}
+			for _, r := range tc.reads {
+				buf := rbuf[:r.pSize]
+				n, addr, err := internal.Read5UDPTun(nil, conn, buf, r.needAddr)
+				if err != nil {
+					if r.errStr == "" {
+						t.Fatalf("Read5UDPTun returned error: %v", err)
+					} else {
+						if r.errStr == err.Error() {
+							continue
+						}
+						t.Fatalf("Read5UDPTun returned error: %v while expected %s", err, r.errStr)
+					}
+					return
+				}
+				if r.needAddr && addr.String() != r.wantAddrString {
+					t.Fatalf("Read5UDPTun returned wrong addr: %s %s", r.wantAddrString, addr)
+				}
+				text := string(buf[:n])
+				if r.wantPayloadString != text {
+					t.Fatalf("Read5UDPTun returned wrong payload: %s %s", r.wantPayloadString, text)
 				}
 			}
 		})
@@ -163,7 +293,7 @@ func TestRead5UDP(t *testing.T) {
 	makePacket := func(atyp common.AddrType, addr []byte, port uint16, pl []byte) []byte {
 		capEstimate := len(addr) + len(pl) + 22 // Should be allways enougth
 		hdr := internal.Header5UDP(
-			make([]byte, 0, capEstimate), atyp, addr, port,
+			make([]byte, 0, capEstimate), atyp, addr, port, 0,
 		)
 		return append(hdr, pl...)
 	}
@@ -246,7 +376,7 @@ func TestRead5UDP(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := &fakeConn{
+			conn := &fakePacketConn{
 				seq:   tc.reads,
 				index: 0,
 				local: &net.UDPAddr{IP: net.IPv4(10, 0, 0, 1), Port: 9999}, // Network() -> "udp"
@@ -324,10 +454,11 @@ func TestWrite5ToUDPaddr(t *testing.T) {
 				b = append(b, 1)
 				// port 5353 = 0x14E9
 				b = append(b, 0x14, 0xE9)
+				b = append(b, 0, 0, 0, 0, 0)
 				return b
 			}(),
 			// writer wrote 22 bytes, Write5ToUDPaddr does n=max(0, n-22) = 0
-			wantReturnN:   0,
+			wantReturnN:   5,
 			wantReturnErr: nil,
 		},
 		{
@@ -379,7 +510,7 @@ func TestWrite5ToUDPaddr(t *testing.T) {
 			// prepare p slice with the requested length (content not used by Write5ToUDPaddr)
 			p := make([]byte, tc.payloadLen)
 
-			n, err := internal.Write5ToUDPaddr(nil, tc.writer, p, tc.ip, tc.port)
+			n, err := internal.Write5ToUDPaddr(nil, tc.writer, p, tc.ip, tc.port, false)
 
 			// check error: compare presence and message (simple check)
 			if tc.wantReturnErr == nil {
@@ -486,7 +617,7 @@ func TestWrite5ToUDPFQDN(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			p := make([]byte, tc.pLen)
-			n, err := internal.Write5ToUDPFQDN(nil, tc.writer, p, tc.addr)
+			n, err := internal.Write5ToUDPFQDN(nil, tc.writer, p, tc.addr, false)
 
 			// error handling — compare by presence and substring (since errors may differ)
 			if tc.wantErr == nil {
