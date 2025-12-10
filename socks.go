@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,11 @@ import (
 	"github.com/asciimoth/socks/internal"
 	"github.com/xtaci/smux"
 )
+
+var networks = []string{
+	"tcp", "tcp4", "tcp6",
+	"udp", "udp4", "udp6",
+}
 
 func PassAll(_, _ string) bool {
 	return true
@@ -310,45 +316,67 @@ func (c *Client5) proxyaddr() string {
 	return c.ProxyAddr
 }
 
-func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address string) ([]byte, error) {
+func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address string) (net.Conn, internal.Socks5Reply, error) {
+	var reply internal.Socks5Reply
+
+	if !slices.Contains(networks, network) {
+		// TODO: Better error
+		return nil, reply, net.UnknownNetworkError(network)
+	}
+
 	host, strport, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, err
-	}
-	if len(host) > 255 {
-		return nil, fmt.Errorf("too long hostname: %s", host)
+		// TODO: Better error
+		return nil, reply, err
 	}
 	port, err := c.Config.lookupPort(ctx, network, strport)
 	if err != nil {
 		// TODO: Better error
-		return nil, err
+		return nil, reply, err
 	}
-	atyp := common.DomAddr
-	addrlen := len([]byte(host)) + 1
-	ip := net.ParseIP(host)
-	if ip != nil {
-		if ip.To4() != nil {
-			atyp = common.IP4Addr
-			addrlen = 4
-		} else {
-			atyp = common.IP6Addr
-			addrlen = 16
-		}
-	}
-	request := make([]byte, 0, 6+addrlen)
-	request = append(request, common.V5, byte(cmd), 0, byte(atyp))
-	switch atyp {
-	case common.IP4Addr:
-		request = append(request, ip.To4()...)
-	case common.IP6Addr:
-		request = append(request, ip.To16()...)
-	case common.DomAddr:
-		request = append(request, byte(len(host)))
-		request = append(request, []byte(host)...)
-	}
-	request = binary.BigEndian.AppendUint16(request, uint16(port))
 
-	return request, nil
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	if err != nil {
+		// TODO: Better error
+		return nil, reply, err
+	}
+
+	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, reply, err
+	}
+
+	// request, err := c.request(ctx, common.CmdConnect, network, address)
+	request, err := internal.Make5Request(cmd, host, uint16(port))
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, reply, err
+	}
+
+	_, err = io.Copy(proxy, bytes.NewReader(request))
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, reply, err
+	}
+
+	reply, err = internal.Read5TCPResponse(proxy)
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, reply, err
+	}
+
+	if reply.Rep != common.SuccReply {
+		// TODO: Better error
+		proxy.Close()
+		return nil, reply, fmt.Errorf("reply status: %s", reply.Rep.String())
+	}
+
+	return proxy, reply, nil
 }
 
 func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, error) {
@@ -356,44 +384,10 @@ func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, 
 		return c.dialPacket(ctx, network, address)
 	}
 
-	// TODO: Check network type
-	// TODO: Filter addr
-	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, _, err := c.request(ctx, common.CmdConnect, network, address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
-	}
-
-	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	request, err := c.request(ctx, common.CmdConnect, network, address)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	_, err = io.Copy(proxy, bytes.NewReader(request))
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	reply, err := internal.Read5TCPResponse(proxy)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	if reply.Rep != common.SuccReply {
-		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
 	}
 
 	return proxy, nil
@@ -434,42 +428,10 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 		return nil, err
 	}
 
-	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, reply, err := c.request(ctx, common.CmdUDPAssoc, network, address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
-	}
-
-	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	request, err := c.request(ctx, common.CmdUDPAssoc, network, address)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	_, err = io.Copy(proxy, bytes.NewReader(request))
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	reply, err := internal.Read5TCPResponse(proxy)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	if reply.Rep != common.SuccReply {
-		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
 	}
 
 	onclose := func() {
@@ -530,42 +492,10 @@ func (c *Client5) setupUDPTun(ctx context.Context, network, laddr, raddr string)
 		}
 	}
 
-	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, reply, err := c.request(ctx, common.CmdGostUDPTun, network, laddr)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
-	}
-
-	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	request, err := c.request(ctx, common.CmdGostUDPTun, network, laddr)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	_, err = io.Copy(proxy, bytes.NewReader(request))
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	reply, err := internal.Read5TCPResponse(proxy)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	if reply.Rep != common.SuccReply {
-		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
 	}
 
 	var n net.Addr
@@ -597,46 +527,15 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 	// TODO: Check network
 	// TODO: Filter
 
-	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
-	if err != nil {
-		// TODO: Better error
-		return nil, err
-	}
-
-	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
 	cmd := common.CmdBind
 	if c.Config.isGostMbind() {
 		cmd = common.CmdGostMuxBind
 	}
-	request, err := c.request(ctx, cmd, network, address)
+
+	proxy, reply, err := c.request(ctx, cmd, network, address)
 	if err != nil {
 		// TODO: Better error
-		proxy.Close()
 		return nil, err
-	}
-
-	_, err = io.Copy(proxy, bytes.NewReader(request))
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	reply, err := internal.Read5TCPResponse(proxy)
-	if err != nil {
-		// TODO: Better error
-		proxy.Close()
-		return nil, err
-	}
-
-	if reply.Rep != common.SuccReply {
-		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
 	}
 
 	if c.Config.isGostMbind() {

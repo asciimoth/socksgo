@@ -108,6 +108,41 @@ func Make4aTCPRequest(cmd common.Cmd, host string, port uint16, uid string) []by
 }
 
 // TODO: Test
+func Make5Request(cmd common.Cmd, host string, port uint16) ([]byte, error) {
+	if len(host) > 255 {
+		// TODO: Better error
+		return nil, fmt.Errorf("too long hostname: %s", host)
+	}
+
+	atyp := common.DomAddr
+	addrlen := len([]byte(host)) + 1
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.To4() != nil {
+			atyp = common.IP4Addr
+			addrlen = 4
+		} else {
+			atyp = common.IP6Addr
+			addrlen = 16
+		}
+	}
+	request := make([]byte, 0, 6+addrlen)
+	request = append(request, common.V5, byte(cmd), 0, byte(atyp))
+	switch atyp {
+	case common.IP4Addr:
+		request = append(request, ip.To4()...)
+	case common.IP6Addr:
+		request = append(request, ip.To16()...)
+	case common.DomAddr:
+		request = append(request, byte(len(host)))
+		request = append(request, []byte(host)...)
+	}
+	request = binary.BigEndian.AppendUint16(request, uint16(port))
+
+	return request, nil
+}
+
+// TODO: Test
 func Read4TCPResponse(reader io.Reader) (net.IP, uint16, error) {
 	var resp [8]byte
 	i, err := reader.Read(resp[:])
