@@ -43,6 +43,114 @@ var (
 	_ net.PacketConn = &packetConn5{}
 )
 
+type ClientConfig struct {
+	GostMbind       bool
+	GostUDPTun      bool
+	SpawnUDPProbber bool
+	Dialer          common.Dialer
+	DirectListener  common.Listener
+	Resolver        common.Resolver
+	// Resolve hostname locally instead of passing it to proxy
+	// For socks4 LocalResolve == false means socks4a
+	LocalResolve bool
+	DirectFilter common.DirectFilter
+	Credentials  *Credentials
+	Pool         common.BufferPool
+}
+
+func (cc *ClientConfig) pool() common.BufferPool {
+	if cc == nil {
+		return nil
+	}
+	return cc.Pool
+}
+
+func (cc *ClientConfig) isGostUDPTun() bool {
+	if cc == nil {
+		return false
+	}
+	return cc.GostUDPTun
+}
+
+func (cc *ClientConfig) isGostMbind() bool {
+	if cc == nil {
+		return false
+	}
+	return cc.GostMbind
+}
+
+func (cc *ClientConfig) isSpawnUDPProbber() bool {
+	if cc == nil {
+		return false
+	}
+	return cc.SpawnUDPProbber
+}
+
+func (cc *ClientConfig) user() string {
+	if cc == nil {
+		return ""
+	}
+	if cc.Credentials == nil {
+		return ""
+	}
+	return cc.Credentials.User
+}
+
+func (cc *ClientConfig) nuser() *string {
+	if cc == nil || cc.Credentials == nil {
+		return nil
+	}
+	return &cc.Credentials.User
+}
+
+func (cc *ClientConfig) npass() *string {
+	if cc == nil || cc.Credentials == nil {
+		return nil
+	}
+	return &cc.Credentials.Password
+}
+
+func (cc *ClientConfig) dialFilter(network, address string) bool {
+	filter := DirectLoopback
+	if cc != nil && cc.DirectFilter != nil {
+		filter = cc.DirectFilter
+	}
+	return filter(network, address)
+}
+
+func (cc *ClientConfig) listener() common.Listener {
+	if cc == nil || cc.DirectListener == nil {
+		return (&net.ListenConfig{}).Listen
+	}
+	return cc.DirectListener
+}
+
+func (cc *ClientConfig) resolver() common.Resolver {
+	if cc == nil || cc.Resolver == nil {
+		return net.DefaultResolver
+	}
+	return cc.Resolver
+}
+
+func (cc *ClientConfig) dialer() common.Dialer {
+	if cc == nil || cc.Dialer == nil {
+		return func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		}
+	}
+	return cc.Dialer
+}
+
+func (cc *ClientConfig) lookupPort(ctx context.Context, network, strport string) (port int, err error) {
+	// TODO: If strport is "" -> err missinng port
+	port, err = strconv.Atoi(strport)
+	if err == nil {
+		return port, nil
+	}
+	port, err = cc.resolver().LookupPort(ctx, network, strport)
+	return port, err
+}
+
 type packetConn5 struct {
 	conn          net.Conn
 	defaultHeader []byte
@@ -182,24 +290,9 @@ func (l *listener5mux) Accept() (net.Conn, error) {
 }
 
 type Client5 struct {
-	ProxyNet        string
-	ProxyAddr       string
-	Dialer          common.Dialer
-	Credentials     *Credentials
-	Resolver        common.Resolver
-	Pool            common.BufferPool
-	GostMbind       bool
-	GostUDPTun      bool
-	SpawnUDPProbber bool
-}
-
-func (c *Client5) dialer() common.Dialer {
-	if c.Dialer == nil {
-		return func(ctx context.Context, network, address string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, network, address)
-		}
-	}
-	return c.Dialer
+	ProxyNet  string
+	ProxyAddr string
+	Config    *ClientConfig
 }
 
 func (c *Client5) proxynet() string {
@@ -217,25 +310,7 @@ func (c *Client5) proxyaddr() string {
 	return c.ProxyAddr
 }
 
-func (c *Client5) resolver() common.Resolver {
-	if c.Resolver == nil {
-		return net.DefaultResolver
-	}
-	return c.Resolver
-}
-
-func (c *Client5) lookupPort(ctx context.Context, network, strport string) (port int, err error) {
-	port, err = strconv.Atoi(strport)
-	if err == nil {
-		return port, nil
-	}
-	// TODO: If strport is "" -> err missinng port
-	port, err = c.resolver().LookupPort(ctx, network, strport)
-	return port, err
-}
-
 func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address string) ([]byte, error) {
-	// TODO: Check network type
 	host, strport, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
@@ -243,7 +318,7 @@ func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address 
 	if len(host) > 255 {
 		return nil, fmt.Errorf("too long hostname: %s", host)
 	}
-	port, err := c.lookupPort(ctx, network, strport)
+	port, err := c.Config.lookupPort(ctx, network, strport)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -281,15 +356,15 @@ func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, 
 		return c.dialPacket(ctx, network, address)
 	}
 
-	// TODO: Check network
+	// TODO: Check network type
 	// TODO: Filter addr
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
 	if err != nil {
 		// TODO: Better error
 		return nil, err
 	}
 
-	err = internal.Run5Auth(proxy, &c.Credentials.User, &c.Credentials.Password)
+	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
 	if err != nil {
 		// TODO: Better error
 		proxy.Close()
@@ -327,8 +402,8 @@ func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, 
 // To listen, address = "0.0.0.0:0"
 func (c *Client5) DialPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
 	// TODO: Filter addr
-	// TODO: Check network
-	if c.GostUDPTun {
+	// TODO: Check network type
+	if c.Config.isGostUDPTun() {
 		return c.setupUDPTun(ctx, network, "", address)
 	}
 	return c.dialPacket(ctx, network, address)
@@ -336,8 +411,8 @@ func (c *Client5) DialPacket(ctx context.Context, network, address string) (net.
 
 func (c *Client5) ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
 	// TODO: Filter addr
-	// TODO: Check network
-	if c.GostUDPTun {
+	// TODO: Check network type
+	if c.Config.isGostUDPTun() {
 		return c.setupUDPTun(ctx, network, address, "")
 	}
 	// Standart UDP ASSOC doesn't support listen addr specification
@@ -359,13 +434,13 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 		return nil, err
 	}
 
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
 	if err != nil {
 		// TODO: Better error
 		return nil, err
 	}
 
-	err = internal.Run5Auth(proxy, &c.Credentials.User, &c.Credentials.Password)
+	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
 	if err != nil {
 		// TODO: Better error
 		proxy.Close()
@@ -403,7 +478,7 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 
 	udpaddr := reply.ToNetAddr(network)
 
-	udpconn, err := c.dialer()(ctx, udpaddr.Network(), udpaddr.String())
+	udpconn, err := c.Config.dialer()(ctx, udpaddr.Network(), udpaddr.String())
 
 	if err != nil {
 		// TODO: Better error
@@ -414,11 +489,11 @@ func (c *Client5) dialPacket(ctx context.Context, network, address string) (*pac
 	pc := &packetConn5{
 		conn:          udpconn,
 		defaultHeader: header,
-		pool:          c.Pool,
+		pool:          c.Config.pool(),
 		onclose:       onclose,
 	}
 
-	if c.SpawnUDPProbber {
+	if c.Config.isSpawnUDPProbber() {
 		go func() {
 			buf := []byte{0}
 			for {
@@ -455,13 +530,13 @@ func (c *Client5) setupUDPTun(ctx context.Context, network, laddr, raddr string)
 		}
 	}
 
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
 	if err != nil {
 		// TODO: Better error
 		return nil, err
 	}
 
-	err = internal.Run5Auth(proxy, &c.Credentials.User, &c.Credentials.Password)
+	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
 	if err != nil {
 		// TODO: Better error
 		proxy.Close()
@@ -512,22 +587,23 @@ func (c *Client5) setupUDPTun(ctx context.Context, network, laddr, raddr string)
 	return &packetConn5{
 		conn:          proxy,
 		defaultHeader: header,
-		pool:          c.Pool,
+		pool:          c.Config.pool(),
 		gostTun:       true,
 		la:            n,
 	}, nil
 }
 
 func (c *Client5) Listen(ctx context.Context, network, address string) (net.Listener, error) {
+	// TODO: Check network
 	// TODO: Filter
 
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
 	if err != nil {
 		// TODO: Better error
 		return nil, err
 	}
 
-	err = internal.Run5Auth(proxy, &c.Credentials.User, &c.Credentials.Password)
+	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
 	if err != nil {
 		// TODO: Better error
 		proxy.Close()
@@ -535,7 +611,7 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 	}
 
 	cmd := common.CmdBind
-	if c.GostMbind {
+	if c.Config.isGostMbind() {
 		cmd = common.CmdGostMuxBind
 	}
 	request, err := c.request(ctx, cmd, network, address)
@@ -563,7 +639,7 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
 	}
 
-	if c.GostMbind {
+	if c.Config.isGostMbind() {
 		session, err := smux.Server(proxy, nil)
 		if err != nil {
 			// TODO: Better error
@@ -604,58 +680,9 @@ func (l *listener4) Accept() (net.Conn, error) {
 }
 
 type Client4 struct {
-	// Resolve hostname locally instead of passing it to proxy
-	// For socks4 LocalResolve == false means socks4a
-	LocalResolve bool
-	UserID       string
-	ProxyNet     string
-	ProxyAddr    string
-	// Function to dial connection to socks server
-	Dialer         common.Dialer
-	DirectListener common.Listener
-	Resolver       common.Resolver
-	DirectFilter   common.DirectFilter
-}
-
-func (c *Client4) dialFilter(network, address string) bool {
-	filter := c.DirectFilter
-	if filter == nil {
-		filter = DirectLoopback
-	}
-	return filter(network, address)
-}
-
-func (c *Client4) listener() common.Listener {
-	if c.DirectListener == nil {
-		return (&net.ListenConfig{}).Listen
-	}
-	return c.DirectListener
-}
-
-func (c *Client4) resolver() common.Resolver {
-	if c.Resolver == nil {
-		return net.DefaultResolver
-	}
-	return c.Resolver
-}
-
-func (c *Client4) dialer() common.Dialer {
-	if c.Dialer == nil {
-		return func(ctx context.Context, network, address string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, network, address)
-		}
-	}
-	return c.Dialer
-}
-
-func (c *Client4) lookupPort(ctx context.Context, network, strport string) (port int, err error) {
-	// TODO: If strport is "" -> err missinng port
-	port, err = strconv.Atoi(strport)
-	if err == nil {
-		return port, nil
-	}
-	port, err = c.resolver().LookupPort(ctx, network, strport)
-	return port, err
+	ProxyNet  string
+	ProxyAddr string
+	Config    *ClientConfig
 }
 
 func (c *Client4) proxynet() string {
@@ -684,26 +711,26 @@ func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address 
 		// TODO: Better error
 		return nil, nil, 0, err
 	}
-	port, err := c.lookupPort(ctx, "tcp4", strport)
+	port, err := c.Config.lookupPort(ctx, "tcp4", strport)
 	if err != nil {
 		// TODO: Better error
 		return nil, nil, 0, err
 	}
 	var request []byte = nil
-	if !c.LocalResolve {
+	if !c.Config.LocalResolve {
 		// request = c.request4a(cmd, host, uint16(port))
-		request = internal.Make4aTCPRequest(cmd, host, uint16(port), c.UserID)
+		request = internal.Make4aTCPRequest(cmd, host, uint16(port), c.Config.user())
 	} else {
-		ips, err := c.resolver().LookupIP(ctx, "ip4", host)
+		ips, err := c.Config.resolver().LookupIP(ctx, "ip4", host)
 		if err != nil {
 			// TODO: Better error
 			return nil, nil, 0, err
 		}
 		// request = c.request4(cmd, ips[0].To4(), uint16(port))
-		request = internal.Make4TCPRequest(cmd, ips[0].To4(), uint16(port), c.UserID)
+		request = internal.Make4TCPRequest(cmd, ips[0].To4(), uint16(port), c.Config.user())
 	}
 
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
 	if err != nil {
 		// TODO: Better error
 		return nil, nil, 0, err
@@ -737,8 +764,8 @@ func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address 
 }
 
 func (c *Client4) Listen(ctx context.Context, network, address string) (net.Listener, error) {
-	if !c.dialFilter(network, address) {
-		return c.listener()(ctx, network, address)
+	if !c.Config.dialFilter(network, address) {
+		return c.Config.listener()(ctx, network, address)
 	}
 	conn, ip, port, err := c.request(ctx, common.CmdBind, network, address)
 	if err != nil {
@@ -758,8 +785,8 @@ func (c *Client4) Listen(ctx context.Context, network, address string) (net.List
 }
 
 func (c *Client4) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	if !c.dialFilter(network, address) {
-		return c.dialer()(ctx, network, address)
+	if !c.Config.dialFilter(network, address) {
+		return c.Config.dialer()(ctx, network, address)
 	}
 	conn, _, _, err := c.request(ctx, common.CmdConnect, network, address)
 	if err != nil {
