@@ -610,7 +610,7 @@ func TestWrite5ToUDPFQDN(t *testing.T) {
 			writer: &recordingWriter{},
 			// original function returns fmt.Errorf("too long hostname")
 			wantN:   0,
-			wantErr: errors.New("too long hostname"),
+			wantErr: errors.New("too long hostname: " + strings.Repeat("a", 256)),
 		},
 	}
 

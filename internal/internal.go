@@ -12,7 +12,11 @@ import (
 	"github.com/asciimoth/socks/common"
 )
 
-const MAX_HEADER_LEN = 262
+const (
+	MAX_SOCKS5_TCP_HEADER_LEN = 262
+	MAX_HEADER_STR_LENGTH     = 255
+	GOST_UDP_FRAG_FLAG        = 255
+)
 
 func writeAll(w io.Writer, data []byte) error {
 	for len(data) > 0 {
@@ -109,8 +113,7 @@ func Make4aTCPRequest(cmd common.Cmd, host string, port uint16, uid string) []by
 
 // TODO: Test
 func Make5Request(cmd common.Cmd, host string, port uint16) ([]byte, error) {
-	if len(host) > 255 {
-		// TODO: Better error
+	if len(host) > MAX_HEADER_STR_LENGTH {
 		return nil, fmt.Errorf("too long hostname: %s", host)
 	}
 
@@ -120,10 +123,10 @@ func Make5Request(cmd common.Cmd, host string, port uint16) ([]byte, error) {
 	if ip != nil {
 		if ip.To4() != nil {
 			atyp = common.IP4Addr
-			addrlen = 4
+			addrlen = 4 // IPv4 addr len
 		} else {
 			atyp = common.IP6Addr
-			addrlen = 16
+			addrlen = 16 // IPv6 addr len
 		}
 	}
 	request := make([]byte, 0, 6+addrlen)
@@ -145,12 +148,9 @@ func Make5Request(cmd common.Cmd, host string, port uint16) ([]byte, error) {
 // TODO: Test
 func Read4TCPResponse(reader io.Reader) (net.IP, uint16, error) {
 	var resp [8]byte
-	i, err := reader.Read(resp[:])
+	_, err := io.ReadFull(reader, resp[:])
 	if err != nil {
 		return nil, 0, err
-	} else if i != 8 {
-		// TODO: Better error
-		return nil, 0, fmt.Errorf("Unexpected EOF")
 	}
 
 	switch common.CmdResp4(resp[1]) {
@@ -228,7 +228,7 @@ func Read5UDP(
 	needAddr bool, // If false addr is allways nil. (optimisation option)
 ) (n int, addr net.Addr, err error) {
 	// TODO: Rewrite bufffer handling
-	buf := common.GetBuffer(pool, len(p)+MAX_HEADER_LEN)
+	buf := common.GetBuffer(pool, len(p)+MAX_SOCKS5_TCP_HEADER_LEN)
 	defer common.PutBuffer(pool, buf)
 loop:
 	for {
@@ -245,7 +245,7 @@ loop:
 			// TODO: Implement fragmentation support
 			continue
 		}
-		start := 0
+		start := 0 // Place in pkg where paylaod starts
 		switch common.AddrType(buf[3]) {
 		case common.IP4Addr:
 			if nn < 10 {
@@ -310,8 +310,8 @@ func Read5UDPTun(
 	needAddr bool, // If false addr is allways nil. (optimisation option)
 ) (n int, addr net.Addr, err error) {
 	hbuf := p // Header buffer
-	if len(hbuf) < MAX_HEADER_LEN {
-		hbuf = make([]byte, MAX_HEADER_LEN)
+	if len(hbuf) < MAX_SOCKS5_TCP_HEADER_LEN {
+		hbuf = make([]byte, MAX_SOCKS5_TCP_HEADER_LEN)
 	}
 	for {
 		skip := false
@@ -326,7 +326,7 @@ func Read5UDPTun(
 		fb := hbuf[4]                                  // First byte of addr
 
 		// If frag, then we should just read whole package and drop it
-		frag := hbuf[2] != 0 && hbuf[2] != 255
+		frag := hbuf[2] != 0 && hbuf[2] != GOST_UDP_FRAG_FLAG
 
 		if frag {
 			skip = true
@@ -379,8 +379,6 @@ func Read5UDPTun(
 				}
 			}
 		default:
-			// Unknown address type
-			// TODO: Better errror
 			return 0, nil, fmt.Errorf("Unknown atyp: %s", atyp)
 		}
 		if len(p) < plen {
@@ -417,7 +415,7 @@ func Header5UDP(
 	buf = binary.BigEndian.AppendUint16(buf, uint16(plen))
 	frag := byte(0)
 	if plen != 0 {
-		frag = 255
+		frag = GOST_UDP_FRAG_FLAG
 	}
 	buf = append(
 		buf,
@@ -434,7 +432,6 @@ func Header5UDP(
 }
 
 func BuildHeader5UDP(addr string, gostTun bool) ([]byte, error) {
-	// TODO: Support gost tun
 	host, strport, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -461,9 +458,8 @@ func BuildHeader5UDP(addr string, gostTun bool) ([]byte, error) {
 		}
 	}
 
-	if len(host) > 255 {
-		// TODO: Better error
-		return nil, fmt.Errorf("too long hostname")
+	if len(host) > MAX_HEADER_STR_LENGTH {
+		return nil, fmt.Errorf("too long hostname: %s", host)
 	}
 
 	if gostTun {
@@ -546,9 +542,8 @@ func Write5ToUDPFQDN(
 		return Write5ToUDPaddr(pool, writer, p, ip, uint16(port), gostUDPTun)
 	}
 
-	if len(host) > 255 {
-		// TODO: Better error
-		return 0, fmt.Errorf("too long hostname")
+	if len(host) > MAX_HEADER_STR_LENGTH {
+		return 0, fmt.Errorf("too long hostname: %s", host)
 	}
 
 	plen := uint16(0)
@@ -580,10 +575,10 @@ func Write5ToUDPFQDN(
 func Run5PassAuthHandshake(conn net.Conn, uid, password string) error {
 	user := []byte(uid)
 	pass := []byte(password)
-	if len(user) > 255 {
+	if len(user) > MAX_HEADER_STR_LENGTH {
 		return fmt.Errorf("too big username: %d bytes", len(user))
 	}
-	if len(pass) > 255 {
+	if len(pass) > MAX_HEADER_STR_LENGTH {
 		return fmt.Errorf("too big password: %d bytes", len(pass))
 	}
 
@@ -596,22 +591,16 @@ func Run5PassAuthHandshake(conn net.Conn, uid, password string) error {
 
 	_, err := io.Copy(conn, bytes.NewReader(pack))
 	if err != nil {
-		// TODO: Better error
 		return err
 	}
 
 	var resp [2]byte
-	i, err := conn.Read(resp[:])
+	_, err = io.ReadFull(conn, resp[:])
 	if err != nil {
-		// TODO: Better error
 		return err
-	} else if i != 2 {
-		// TODO: Better error
-		return fmt.Errorf("Unexpected EOF")
 	}
 
 	if resp[1] != 0 {
-		// TODO: Better error
 		return fmt.Errorf("user/pass auth failed")
 	}
 
@@ -631,13 +620,11 @@ func Run5Auth(conn net.Conn, uid, password *string) error {
 		return err
 	}
 	var resp [2]byte
-	i, err := conn.Read(resp[:])
+	_, err = io.ReadFull(conn, resp[:])
 	if err != nil {
 		return err
-	} else if i != 2 {
-		// TODO: Better error
-		return fmt.Errorf("Unexpected EOF")
 	}
+
 	method := common.AuthMethod(resp[1])
 	switch method {
 	case common.NoAuth:
