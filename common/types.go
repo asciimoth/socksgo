@@ -155,21 +155,6 @@ func (cmd CmdResp4) String() string {
 }
 
 type BufferPool interface {
-	GetBuffer(size int) []byte
+	GetBuffer(length int) []byte
 	PutBuffer(buf []byte)
-}
-
-func GetBuffer(pool BufferPool, size int) []byte {
-	if pool == nil {
-		return make([]byte, size)
-	}
-	return pool.GetBuffer(size)
-}
-
-func PutBuffer(pool BufferPool, buf []byte) {
-	if pool == nil {
-		return
-	}
-	pool.PutBuffer(buf)
-
 }

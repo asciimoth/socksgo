@@ -18,6 +18,21 @@ const (
 	GOST_UDP_FRAG_FLAG        = 255
 )
 
+func GetBuffer(pool common.BufferPool, size int) []byte {
+	if pool == nil {
+		return make([]byte, size)
+	}
+	return pool.GetBuffer(size)
+}
+
+func PutBuffer(pool common.BufferPool, buf []byte) {
+	if pool == nil {
+		return
+	}
+	pool.PutBuffer(buf)
+
+}
+
 func writeAll(w io.Writer, data []byte) error {
 	for len(data) > 0 {
 		n, err := w.Write(data)
@@ -228,8 +243,8 @@ func Read5UDP(
 	needAddr bool, // If false addr is allways nil. (optimisation option)
 ) (n int, addr net.Addr, err error) {
 	// TODO: Rewrite bufffer handling
-	buf := common.GetBuffer(pool, len(p)+MAX_SOCKS5_TCP_HEADER_LEN)
-	defer common.PutBuffer(pool, buf)
+	buf := GetBuffer(pool, len(p)+MAX_SOCKS5_TCP_HEADER_LEN)
+	defer PutBuffer(pool, buf)
 loop:
 	for {
 		nn, err := conn.Read(buf)
@@ -383,12 +398,12 @@ func Read5UDPTun(
 		}
 		if len(p) < plen {
 			// Read with tmp buffer
-			tmpbuf := common.GetBuffer(pool, plen)
+			tmpbuf := GetBuffer(pool, plen)
 			_, err = io.ReadFull(conn, tmpbuf)
 			if err == nil {
 				n = copy(p, tmpbuf)
 			}
-			common.PutBuffer(pool, tmpbuf)
+			PutBuffer(pool, tmpbuf)
 		} else {
 			n, err = io.ReadFull(conn, p[:plen])
 		}
@@ -485,8 +500,8 @@ func Write5ToUDPaddr(
 	}
 
 	if ip4 := ip.To4(); ip4 != nil {
-		buf := common.GetBuffer(pool, len(p)+10)
-		defer common.PutBuffer(pool, buf)
+		buf := GetBuffer(pool, len(p)+10)
+		defer PutBuffer(pool, buf)
 		buf = buf[:0]
 		buf = Header5UDP(buf, common.IP4Addr, ip4, uint16(port), plen)
 		buf = append(buf, p...)
@@ -502,8 +517,8 @@ func Write5ToUDPaddr(
 		return n, nil
 	}
 
-	buf := common.GetBuffer(pool, len(p)+22)
-	defer common.PutBuffer(pool, buf)
+	buf := GetBuffer(pool, len(p)+22)
+	defer PutBuffer(pool, buf)
 	buf = buf[:0]
 	buf = Header5UDP(buf, common.IP6Addr, ip.To16(), uint16(port), plen)
 	buf = append(buf, p...)
@@ -554,8 +569,8 @@ func Write5ToUDPFQDN(
 		plen = uint16(len(p))
 	}
 
-	buf := common.GetBuffer(pool, len(p)+7+len(host))
-	defer common.PutBuffer(pool, buf)
+	buf := GetBuffer(pool, len(p)+7+len(host))
+	defer PutBuffer(pool, buf)
 	buf = buf[:0]
 	buf = Header5UDP(buf, common.DomAddr, []byte(host), uint16(port), plen)
 	buf = append(buf, p...)

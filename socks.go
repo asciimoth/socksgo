@@ -202,8 +202,8 @@ func (pc *packetConn5) Write(b []byte) (n int, err error) {
 		b = b[:65535]
 	}
 
-	buf := common.GetBuffer(pc.pool, len(pc.defaultHeader)+len(b))
-	defer common.PutBuffer(pc.pool, buf)
+	buf := internal.GetBuffer(pc.pool, len(pc.defaultHeader)+len(b))
+	defer internal.PutBuffer(pc.pool, buf)
 	buf = buf[:0]
 
 	if pc.gostTun {
