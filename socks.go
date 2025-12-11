@@ -112,6 +112,13 @@ type ClientConfig struct {
 	Smux *SmuxConfig
 }
 
+func (cc *ClientConfig) getSmux() *smux.Config {
+	if cc == nil {
+		return nil
+	}
+	return cc.Smux.to()
+}
+
 func (cc *ClientConfig) pool() common.BufferPool {
 	if cc == nil {
 		return nil
@@ -604,7 +611,7 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 	}
 
 	if c.Config.isGostMbind() {
-		session, err := smux.Server(proxy, c.Config.Smux.to())
+		session, err := smux.Server(proxy, c.Config.getSmux())
 		if err != nil {
 			// TODO: Better error
 			proxy.Close()
