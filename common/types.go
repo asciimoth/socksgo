@@ -54,7 +54,17 @@ const (
 	ConnRefusedReply ReplyStatus = 0x5
 	TTLExpiredReply  ReplyStatus = 0x6
 	CmdNotSuppReply  ReplyStatus = 0x7
-	AddrNotSuppReply ReplyStatus = 0x8
+	AddrNotSuppReply ReplyStatus = 0x80
+	// Codes from tor's socks extension
+	// https://spec.torproject.org/socks-extensions.html
+	TorDescNotFound ReplyStatus = 0xf0
+	TorDescInvalid  ReplyStatus = 0xf1
+	TorIntroFail    ReplyStatus = 0xf2
+	TorRendFailed   ReplyStatus = 0xf3
+	TorMissAuth     ReplyStatus = 0xf4
+	TorWrongAuth    ReplyStatus = 0xf5
+	TorInvalidAddr  ReplyStatus = 0xf6
+	TorIntroTimeOut ReplyStatus = 0xf7
 )
 
 type ReplyStatus uint8
@@ -79,6 +89,22 @@ func (r ReplyStatus) String() string {
 		return "command not supported"
 	case AddrNotSuppReply:
 		return "address type not supported"
+	case TorDescNotFound:
+		return "onion service descriptor can not be found"
+	case TorDescInvalid:
+		return "onion service descriptor is invalid"
+	case TorIntroFail:
+		return "onion service introduction failed"
+	case TorRendFailed:
+		return "onion service rendezvous failed"
+	case TorMissAuth:
+		return "onion service missing client authorization"
+	case TorWrongAuth:
+		return "onion service wrong client authorization"
+	case TorInvalidAddr:
+		return "onion service invalid address"
+	case TorIntroTimeOut:
+		return "onion service introduction timed out"
 	default:
 		return "reply code no" + strconv.Itoa(int(r))
 	}
