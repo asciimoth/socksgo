@@ -14,6 +14,8 @@ import (
 	"github.com/asciimoth/socks/internal"
 )
 
+// TODO: Tests for buffers leaks
+
 // fakePacketConn implements internal.ReaderConn. It returns a sequence of byte slices
 // on successive Read calls and provides a LocalAddr.
 type fakePacketConn struct {

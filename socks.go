@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,9 +16,14 @@ import (
 	"github.com/xtaci/smux"
 )
 
-var networks = []string{
-	"tcp", "tcp4", "tcp6",
-	"udp", "udp4", "udp6",
+var networks = map[string]string{
+	"tcp":  "ip",
+	"tcp4": "ip4",
+	"tcp6": "ip6",
+
+	"udp":  "ip",
+	"udp4": "ip4",
+	"udp6": "ip6",
 }
 
 func PassAll(_, _ string) bool {
@@ -113,6 +117,13 @@ func (cc *ClientConfig) pool() common.BufferPool {
 		return nil
 	}
 	return cc.Pool
+}
+
+func (cc *ClientConfig) isLocalResolve() bool {
+	if cc == nil {
+		return false
+	}
+	return cc.LocalResolve
 }
 
 func (cc *ClientConfig) isGostUDPTun() bool {
@@ -363,7 +374,9 @@ func (c *Client5) proxyaddr() string {
 func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address string) (net.Conn, internal.Socks5Reply, error) {
 	var reply internal.Socks5Reply
 
-	if !slices.Contains(networks, network) {
+	nettyp, ok := networks[network]
+
+	if !ok {
 		// TODO: Better error
 		return nil, reply, net.UnknownNetworkError(network)
 	}
@@ -392,7 +405,15 @@ func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address 
 		return nil, reply, err
 	}
 
-	// request, err := c.request(ctx, common.CmdConnect, network, address)
+	if c.Config.isLocalResolve() {
+		ips, err := c.Config.resolver().LookupIP(ctx, nettyp, host)
+		if err != nil {
+			// TODO: Better error
+			return nil, reply, err
+		}
+		host = ips[0].String()
+	}
+
 	request, err := internal.Make5Request(cmd, host, uint16(port))
 	if err != nil {
 		// TODO: Better error
@@ -660,8 +681,7 @@ func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address 
 		return nil, nil, 0, err
 	}
 	var request []byte = nil
-	if !c.Config.LocalResolve {
-		// request = c.request4a(cmd, host, uint16(port))
+	if !c.Config.isLocalResolve() {
 		request = internal.Make4aTCPRequest(cmd, host, uint16(port), c.Config.user())
 	} else {
 		ips, err := c.Config.resolver().LookupIP(ctx, "ip4", host)
@@ -669,7 +689,6 @@ func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address 
 			// TODO: Better error
 			return nil, nil, 0, err
 		}
-		// request = c.request4(cmd, ips[0].To4(), uint16(port))
 		request = internal.Make4TCPRequest(cmd, ips[0].To4(), uint16(port), c.Config.user())
 	}
 
