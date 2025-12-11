@@ -49,6 +49,48 @@ var (
 	_ net.PacketConn = &packetConn5{}
 )
 
+type SmuxConfig struct {
+	// SMUX Protocol version, support 1,2
+	Version int
+
+	// Disabled keepalive
+	KeepAliveDisabled bool
+
+	// KeepAliveInterval is how often to send a NOP command to the remote
+	KeepAliveInterval time.Duration
+
+	// KeepAliveTimeout is how long the session
+	// will be closed if no data has arrived
+	KeepAliveTimeout time.Duration
+
+	// MaxFrameSize is used to control the maximum
+	// frame size to sent to the remote
+	MaxFrameSize int
+
+	// MaxReceiveBuffer is used to control the maximum
+	// number of data in the buffer pool
+	MaxReceiveBuffer int
+
+	// MaxStreamBuffer is used to control the maximum
+	// number of data per stream
+	MaxStreamBuffer int
+}
+
+func (s *SmuxConfig) to() *smux.Config {
+	if s == nil {
+		return nil
+	}
+	return &smux.Config{
+		Version:           s.Version,
+		KeepAliveDisabled: s.KeepAliveDisabled,
+		KeepAliveInterval: s.KeepAliveInterval,
+		KeepAliveTimeout:  s.KeepAliveTimeout,
+		MaxFrameSize:      s.MaxFrameSize,
+		MaxReceiveBuffer:  s.MaxReceiveBuffer,
+		MaxStreamBuffer:   s.MaxStreamBuffer,
+	}
+}
+
 type ClientConfig struct {
 	GostMbind       bool
 	GostUDPTun      bool
@@ -62,6 +104,8 @@ type ClientConfig struct {
 	DirectFilter common.DirectFilter
 	Credentials  *Credentials
 	Pool         common.BufferPool
+
+	Smux *SmuxConfig
 }
 
 func (cc *ClientConfig) pool() common.BufferPool {
@@ -539,7 +583,7 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 	}
 
 	if c.Config.isGostMbind() {
-		session, err := smux.Server(proxy, nil)
+		session, err := smux.Server(proxy, c.Config.Smux.to())
 		if err != nil {
 			// TODO: Better error
 			proxy.Close()
