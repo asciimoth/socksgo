@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,10 @@ import (
 	"github.com/asciimoth/socks/common"
 	"github.com/asciimoth/socks/internal"
 	"github.com/xtaci/smux"
+)
+
+var (
+	ResolveDisabledErr = errors.New("tor resolve extension for socks is disabled")
 )
 
 var networks = map[string]string{
@@ -98,6 +103,7 @@ func (s *SmuxConfig) to() *smux.Config {
 type ClientConfig struct {
 	GostMbind       bool
 	GostUDPTun      bool
+	TorLookup       bool
 	SpawnUDPProbber bool
 	Dialer          common.Dialer
 	DirectListener  common.Listener
@@ -124,6 +130,13 @@ func (cc *ClientConfig) pool() common.BufferPool {
 		return nil
 	}
 	return cc.Pool
+}
+
+func (cc *ClientConfig) isTorLookup() bool {
+	if cc == nil {
+		return false
+	}
+	return cc.TorLookup
 }
 
 func (cc *ClientConfig) isLocalResolve() bool {
@@ -393,6 +406,7 @@ func (c *Client5) request(ctx context.Context, cmd common.Cmd, network, address 
 		// TODO: Better error
 		return nil, reply, err
 	}
+
 	port, err := c.Config.lookupPort(ctx, network, strport)
 	if err != nil {
 		// TODO: Better error
@@ -629,6 +643,115 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 	}, nil
 }
 
+func (c *Client5) lookup(
+	ctx context.Context,
+	cmd common.Cmd,
+	network, address string,
+) (*internal.Socks5Reply, error) {
+	if cmd != common.CmdTorResolvePtr && network != "ip" && network != "ip4" && network != "ip6" {
+		return nil, &net.DNSError{
+			UnwrapErr:  net.UnknownNetworkError(network),
+			Err:        fmt.Sprintf("network type is unsupported: %s", network),
+			Name:       address,
+			IsNotFound: true,
+		}
+	}
+
+	if !c.Config.isTorLookup() {
+		return nil, &net.DNSError{
+			UnwrapErr: ResolveDisabledErr,
+			Err:       ResolveDisabledErr.Error(),
+			Name:      address,
+		}
+	}
+
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	err = internal.Run5Auth(proxy, c.Config.nuser(), c.Config.npass())
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	request, err := internal.Make5Request(cmd, address, 0)
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	_, err = io.Copy(proxy, bytes.NewReader(request))
+	if err != nil {
+		// TODO: Better error
+		proxy.Close()
+		return nil, err
+	}
+
+	reply, err := internal.Read5TCPResponse(proxy)
+	proxy.Close()
+
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	if reply.Rep != common.SuccReply {
+		// TODO: Better error
+		return nil, fmt.Errorf("reply status: %s", reply.Rep.String())
+	}
+
+	return &reply, nil
+}
+
+func (c *Client5) LookupIP(ctx context.Context, network, address string) ([]net.IP, error) {
+	if c.Config.isLocalResolve() {
+		return c.Config.resolver().LookupIP(ctx, network, address)
+	}
+
+	if !c.Config.dialFilter(network, address) {
+		return c.Config.resolver().LookupIP(ctx, network, address)
+	}
+
+	reply, err := c.lookup(ctx, common.CmdTorResolve, network, address)
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	switch reply.Atyp {
+	case common.IP4Addr:
+		return []net.IP{net.IP(reply.Addr)}, nil
+	case common.IP6Addr:
+		return []net.IP{net.IP(reply.Addr)}, nil
+	}
+
+	// TODO: Better error
+	return nil, fmt.Errorf("wrong addr type in responce: %s", reply.Atyp.String())
+}
+
+func (c *Client5) LookupAddr(ctx context.Context, address string) ([]string, error) {
+	if c.Config.isLocalResolve() {
+		return c.Config.resolver().LookupAddr(ctx, address)
+	}
+
+	if !c.Config.dialFilter("", address) {
+		return c.Config.resolver().LookupAddr(ctx, address)
+	}
+
+	reply, err := c.lookup(ctx, common.CmdTorResolvePtr, "", address)
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	return []string{reply.ToNetAddr("").String()}, nil
+}
+
 type listener4 struct {
 	addr internal.NetAddr
 	conn net.Conn
@@ -762,4 +885,55 @@ func (c *Client4) Dial(ctx context.Context, network, address string) (net.Conn, 
 		return nil, err
 	}
 	return conn, err
+}
+
+func (c *Client4) LookupIP(ctx context.Context, network, address string) ([]net.IP, error) {
+	if network != "ip" && network != "ip4" {
+		return nil, &net.DNSError{
+			UnwrapErr:  net.UnknownNetworkError(network),
+			Err:        fmt.Sprintf("network type is unsupported: %s", network),
+			Name:       address,
+			IsNotFound: true,
+		}
+	}
+
+	if !c.Config.isTorLookup() {
+		return nil, &net.DNSError{
+			UnwrapErr: ResolveDisabledErr,
+			Err:       ResolveDisabledErr.Error(),
+			Name:      address,
+		}
+	}
+
+	if c.Config.isLocalResolve() {
+		return c.Config.resolver().LookupIP(ctx, network, address)
+	}
+
+	if !c.Config.dialFilter(network, address) {
+		return c.Config.resolver().LookupIP(ctx, network, address)
+	}
+
+	request := internal.Make4aTCPRequest(common.CmdTorResolve, address, 0, c.Config.user())
+
+	proxy, err := c.Config.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	_, err = io.Copy(proxy, bytes.NewReader(request))
+	if err != nil {
+		proxy.Close()
+		// TODO: Better error
+		return nil, err
+	}
+
+	ip, _, err := internal.Read4TCPResponse(proxy)
+	if err != nil {
+		proxy.Close()
+		// TODO: Better error
+		return nil, err
+	}
+
+	return []net.IP{ip}, err
 }

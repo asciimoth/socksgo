@@ -9,6 +9,7 @@ import (
 type Resolver interface {
 	LookupPort(ctx context.Context, network, service string) (port int, err error)
 	LookupIP(ctx context.Context, network, host string) ([]net.IP, error)
+	LookupAddr(ctx context.Context, address string) ([]string, error)
 }
 
 type Dialer = func(ctx context.Context, network, address string) (net.Conn, error)
@@ -16,6 +17,7 @@ type Dialer = func(ctx context.Context, network, address string) (net.Conn, erro
 type Listener = func(ctx context.Context, network, address string) (net.Listener, error)
 
 // Return true if dial should go through a proxy, false if direct
+// network may be "" if it is unknown
 type DirectFilter = func(network, address string) bool
 
 const (
@@ -26,11 +28,13 @@ const (
 	V4aName = "socks4a"
 	V5aName = "socks5"
 
-	CmdConnect     Cmd = 0x01
-	CmdBind        Cmd = 0x02
-	CmdUDPAssoc    Cmd = 0x03
-	CmdGostMuxBind Cmd = 0xF2
-	CmdGostUDPTun  Cmd = 0xF3
+	CmdConnect       Cmd = 0x01
+	CmdBind          Cmd = 0x02
+	CmdUDPAssoc      Cmd = 0x03
+	CmdTorResolve    Cmd = 0xF0
+	CmdTorResolvePtr Cmd = 0xF1
+	CmdGostMuxBind   Cmd = 0xF2
+	CmdGostUDPTun    Cmd = 0xF3
 
 	Cmdr4Granted       CmdResp4 = 90
 	Cmdr4Rejected      CmdResp4 = 91
@@ -158,6 +162,10 @@ func (cmd Cmd) String() string {
 		return "cmd bind"
 	case CmdUDPAssoc:
 		return "cmd UDP associate"
+	case CmdTorResolve:
+		return "cmd tor resolve"
+	case CmdTorResolvePtr:
+		return "cmd tor resolve_ptr"
 	default:
 		return "cmd no" + strconv.Itoa(int(cmd))
 	}

@@ -215,7 +215,7 @@ func Read5TCPResponse(reader io.Reader) (Socks5Reply, error) {
 		if err != nil {
 			return Socks5Reply{}, err
 		}
-		addr := make([]byte, int(ln[0]))
+		addr = make([]byte, int(ln[0]))
 		_, err = io.ReadFull(reader, addr)
 		if err != nil {
 			return Socks5Reply{}, err
