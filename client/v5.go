@@ -31,7 +31,9 @@ type packetConn5 struct {
 }
 
 func (pc *packetConn5) Close() error {
-	pc.onclose()
+	if pc.onclose != nil {
+		pc.onclose()
+	}
 	return pc.conn.Close()
 }
 
