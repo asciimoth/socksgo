@@ -38,7 +38,12 @@ type Client4 struct {
 	Config
 }
 
-func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address string) (net.Conn, net.IP, uint16, error) {
+func (c *Client4) request(
+	ctx context.Context,
+	cmd common.Cmd,
+	network, address string,
+	proxy net.Conn,
+) (net.Conn, net.IP, uint16, error) {
 	if network != "tcp4" && network != "tcp" {
 		// TODO: Better error
 		return nil, nil, 0, net.UnknownNetworkError(network)
@@ -66,10 +71,12 @@ func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address 
 		request = internal.Make4TCPRequest(cmd, ips[0].To4(), uint16(port), c.user())
 	}
 
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-	if err != nil {
-		// TODO: Better error
-		return nil, nil, 0, err
+	if proxy == nil {
+		proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+		if err != nil {
+			// TODO: Better error
+			return nil, nil, 0, err
+		}
 	}
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
@@ -99,11 +106,11 @@ func (c *Client4) request(ctx context.Context, cmd common.Cmd, network, address 
 	return proxy, incIp, incPort, nil
 }
 
-func (c *Client4) Listen(ctx context.Context, network, address string) (net.Listener, error) {
+func (c *Client4) ListenWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Listener, error) {
 	if !c.dialFilter(network, address) {
 		return c.listener()(ctx, network, address)
 	}
-	conn, ip, port, err := c.request(ctx, common.CmdBind, network, address)
+	conn, ip, port, err := c.request(ctx, common.CmdBind, network, address, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -120,18 +127,33 @@ func (c *Client4) Listen(ctx context.Context, network, address string) (net.List
 	}, nil
 }
 
+func (c *Client4) Listen(ctx context.Context, network, address string) (net.Listener, error) {
+	return c.ListenWithConn(ctx, network, address, nil)
+}
+
 func (c *Client4) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	if !c.dialFilter(network, address) {
 		return c.dialer()(ctx, network, address)
 	}
-	conn, _, _, err := c.request(ctx, common.CmdConnect, network, address)
+	conn, _, _, err := c.request(ctx, common.CmdConnect, network, address, nil)
 	if err != nil {
 		return nil, err
 	}
 	return conn, err
 }
 
-func (c *Client4) LookupIP(ctx context.Context, network, address string) ([]net.IP, error) {
+func (c *Client4) DialWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Conn, error) {
+	if !c.dialFilter(network, address) {
+		return c.dialer()(ctx, network, address)
+	}
+	conn, _, _, err := c.request(ctx, common.CmdConnect, network, address, conn)
+	if err != nil {
+		return nil, err
+	}
+	return conn, err
+}
+
+func (c *Client4) LookupIPWithConn(ctx context.Context, network, address string, conn net.Conn) ([]net.IP, error) {
 	if network != "ip" && network != "ip4" {
 		return nil, &net.DNSError{
 			UnwrapErr:  net.UnknownNetworkError(network),
@@ -159,10 +181,14 @@ func (c *Client4) LookupIP(ctx context.Context, network, address string) ([]net.
 
 	request := internal.Make4aTCPRequest(common.CmdTorResolve, address, 0, c.user())
 
-	proxy, err := c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-	if err != nil {
-		// TODO: Better error
-		return nil, err
+	proxy := conn
+	var err error
+	if proxy == nil {
+		proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+		if err != nil {
+			// TODO: Better error
+			return nil, err
+		}
 	}
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
@@ -182,6 +208,10 @@ func (c *Client4) LookupIP(ctx context.Context, network, address string) ([]net.
 	return []net.IP{ip}, err
 }
 
+func (c *Client4) LookupIP(ctx context.Context, network, address string) ([]net.IP, error) {
+	return c.LookupIPWithConn(ctx, network, address, nil)
+}
+
 func (c *Client4) String() string {
 	ver := "4a"
 	if c.LocalResolve {
@@ -199,12 +229,27 @@ func (c *client4ToClientWrapper) DialPacket(_ context.Context, _, _ string) (net
 	return nil, errors.New("UDP related features are not avalable in 4 ver of socks protocol")
 }
 
+func (c *client4ToClientWrapper) DialPacketWithConn(_ context.Context, _, _ string, _ net.Conn) (net.PacketConn, error) {
+	// TODO: Better error
+	return nil, errors.New("UDP related features are not avalable in 4 ver of socks protocol")
+}
+
 func (c *client4ToClientWrapper) ListenPacket(_ context.Context, _, _ string) (net.PacketConn, error) {
 	// TODO: Better error
 	return nil, errors.New("UDP related features are not avalable in 4 ver of socks protocol")
 }
 
+func (c *client4ToClientWrapper) ListenPacketWithConn(_ context.Context, _, _ string, _ net.Conn) (net.PacketConn, error) {
+	// TODO: Better error
+	return nil, errors.New("UDP related features are not avalable in 4 ver of socks protocol")
+}
+
 func (c *client4ToClientWrapper) LookupAddr(_ context.Context, _ string) ([]string, error) {
+	// TODO: Better error
+	return nil, errors.New("reverse lookup not avalable in 4 ver of socks protocol")
+}
+
+func (c *client4ToClientWrapper) LookupAddrWithConn(_ context.Context, _ string, _ net.Conn) ([]string, error) {
 	// TODO: Better error
 	return nil, errors.New("reverse lookup not avalable in 4 ver of socks protocol")
 }

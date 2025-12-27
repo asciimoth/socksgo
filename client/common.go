@@ -45,13 +45,19 @@ func DirectLoopback(_, address string) bool {
 
 type Client interface {
 	Dial(ctx context.Context, network, address string) (net.Conn, error)
+	DialWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Conn, error)
 	Listen(ctx context.Context, network, address string) (net.Listener, error)
+	ListenWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Listener, error)
 
 	DialPacket(ctx context.Context, network, address string) (net.PacketConn, error)
+	DialPacketWithConn(ctx context.Context, network, address string, conn net.Conn) (net.PacketConn, error)
 	ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error)
+	ListenPacketWithConn(ctx context.Context, network, address string, conn net.Conn) (net.PacketConn, error)
 
 	LookupIP(ctx context.Context, network, address string) ([]net.IP, error)
+	LookupIPWithConn(ctx context.Context, network, address string, conn net.Conn) ([]net.IP, error)
 	LookupAddr(ctx context.Context, address string) ([]string, error)
+	LookupAddrWithConn(ctx context.Context, address string, conn net.Conn) ([]string, error)
 }
 
 // TODO: Document url options
