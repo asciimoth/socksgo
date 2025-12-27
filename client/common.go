@@ -61,13 +61,7 @@ type Client interface {
 }
 
 // TODO: Document url options
-func ClientFomURL(urlstr string, mods ...ConfigMod) (Client, error) {
-	u, err := url.Parse(urlstr)
-	if err != nil {
-		// TODO: Better error
-		return nil, err
-	}
-
+func ClientFomURLObj(u *url.URL, mods ...ConfigMod) (Client, error) {
 	scheme := strings.ToLower(u.Scheme)
 
 	if scheme == "socks" || scheme == "socks5" || scheme == "socks5h" {
@@ -102,4 +96,15 @@ func ClientFomURL(urlstr string, mods ...ConfigMod) (Client, error) {
 
 	// TODO: Better error
 	return nil, errors.New("unknown scheme: " + u.Scheme)
+}
+
+// TODO: Document url options
+func ClientFomURL(urlstr string, mods ...ConfigMod) (Client, error) {
+	u, err := url.Parse(urlstr)
+	if err != nil {
+		// TODO: Better error
+		return nil, err
+	}
+
+	return ClientFomURLObj(u, mods...)
 }
