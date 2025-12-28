@@ -23,12 +23,18 @@ func runGost(url string, ctx context.Context) (func(), error) {
 	}, nil
 }
 
-func runGostAll(t *testing.T, cfg EnvConfig) func() {
+func runGostAll(t *testing.T, cfg EnvConfig, tls bool) func() {
+	socks5 := "socks5"
+	socks4 := "socks4"
+	if tls {
+		socks5 = "socks5+tls"
+		socks4 = "socks4+tls"
+	}
 
 	killfuncs := []func(){}
 
 	k, err := runGost(
-		"socks5://"+cfg.Addr5+"?udp=true&udpBufferSize=4096&bind=true", t.Context(),
+		socks5+"://"+cfg.Addr5+"?udp=true&udpBufferSize=4096&bind=true", t.Context(),
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -36,7 +42,7 @@ func runGostAll(t *testing.T, cfg EnvConfig) func() {
 	killfuncs = append(killfuncs, k)
 
 	k, err = runGost(
-		"socks5://user:pass@"+cfg.Addr5Pass+"?udp=true&udpBufferSize=4096&bind=true", t.Context(),
+		socks5+"://user:pass@"+cfg.Addr5Pass+"?udp=true&udpBufferSize=4096&bind=true", t.Context(),
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -44,7 +50,7 @@ func runGostAll(t *testing.T, cfg EnvConfig) func() {
 	killfuncs = append(killfuncs, k)
 
 	k, err = runGost(
-		"socks4://"+cfg.Addr4+"?bind=true", t.Context(),
+		socks4+"://"+cfg.Addr4+"?bind=true", t.Context(),
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -52,7 +58,7 @@ func runGostAll(t *testing.T, cfg EnvConfig) func() {
 	killfuncs = append(killfuncs, k)
 
 	k, err = runGost(
-		"socks4://user@"+cfg.Addr4Pass+"?bind=true", t.Context(),
+		socks4+"://user@"+cfg.Addr4Pass+"?bind=true", t.Context(),
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -65,27 +71,36 @@ func runGostAll(t *testing.T, cfg EnvConfig) func() {
 		}
 	}
 
-	// TODO: Aoid RC here
+	// TODO: Avoid RC here
 	time.Sleep(time.Millisecond * time.Duration(cfg.RCTimeout)) // Wait for all gost instances to start
 
 	return kill
 }
 
-func TestIntegrationWithGost(t *testing.T) {
+func testIntegrationWithGost(t *testing.T, tls bool) {
 	cfg := GetEnvConfig()
 
-	kill := runGostAll(t, cfg)
+	kill := runGostAll(t, cfg, tls)
 	defer kill()
 
-	c5g := buildClient("socks5://"+cfg.Addr5+"?gost", t)
-	c5gp := buildClient("socks5://user:pass@"+cfg.Addr5Pass+"?gost", t)
-	c5 := buildClient("socks5://"+cfg.Addr5, t)
-	c5p := buildClient("socks5://user:pass@"+cfg.Addr5Pass, t)
+	socks5 := "socks5"
+	socks4 := "socks4"
+	socks4a := "socks4a"
+	if tls {
+		socks5 = "socks5+tls"
+		socks4 = "socks4+tls"
+		socks4a = "socks4a+tls"
+	}
 
-	c4 := buildClient("socks4://"+cfg.Addr4, t)
-	c4p := buildClient("socks4://user@"+cfg.Addr4Pass, t)
-	c4a := buildClient("socks4a://"+cfg.Addr4, t)
-	c4ap := buildClient("socks4a://user@"+cfg.Addr4Pass, t)
+	c5g := buildClient(socks5+"://"+cfg.Addr5+"?gost", t)
+	c5gp := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass+"?gost", t)
+	c5 := buildClient(socks5+"://"+cfg.Addr5, t)
+	c5p := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass, t)
+
+	c4 := buildClient(socks4+"://"+cfg.Addr4, t)
+	c4p := buildClient(socks4+"://user@"+cfg.Addr4Pass, t)
+	c4a := buildClient(socks4a+"://"+cfg.Addr4, t)
+	c4ap := buildClient(socks4a+"://user@"+cfg.Addr4Pass, t)
 
 	t.Run("HttpRequest", func(t *testing.T) {
 		testDial(c5g, t, cfg.Pairs...)
@@ -119,4 +134,9 @@ func TestIntegrationWithGost(t *testing.T) {
 		// testUDPListen(c5, t, 1)
 		// testUDPListen(c5p, t, 1)
 	})
+}
+
+func TestIntegrationWithGost(t *testing.T) {
+	testIntegrationWithGost(t, false)
+	testIntegrationWithGost(t, true)
 }

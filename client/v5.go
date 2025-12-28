@@ -187,13 +187,19 @@ func (c *Client5) request(
 		return nil, reply, err
 	}
 
-	if proxy == nil {
-		proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-		if err != nil {
-			// TODO: Better error
-			return nil, reply, err
-		}
+	proxy, err = c.dial(ctx, proxy)
+	if err != nil {
+		// TODO: Better error
+		return nil, reply, err
 	}
+
+	// if proxy == nil {
+	// 	proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	// 	if err != nil {
+	// 		// TODO: Better error
+	// 		return nil, reply, err
+	// 	}
+	// }
 
 	err = internal.Run5Auth(proxy, c.nuser(), c.npass())
 	if err != nil {
@@ -318,7 +324,7 @@ func (c *Client5) dialPacket(
 
 	udpaddr := reply.ToNetAddr(network)
 
-	udpconn, err := c.dialer()(ctx, udpaddr.Network(), udpaddr.String())
+	udpconn, err := c.netDialer()(ctx, udpaddr.Network(), udpaddr.String())
 
 	if err != nil {
 		// TODO: Better error
@@ -466,14 +472,20 @@ func (c *Client5) lookup(
 		}
 	}
 
-	var err error
-	if proxy == nil {
-		proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-		if err != nil {
-			// TODO: Better error
-			return nil, err
-		}
+	proxy, err := c.dial(ctx, proxy)
+	if err != nil {
+		// TODO: Better error
+		return nil, err
 	}
+
+	// var err error
+	// if proxy == nil {
+	// 	proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	// 	if err != nil {
+	// 		// TODO: Better error
+	// 		return nil, err
+	// 	}
+	// }
 
 	err = internal.Run5Auth(proxy, c.nuser(), c.npass())
 	if err != nil {

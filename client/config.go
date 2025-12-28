@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/url"
@@ -91,6 +92,9 @@ type Config struct {
 	Pool         common.BufferPool
 
 	Smux *SmuxConfig
+
+	TLS       bool
+	TLSConfig *tls.Config
 }
 
 // TODO: Test
@@ -123,6 +127,15 @@ func configFromURL(u *url.URL, def *Config) (Config, error) {
 	if f, s := checkURLBoolKey(q, "pass"); s && f {
 		cfg.DirectFilter = PassAll
 	}
+
+	cfg.TLSConfig = &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	if f, s := checkURLBoolKey(q, "secure"); s {
+		cfg.TLSConfig.InsecureSkipVerify = !f
+	}
+	// TODO: Add more TLS related args
+
 	return cfg, nil
 }
 
@@ -195,13 +208,42 @@ func (cc *Config) resolver() common.Resolver {
 	return cc.Resolver
 }
 
-func (cc *Config) dialer() common.Dialer {
+func (cc *Config) netDialer() common.Dialer {
 	if cc.Dialer == nil {
 		return func(ctx context.Context, network, address string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, address)
 		}
 	}
 	return cc.Dialer
+}
+
+func (cc *Config) dial(ctx context.Context, base net.Conn) (conn net.Conn, err error) {
+	conn = base
+	if conn == nil {
+		conn, err = cc.netDialer()(ctx, cc.proxynet(), cc.proxyaddr())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cc.TLS {
+		sname := cc.proxyaddr()
+		h, _, err := net.SplitHostPort(sname)
+		if err == nil {
+			sname = h
+		}
+
+		config := &tls.Config{}
+		if cc.TLSConfig != nil {
+			config = cc.TLSConfig
+		}
+		if config.ServerName == "" {
+			config.ServerName = sname
+		}
+		conn = tls.Client(conn, config)
+	}
+
+	return
 }
 
 func (cc *Config) lookupPort(ctx context.Context, network, strport string) (port int, err error) {
@@ -233,6 +275,8 @@ func (cc *Config) String() string {
 	}
 	str += fmt.Sprintln("Pool:", cc.Pool)
 	str += fmt.Sprintln("Smux:", cc.Smux)
+	str += fmt.Sprintln("TLS:", cc.TLS)
+	str += fmt.Sprintln("TLSConfig:", cc.TLSConfig)
 	return str
 }
 
@@ -314,4 +358,8 @@ func ConfigWithPassword(pass string) ConfigMod {
 
 func ConfigWithSmux(s *SmuxConfig) ConfigMod {
 	return func(c *Config) { c.Smux = s }
+}
+
+func ConfigWithTLS(t *tls.Config) ConfigMod {
+	return func(c *Config) { c.TLSConfig = t }
 }

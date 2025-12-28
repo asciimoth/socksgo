@@ -71,13 +71,20 @@ func (c *Client4) request(
 		request = internal.Make4TCPRequest(cmd, ips[0].To4(), uint16(port), c.user())
 	}
 
-	if proxy == nil {
-		proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-		if err != nil {
-			// TODO: Better error
-			return nil, nil, 0, err
-		}
+	proxy, err = c.dial(ctx, proxy)
+
+	if err != nil {
+		// TODO: Better error
+		return nil, nil, 0, err
 	}
+
+	// if proxy == nil {
+	// 	proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	// 	if err != nil {
+	// 		// TODO: Better error
+	// 		return nil, nil, 0, err
+	// 	}
+	// }
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
 	if err != nil {
@@ -133,7 +140,7 @@ func (c *Client4) Listen(ctx context.Context, network, address string) (net.List
 
 func (c *Client4) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	if !c.dialFilter(network, address) {
-		return c.dialer()(ctx, network, address)
+		return c.netDialer()(ctx, network, address)
 	}
 	conn, _, _, err := c.request(ctx, common.CmdConnect, network, address, nil)
 	if err != nil {
@@ -144,7 +151,7 @@ func (c *Client4) Dial(ctx context.Context, network, address string) (net.Conn, 
 
 func (c *Client4) DialWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Conn, error) {
 	if !c.dialFilter(network, address) {
-		return c.dialer()(ctx, network, address)
+		return c.netDialer()(ctx, network, address)
 	}
 	conn, _, _, err := c.request(ctx, common.CmdConnect, network, address, conn)
 	if err != nil {
@@ -181,15 +188,21 @@ func (c *Client4) LookupIPWithConn(ctx context.Context, network, address string,
 
 	request := internal.Make4aTCPRequest(common.CmdTorResolve, address, 0, c.user())
 
-	proxy := conn
-	var err error
-	if proxy == nil {
-		proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-		if err != nil {
-			// TODO: Better error
-			return nil, err
-		}
+	proxy, err := c.dial(ctx, conn)
+	if err != nil {
+		// TODO: Better error
+		return nil, err
 	}
+
+	// proxy := conn
+	// var err error
+	// if proxy == nil {
+	// 	proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
+	// 	if err != nil {
+	// 		// TODO: Better error
+	// 		return nil, err
+	// 	}
+	// }
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
 	if err != nil {

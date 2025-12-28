@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -60,15 +61,52 @@ type Client interface {
 	LookupAddrWithConn(ctx context.Context, address string, conn net.Conn) ([]string, error)
 }
 
+// TODO: Test
+func parseSheme(scheme string) (base string, tls bool) {
+	parts := strings.Split(strings.TrimSpace(strings.ToLower(scheme)), "+")
+	for _, p := range []string{"socks", "socks5", "socks5h"} {
+		if slices.Contains(parts, p) {
+			base = "5"
+		}
+	}
+	for _, p := range []string{"sockss", "socks5s", "socks5hs"} {
+		if slices.Contains(parts, p) {
+			base = "5"
+			tls = true
+		}
+	}
+	if slices.Contains(parts, "socks4") {
+		base = "4"
+	}
+	if slices.Contains(parts, "socks4s") {
+		base = "4"
+		tls = true
+	}
+	if slices.Contains(parts, "socks4a") {
+		base = "4a"
+	}
+	if slices.Contains(parts, "socks4as") {
+		base = "4a"
+		tls = true
+	}
+	if slices.Contains(parts, "tls") {
+		tls = true
+	}
+	return
+}
+
 // TODO: Document url options
 func ClientFomURLObj(u *url.URL, mods ...ConfigMod) (Client, error) {
-	scheme := strings.ToLower(u.Scheme)
+	base, isTls := parseSheme(u.Scheme)
 
-	if scheme == "socks" || scheme == "socks5" || scheme == "socks5h" {
+	if base == "5" {
 		cfg, err := configFromURL(u, nil)
 		if err != nil {
 			// TODO: Better error
 			return nil, err
+		}
+		if isTls {
+			cfg.TLS = true
 		}
 		cfg.apply(mods...)
 		return &Client5{
@@ -76,15 +114,18 @@ func ClientFomURLObj(u *url.URL, mods ...ConfigMod) (Client, error) {
 		}, nil
 	}
 
-	if scheme == "socks4" || scheme == "socks4a" {
+	if base == "4" || base == "4a" {
 		def := &Config{}
-		if scheme == "socks4" {
+		if base == "4" {
 			def.LocalResolve = true
 		}
 		cfg, err := configFromURL(u, def)
 		if err != nil {
 			// TODO: Better error
 			return nil, err
+		}
+		if isTls {
+			cfg.TLS = true
 		}
 		cfg.apply(mods...)
 		return &client4ToClientWrapper{
