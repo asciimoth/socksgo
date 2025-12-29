@@ -134,8 +134,10 @@ type Config struct {
 	// For socks4 LocalResolve == false means socks4a
 	LocalResolve bool
 	DirectFilter common.DirectFilter
-	Credentials  *Credentials
-	Pool         common.BufferPool
+	InsecureUDP  bool // Allow plaintext UDP ASSOC for tls proxies
+
+	Credentials *Credentials
+	Pool        common.BufferPool
 
 	Smux *SmuxConfig
 
@@ -233,6 +235,13 @@ func (cc *Config) npass() *string {
 		return nil
 	}
 	return &cc.Credentials.Password
+}
+
+func (cc *Config) udpAllowed() bool {
+	if !cc.TLS {
+		return true
+	}
+	return (!cc.TLS) || cc.InsecureUDP
 }
 
 func (cc *Config) dialFilter(network, address string) bool {

@@ -276,6 +276,11 @@ func (c *Client5) dialPacket(
 	ctx context.Context,
 	network, address string,
 ) (*packetConn5, error) {
+	if !c.udpAllowed() {
+		// TODO: Better error
+		return nil, errors.New("plaintext UDP is disallowed for tls proxies")
+	}
+
 	if address == "" {
 		if network == "udp6" {
 			address = "[::]:0"
@@ -338,6 +343,11 @@ func (c *Client5) setupUDPTun(
 	ctx context.Context,
 	network, laddr, raddr string,
 ) (*packetConn5, error) {
+	if !c.udpAllowed() {
+		// TODO: Better error
+		return nil, errors.New("plaintext UDP is disallowed for tls proxies")
+	}
+
 	var (
 		header []byte
 		err    error
