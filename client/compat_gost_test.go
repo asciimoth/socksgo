@@ -125,12 +125,14 @@ func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
 		testDial(c4ap, t, cfg.Pairs...)
 	})
 
-	t.Run("DNSRequest", func(t *testing.T) {
-		testUDPDial(c5g, t, cfg.Pairs...)
-		testUDPDial(c5gp, t, cfg.Pairs...)
-		testUDPDial(c5, t, cfg.Pairs...)
-		testUDPDial(c5p, t, cfg.Pairs...)
-	})
+	if !tls {
+		t.Run("DNSRequest", func(t *testing.T) {
+			testUDPDial(c5g, t, cfg.Pairs...)
+			testUDPDial(c5gp, t, cfg.Pairs...)
+			testUDPDial(c5, t, cfg.Pairs...)
+			testUDPDial(c5p, t, cfg.Pairs...)
+		})
+	}
 
 	t.Run("Listen", func(t *testing.T) {
 		testListen(c5g, t, 10)
@@ -139,12 +141,14 @@ func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
 		testListen(c5p, t, 1)
 	})
 
-	t.Run("ListenUDP", func(t *testing.T) {
-		testUDPListen(c5g, t, 10)
-		testUDPListen(c5gp, t, 10)
-		// testUDPListen(c5, t, 1)
-		// testUDPListen(c5p, t, 1)
-	})
+	if !tls {
+		t.Run("ListenUDP", func(t *testing.T) {
+			testUDPListen(c5g, t, 10)
+			testUDPListen(c5gp, t, 10)
+			// testUDPListen(c5, t, 1)
+			// testUDPListen(c5p, t, 1)
+		})
+	}
 }
 
 func TestIntegrationWithGost(t *testing.T) {

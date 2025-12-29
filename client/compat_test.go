@@ -41,6 +41,8 @@ func GetEnvConfig() EnvConfig {
 		Tor: "127.0.0.1:9050",
 
 		Pairs: []HostPort{
+			{"iana.org", "http"},
+			{"ietf.org", "http"},
 			{"example.com", "http"},
 			{"google.com", "http"},
 		},
@@ -96,7 +98,7 @@ func GetEnvConfig() EnvConfig {
 func buildClient(url string, t *testing.T) client.Client {
 	c, err := client.ClientFomURL(url)
 	if err != nil {
-		t.Fatalf("failed to create gost socks5 client: %s %v", url, err)
+		t.Fatalf("failed to create gost socks client: %s %v", url, err)
 	}
 	return c
 }
@@ -284,7 +286,9 @@ func testUDPDial(c client.Client, t *testing.T, pairs ...HostPort) {
 func testLookup(c client.Client, t *testing.T, lookupAddr bool, pairs ...HostPort) {
 	var (
 		err error
-		ips []string = []string{"8.8.8.8"}
+		ips []string = []string{
+			"8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9",
+		}
 	)
 
 	for _, addr := range pairs {
