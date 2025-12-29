@@ -69,6 +69,14 @@ type WebSocketConfig struct {
 	Subprotocols      []string
 	EnableCompression bool
 	Jar               http.CookieJar
+	HandshakeTimeout  time.Duration
+}
+
+func (w *WebSocketConfig) handshakeTimeout() time.Duration {
+	if w == nil || w.HandshakeTimeout == 0 {
+		return websocket.DefaultDialer.HandshakeTimeout
+	}
+	return w.HandshakeTimeout
 }
 
 func (w *WebSocketConfig) readBufferSize() int {
@@ -278,11 +286,11 @@ func (cc *Config) wsDialer() *websocket.Dialer {
 		// NetDial: func(network, addr string) (net.Conn, error) {
 		// 	return cc.netDialer()(context.Background(), network, addr)
 		// },
-		NetDialContext:   cc.netDialer(),
-		HandshakeTimeout: websocket.DefaultDialer.HandshakeTimeout,
-		TLSClientConfig:  cc.tlsConfig(),
-		WriteBufferPool:  nil, // TODO: Convert somehow BufferPool to websocket.BufferPool
+		NetDialContext:  cc.netDialer(),
+		TLSClientConfig: cc.tlsConfig(),
+		WriteBufferPool: nil, // TODO: Convert somehow BufferPool to websocket.BufferPool
 
+		HandshakeTimeout:  cc.WebSocketConfig.handshakeTimeout(),
 		ReadBufferSize:    cc.WebSocketConfig.readBufferSize(),
 		Subprotocols:      cc.WebSocketConfig.subprotocols(),
 		EnableCompression: cc.WebSocketConfig.enableCompression(),
