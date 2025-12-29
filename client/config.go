@@ -5,12 +5,15 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/asciimoth/socks/common"
+	"github.com/asciimoth/socks/internal"
+	"github.com/gorilla/websocket"
 	"github.com/xtaci/smux"
 )
 
@@ -61,6 +64,41 @@ func (s *SmuxConfig) to() *smux.Config {
 	}
 }
 
+type WebSocketConfig struct {
+	ReadBufferSize    int
+	Subprotocols      []string
+	EnableCompression bool
+	Jar               http.CookieJar
+}
+
+func (w *WebSocketConfig) readBufferSize() int {
+	if w == nil {
+		return websocket.DefaultDialer.ReadBufferSize
+	}
+	return w.ReadBufferSize
+}
+
+func (w *WebSocketConfig) subprotocols() []string {
+	if w == nil {
+		return websocket.DefaultDialer.Subprotocols
+	}
+	return w.Subprotocols
+}
+
+func (w *WebSocketConfig) enableCompression() bool {
+	if w == nil {
+		return websocket.DefaultDialer.EnableCompression
+	}
+	return w.EnableCompression
+}
+
+func (w *WebSocketConfig) jar() http.CookieJar {
+	if w == nil {
+		return websocket.DefaultDialer.Jar
+	}
+	return w.Jar
+}
+
 func checkURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
 	val, ok := values[key]
 	if ok {
@@ -95,14 +133,17 @@ type Config struct {
 
 	TLS       bool
 	TLSConfig *tls.Config
+
+	WebSocketURL    string
+	WebSocketConfig *WebSocketConfig
 }
 
 // TODO: Test
-func configFromURL(u *url.URL, def *Config) (Config, error) {
+func configFromURL(u *url.URL, defaultCfg *Config) (Config, error) {
 	q := u.Query()
 	cfg := Config{}
-	if def != nil {
-		cfg = *def
+	if defaultCfg != nil {
+		cfg = *defaultCfg
 	}
 	cfg.ProxyAddr = u.Host
 	if f, s := checkURLBoolKey(q, "gost"); s {
@@ -208,6 +249,61 @@ func (cc *Config) resolver() common.Resolver {
 	return cc.Resolver
 }
 
+func (cc *Config) tlsConfig() *tls.Config {
+	if !cc.TLS {
+		return nil
+	}
+	sname := cc.proxyaddr()
+	h, _, err := net.SplitHostPort(sname)
+	if err == nil {
+		sname = h
+	}
+
+	config := &tls.Config{}
+	if cc.TLSConfig != nil {
+		config = cc.TLSConfig
+	}
+	if config.ServerName == "" {
+		config.ServerName = sname
+	}
+
+	return config
+}
+
+func (cc *Config) wsDialer() *websocket.Dialer {
+	if cc.WebSocketURL == "" {
+		return nil
+	}
+	dialer := &websocket.Dialer{
+		// NetDial: func(network, addr string) (net.Conn, error) {
+		// 	return cc.netDialer()(context.Background(), network, addr)
+		// },
+		NetDialContext:   cc.netDialer(),
+		HandshakeTimeout: websocket.DefaultDialer.HandshakeTimeout,
+		TLSClientConfig:  cc.tlsConfig(),
+		WriteBufferPool:  nil, // TODO: Convert somehow BufferPool to websocket.BufferPool
+
+		ReadBufferSize:    cc.WebSocketConfig.readBufferSize(),
+		Subprotocols:      cc.WebSocketConfig.subprotocols(),
+		EnableCompression: cc.WebSocketConfig.enableCompression(),
+		Jar:               cc.WebSocketConfig.jar(),
+	}
+	return dialer
+}
+
+func (cc *Config) dialWebSocket(ctx context.Context) (conn net.Conn, err error) {
+	// TODO: Add RequestHeader to config
+	ws, resp, err := cc.wsDialer().DialContext(ctx, cc.WebSocketURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	_ = resp.Body.Close()
+
+	return &internal.WSConn{
+		Conn: ws,
+	}, nil
+}
+
 func (cc *Config) netDialer() common.Dialer {
 	if cc.Dialer == nil {
 		return func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -217,30 +313,18 @@ func (cc *Config) netDialer() common.Dialer {
 	return cc.Dialer
 }
 
-func (cc *Config) dial(ctx context.Context, base net.Conn) (conn net.Conn, err error) {
-	conn = base
-	if conn == nil {
-		conn, err = cc.netDialer()(ctx, cc.proxynet(), cc.proxyaddr())
-		if err != nil {
-			return nil, err
-		}
+func (cc *Config) dial(ctx context.Context) (conn net.Conn, err error) {
+	if cc.WebSocketURL != "" {
+		return cc.dialWebSocket(ctx)
+	}
+
+	conn, err = cc.netDialer()(ctx, cc.proxynet(), cc.proxyaddr())
+	if err != nil {
+		return nil, err
 	}
 
 	if cc.TLS {
-		sname := cc.proxyaddr()
-		h, _, err := net.SplitHostPort(sname)
-		if err == nil {
-			sname = h
-		}
-
-		config := &tls.Config{}
-		if cc.TLSConfig != nil {
-			config = cc.TLSConfig
-		}
-		if config.ServerName == "" {
-			config.ServerName = sname
-		}
-		conn = tls.Client(conn, config)
+		conn = tls.Client(conn, cc.tlsConfig())
 	}
 
 	return
@@ -277,6 +361,10 @@ func (cc *Config) String() string {
 	str += fmt.Sprintln("Smux:", cc.Smux)
 	str += fmt.Sprintln("TLS:", cc.TLS)
 	str += fmt.Sprintln("TLSConfig:", cc.TLSConfig)
+	if cc.WebSocketURL != "" {
+		str += fmt.Sprintln("WebSocketURL:", cc.WebSocketURL)
+		str += fmt.Sprintln("WebSocketConfig:", cc.WebSocketConfig)
+	}
 	return str
 }
 
@@ -362,4 +450,8 @@ func ConfigWithSmux(s *SmuxConfig) ConfigMod {
 
 func ConfigWithTLS(t *tls.Config) ConfigMod {
 	return func(c *Config) { c.TLSConfig = t }
+}
+
+func ConfigWithWS(w *WebSocketConfig) ConfigMod {
+	return func(c *Config) { c.WebSocketConfig = w }
 }

@@ -46,23 +46,17 @@ func DirectLoopback(_, address string) bool {
 
 type Client interface {
 	Dial(ctx context.Context, network, address string) (net.Conn, error)
-	DialWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Conn, error)
 	Listen(ctx context.Context, network, address string) (net.Listener, error)
-	ListenWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Listener, error)
 
 	DialPacket(ctx context.Context, network, address string) (net.PacketConn, error)
-	DialPacketWithConn(ctx context.Context, network, address string, conn net.Conn) (net.PacketConn, error)
 	ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error)
-	ListenPacketWithConn(ctx context.Context, network, address string, conn net.Conn) (net.PacketConn, error)
 
 	LookupIP(ctx context.Context, network, address string) ([]net.IP, error)
-	LookupIPWithConn(ctx context.Context, network, address string, conn net.Conn) ([]net.IP, error)
 	LookupAddr(ctx context.Context, address string) ([]string, error)
-	LookupAddrWithConn(ctx context.Context, address string, conn net.Conn) ([]string, error)
 }
 
 // TODO: Test
-func parseSheme(scheme string) (base string, tls bool) {
+func parseSheme(scheme string) (base string, tls, ws bool) {
 	parts := strings.Split(strings.TrimSpace(strings.ToLower(scheme)), "+")
 	for _, p := range []string{"socks", "socks5", "socks5h"} {
 		if slices.Contains(parts, p) {
@@ -92,12 +86,35 @@ func parseSheme(scheme string) (base string, tls bool) {
 	if slices.Contains(parts, "tls") {
 		tls = true
 	}
+	if slices.Contains(parts, "ws") {
+		ws = true
+	}
+	if slices.Contains(parts, "wss") {
+		ws = true
+		tls = true
+	}
 	return
 }
 
 // TODO: Document url options
 func ClientFomURLObj(u *url.URL, mods ...ConfigMod) (Client, error) {
-	base, isTls := parseSheme(u.Scheme)
+	base, isTls, isWs := parseSheme(u.Scheme)
+
+	wsUrl := ""
+	if isWs {
+		wsu := url.URL{
+			Scheme: "ws",
+			Host:   u.Host,
+			Path:   "/ws", // For gost compat
+		}
+		if u.Path != "" {
+			wsu.Path = u.Path
+		}
+		if isTls {
+			wsu.Scheme = "wss"
+		}
+		wsUrl = wsu.String()
+	}
 
 	if base == "5" {
 		cfg, err := configFromURL(u, nil)
@@ -105,6 +122,7 @@ func ClientFomURLObj(u *url.URL, mods ...ConfigMod) (Client, error) {
 			// TODO: Better error
 			return nil, err
 		}
+		cfg.WebSocketURL = wsUrl
 		if isTls {
 			cfg.TLS = true
 		}
@@ -124,6 +142,7 @@ func ClientFomURLObj(u *url.URL, mods ...ConfigMod) (Client, error) {
 			// TODO: Better error
 			return nil, err
 		}
+		cfg.WebSocketURL = wsUrl
 		if isTls {
 			cfg.TLS = true
 		}

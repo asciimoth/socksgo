@@ -23,13 +23,31 @@ func runGost(url string, ctx context.Context) (func(), error) {
 	}, nil
 }
 
-func runGostAll(t *testing.T, cfg EnvConfig, tls bool) func() {
-	socks5 := "socks5"
-	socks4 := "socks4"
-	if tls {
-		socks5 = "socks5+tls"
-		socks4 = "socks4+tls"
+func getShcemes(tls bool, ws bool) (socks5, socks4, socks4a string) {
+	socks5 = "socks5"
+	socks4 = "socks4"
+	socks4a = "socks4a"
+	if ws {
+		socks5 = "socks5+ws"
+		socks4 = "socks4+ws"
+		socks4a = "socks4a+ws"
+		if tls {
+			socks5 = "socks5+wss"
+			socks4 = "socks4+wss"
+			socks4a = "socks4a+wss"
+		}
+	} else {
+		if tls {
+			socks5 = "socks5+tls"
+			socks4 = "socks4+tls"
+			socks4a = "socks4a+tls"
+		}
 	}
+	return
+}
+
+func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) func() {
+	socks5, socks4, _ := getShcemes(tls, ws)
 
 	killfuncs := []func(){}
 
@@ -77,20 +95,13 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool) func() {
 	return kill
 }
 
-func testIntegrationWithGost(t *testing.T, tls bool) {
+func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
 	cfg := GetEnvConfig()
 
-	kill := runGostAll(t, cfg, tls)
+	kill := runGostAll(t, cfg, tls, ws)
 	defer kill()
 
-	socks5 := "socks5"
-	socks4 := "socks4"
-	socks4a := "socks4a"
-	if tls {
-		socks5 = "socks5+tls"
-		socks4 = "socks4+tls"
-		socks4a = "socks4a+tls"
-	}
+	socks5, socks4, socks4a := getShcemes(tls, ws)
 
 	c5g := buildClient(socks5+"://"+cfg.Addr5+"?gost", t)
 	c5gp := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass+"?gost", t)
@@ -137,6 +148,8 @@ func testIntegrationWithGost(t *testing.T, tls bool) {
 }
 
 func TestIntegrationWithGost(t *testing.T) {
-	testIntegrationWithGost(t, false)
-	testIntegrationWithGost(t, true)
+	testIntegrationWithGost(t, false, false)
+	testIntegrationWithGost(t, true, false)
+	testIntegrationWithGost(t, false, true)
+	testIntegrationWithGost(t, true, true)
 }

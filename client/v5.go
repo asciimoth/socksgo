@@ -164,7 +164,6 @@ func (c *Client5) request(
 	ctx context.Context,
 	cmd common.Cmd,
 	network, address string,
-	proxy net.Conn,
 ) (net.Conn, internal.Socks5Reply, error) {
 	var reply internal.Socks5Reply
 
@@ -187,19 +186,11 @@ func (c *Client5) request(
 		return nil, reply, err
 	}
 
-	proxy, err = c.dial(ctx, proxy)
+	proxy, err := c.dial(ctx)
 	if err != nil {
 		// TODO: Better error
 		return nil, reply, err
 	}
-
-	// if proxy == nil {
-	// 	proxy, err = c.dialer()(ctx, c.proxynet(), c.proxyaddr())
-	// 	if err != nil {
-	// 		// TODO: Better error
-	// 		return nil, reply, err
-	// 	}
-	// }
 
 	err = internal.Run5Auth(proxy, c.nuser(), c.npass())
 	if err != nil {
@@ -247,12 +238,12 @@ func (c *Client5) request(
 	return proxy, reply, nil
 }
 
-func (c *Client5) DialWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Conn, error) {
+func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	if network == "udp4" || network == "udp6" || network == "udp" {
-		return c.dialPacket(ctx, network, address, conn)
+		return c.dialPacket(ctx, network, address)
 	}
 
-	proxy, _, err := c.request(ctx, common.CmdConnect, network, address, conn)
+	proxy, _, err := c.request(ctx, common.CmdConnect, network, address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -261,42 +252,29 @@ func (c *Client5) DialWithConn(ctx context.Context, network, address string, con
 	return proxy, nil
 }
 
-func (c *Client5) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	return c.DialWithConn(ctx, network, address, nil)
-}
-
-func (c *Client5) DialPacketWithConn(ctx context.Context, network, address string, conn net.Conn) (net.PacketConn, error) {
-	// TODO: Filter addr
-	// TODO: Check network type
-	if c.GostUDPTun {
-		return c.setupUDPTun(ctx, network, "", address, conn)
-	}
-	return c.dialPacket(ctx, network, address, conn)
-}
-
 // To listen, address = "0.0.0.0:0"
 func (c *Client5) DialPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
-	return c.DialPacketWithConn(ctx, network, address, nil)
-}
-
-func (c *Client5) ListenPacketWithConn(ctx context.Context, network, address string, conn net.Conn) (net.PacketConn, error) {
 	// TODO: Filter addr
 	// TODO: Check network type
 	if c.GostUDPTun {
-		return c.setupUDPTun(ctx, network, address, "", conn)
+		return c.setupUDPTun(ctx, network, "", address)
 	}
-	// Standart UDP ASSOC doesn't support listen addr specification
-	return c.dialPacket(ctx, network, "", conn)
+	return c.dialPacket(ctx, network, address)
 }
 
 func (c *Client5) ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
-	return c.ListenPacketWithConn(ctx, network, address, nil)
+	// TODO: Filter addr
+	// TODO: Check network type
+	if c.GostUDPTun {
+		return c.setupUDPTun(ctx, network, address, "")
+	}
+	// Standart UDP ASSOC doesn't support listen addr specification
+	return c.dialPacket(ctx, network, "")
 }
 
 func (c *Client5) dialPacket(
 	ctx context.Context,
 	network, address string,
-	proxy net.Conn,
 ) (*packetConn5, error) {
 	if address == "" {
 		if network == "udp6" {
@@ -312,7 +290,7 @@ func (c *Client5) dialPacket(
 		return nil, err
 	}
 
-	proxy, reply, err := c.request(ctx, common.CmdUDPAssoc, network, address, proxy)
+	proxy, reply, err := c.request(ctx, common.CmdUDPAssoc, network, address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -359,7 +337,6 @@ func (c *Client5) dialPacket(
 func (c *Client5) setupUDPTun(
 	ctx context.Context,
 	network, laddr, raddr string,
-	conn net.Conn,
 ) (*packetConn5, error) {
 	var (
 		header []byte
@@ -380,7 +357,7 @@ func (c *Client5) setupUDPTun(
 		}
 	}
 
-	proxy, reply, err := c.request(ctx, common.CmdGostUDPTun, network, laddr, conn)
+	proxy, reply, err := c.request(ctx, common.CmdGostUDPTun, network, laddr)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -411,7 +388,7 @@ func (c *Client5) setupUDPTun(
 	}, nil
 }
 
-func (c *Client5) ListenWithConn(ctx context.Context, network, address string, conn net.Conn) (net.Listener, error) {
+func (c *Client5) Listen(ctx context.Context, network, address string) (net.Listener, error) {
 	// TODO: Check network
 	// TODO: Filter
 
@@ -420,7 +397,7 @@ func (c *Client5) ListenWithConn(ctx context.Context, network, address string, c
 		cmd = common.CmdGostMuxBind
 	}
 
-	proxy, reply, err := c.request(ctx, cmd, network, address, conn)
+	proxy, reply, err := c.request(ctx, cmd, network, address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -445,15 +422,10 @@ func (c *Client5) ListenWithConn(ctx context.Context, network, address string, c
 	}, nil
 }
 
-func (c *Client5) Listen(ctx context.Context, network, address string) (net.Listener, error) {
-	return c.ListenWithConn(ctx, network, address, nil)
-}
-
 func (c *Client5) lookup(
 	ctx context.Context,
 	cmd common.Cmd,
 	network, address string,
-	proxy net.Conn,
 ) (*internal.Socks5Reply, error) {
 	if cmd != common.CmdTorResolvePtr && network != "ip" && network != "ip4" && network != "ip6" {
 		return nil, &net.DNSError{
@@ -472,7 +444,7 @@ func (c *Client5) lookup(
 		}
 	}
 
-	proxy, err := c.dial(ctx, proxy)
+	proxy, err := c.dial(ctx)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -524,7 +496,7 @@ func (c *Client5) lookup(
 	return &reply, nil
 }
 
-func (c *Client5) LookupIPWithConn(ctx context.Context, network, address string, conn net.Conn) ([]net.IP, error) {
+func (c *Client5) LookupIP(ctx context.Context, network, address string) ([]net.IP, error) {
 	if c.LocalResolve {
 		return c.resolver().LookupIP(ctx, network, address)
 	}
@@ -533,7 +505,7 @@ func (c *Client5) LookupIPWithConn(ctx context.Context, network, address string,
 		return c.resolver().LookupIP(ctx, network, address)
 	}
 
-	reply, err := c.lookup(ctx, common.CmdTorResolve, network, address, conn)
+	reply, err := c.lookup(ctx, common.CmdTorResolve, network, address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
@@ -550,11 +522,7 @@ func (c *Client5) LookupIPWithConn(ctx context.Context, network, address string,
 	return nil, fmt.Errorf("wrong addr type in responce: %s", reply.Atyp.String())
 }
 
-func (c *Client5) LookupIP(ctx context.Context, network, address string) ([]net.IP, error) {
-	return c.LookupIPWithConn(ctx, network, address, nil)
-}
-
-func (c *Client5) LookupAddrWithConn(ctx context.Context, address string, conn net.Conn) ([]string, error) {
+func (c *Client5) LookupAddr(ctx context.Context, address string) ([]string, error) {
 	if c.LocalResolve {
 		return c.resolver().LookupAddr(ctx, address)
 	}
@@ -563,17 +531,13 @@ func (c *Client5) LookupAddrWithConn(ctx context.Context, address string, conn n
 		return c.resolver().LookupAddr(ctx, address)
 	}
 
-	reply, err := c.lookup(ctx, common.CmdTorResolvePtr, "", address, conn)
+	reply, err := c.lookup(ctx, common.CmdTorResolvePtr, "", address)
 	if err != nil {
 		// TODO: Better error
 		return nil, err
 	}
 
 	return []string{reply.ToNetAddr("").String()}, nil
-}
-
-func (c *Client5) LookupAddr(ctx context.Context, address string) ([]string, error) {
-	return c.LookupAddrWithConn(ctx, address, nil)
 }
 
 func (c *Client5) String() string {
