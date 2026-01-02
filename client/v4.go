@@ -14,7 +14,7 @@ import (
 )
 
 type listener4 struct {
-	addr internal.NetAddr
+	addr common.Addr
 	conn net.Conn
 }
 
@@ -122,13 +122,7 @@ func (c *Client4) Listen(ctx context.Context, network, address string) (net.List
 
 	return &listener4{
 		conn: conn,
-		addr: internal.NetAddr{
-			Net: "tcp4",
-			Host: net.JoinHostPort(
-				ip.String(),
-				strconv.Itoa(int(port)),
-			),
-		},
+		addr: common.AddrFromIP(ip, port, "tcp"),
 	}, nil
 }
 

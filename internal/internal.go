@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"strings"
 
 	"github.com/asciimoth/socks/common"
 )
@@ -44,60 +43,12 @@ func writeAll(w io.Writer, data []byte) error {
 	return nil
 }
 
-type NetAddr struct {
-	Net  string
-	Host string
-}
-
-func (a NetAddr) Network() string {
-	return a.Net
-}
-
-func (a NetAddr) String() string {
-	return a.Host
-}
-
 type Socks5Reply struct {
-	Rep  common.ReplyStatus
-	Atyp common.AddrType
-	Addr []byte
-	Port uint16
-}
-
-func (r Socks5Reply) IsUnspecified() bool {
-	if r.Atyp == common.IP4Addr || r.Atyp == common.IP6Addr {
-		return net.IP(r.Addr).IsUnspecified()
-	}
-	return false
-}
-
-func (r Socks5Reply) ToNetAddr(network string) net.Addr {
-	switch r.Atyp {
-	case common.IP4Addr:
-		n := "tcp4"
-		if strings.HasPrefix(network, "udp") {
-			n = "udp4"
-		}
-		return NetAddr{
-			Net:  n,
-			Host: net.JoinHostPort(net.IP(r.Addr).To4().String(), strconv.Itoa(int(r.Port))),
-		}
-	case common.IP6Addr:
-		n := "tcp6"
-		if strings.HasPrefix(network, "udp") {
-			n = "udp6"
-		}
-		return NetAddr{
-			Net:  n,
-			Host: net.JoinHostPort(net.IP(r.Addr).To16().String(), strconv.Itoa(int(r.Port))),
-		}
-	case common.DomAddr:
-		return NetAddr{
-			Net:  network,
-			Host: string(r.Addr),
-		}
-	}
-	return nil
+	common.Addr
+	Rep common.ReplyStatus
+	// Atyp common.AddrType
+	// Addr []byte
+	// Port uint16
 }
 
 // TODO: Test
@@ -224,10 +175,12 @@ func Read5TCPResponse(reader io.Reader) (Socks5Reply, error) {
 		return Socks5Reply{}, fmt.Errorf("unknown address type: %s", atyp.String())
 	}
 	return Socks5Reply{
-		Rep:  rep,
-		Atyp: atyp,
-		Addr: addr,
-		Port: port,
+		Addr: common.Addr{
+			Type: atyp,
+			Host: addr,
+			Port: port,
+		},
+		Rep: rep,
 	}, nil
 }
 
@@ -304,10 +257,7 @@ loop:
 				dom := string(buf[5 : 5+ln])
 				port := binary.BigEndian.Uint16(buf[5+ln : 5+ln+2])
 				host := net.JoinHostPort(dom, strconv.Itoa(int(port)))
-				addr = NetAddr{
-					Net:  conn.LocalAddr().Network(),
-					Host: host,
-				}
+				addr = common.AddrFromDom(host, port, conn.LocalAddr().Network())
 			}
 		default:
 			// Unknown address type
@@ -388,10 +338,7 @@ func Read5UDPTun(
 			if needAddr && !skip {
 				port := binary.BigEndian.Uint16(hbuf[ln : ln+2])
 				host := net.JoinHostPort(string(hbuf[:ln]), strconv.Itoa(int(port)))
-				addr = NetAddr{
-					Net:  conn.LocalAddr().Network(),
-					Host: host,
-				}
+				addr = common.AddrFromDom(host, port, conn.LocalAddr().Network())
 			}
 		default:
 			return 0, nil, fmt.Errorf("Unknown atyp: %s", atyp)

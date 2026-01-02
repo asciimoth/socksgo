@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"time"
 
 	"github.com/asciimoth/socks/common"
@@ -301,14 +300,15 @@ func (c *Client5) dialPacket(
 		// TODO: Better error
 		return nil, err
 	}
+	reply.Addr.Net = "udp"
 
 	onclose := func() {
 		_ = proxy.Close()
 	}
 
-	udpaddr := reply.ToNetAddr(network)
+	// udpaddr := reply.ToNetAddr(network)
 
-	udpconn, err := c.netDialer()(ctx, udpaddr.Network(), udpaddr.String())
+	udpconn, err := c.netDialer()(ctx, network, reply.String())
 
 	if err != nil {
 		// TODO: Better error
@@ -382,12 +382,9 @@ func (c *Client5) setupUDPTun(
 			proxy.Close()
 			return nil, err
 		}
-		n = internal.NetAddr{
-			Host: net.JoinHostPort(h, strconv.Itoa(int(reply.Port))),
-			Net:  proxy.RemoteAddr().Network(),
-		}
+		n = common.AddrFromDom(h, reply.Port, proxy.RemoteAddr().Network())
 	} else {
-		n = reply.ToNetAddr(network)
+		n = reply
 	}
 
 	return &packetConn5{
@@ -413,6 +410,7 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 		// TODO: Better error
 		return nil, err
 	}
+	reply.Addr.Net = network
 
 	if c.GostMbind {
 		session, err := smux.Server(proxy, c.Smux.to())
@@ -423,13 +421,13 @@ func (c *Client5) Listen(ctx context.Context, network, address string) (net.List
 		}
 		return &listener5mux{
 			session: session,
-			addr:    reply.ToNetAddr(network),
+			addr:    reply,
 		}, nil
 	}
 
 	return &listener5{
 		conn: proxy,
-		addr: reply.ToNetAddr(network),
+		addr: reply,
 	}, nil
 }
 
@@ -522,15 +520,12 @@ func (c *Client5) LookupIP(ctx context.Context, network, address string) ([]net.
 		return nil, err
 	}
 
-	switch reply.Atyp {
-	case common.IP4Addr:
-		return []net.IP{net.IP(reply.Addr)}, nil
-	case common.IP6Addr:
-		return []net.IP{net.IP(reply.Addr)}, nil
+	if ip := reply.ToIP(); ip != nil {
+		return []net.IP{ip}, nil
 	}
 
 	// TODO: Better error
-	return nil, fmt.Errorf("wrong addr type in responce: %s", reply.Atyp.String())
+	return nil, fmt.Errorf("wrong addr type in responce: %s", reply.Addr.Type.String())
 }
 
 func (c *Client5) LookupAddr(ctx context.Context, address string) ([]string, error) {
@@ -548,7 +543,7 @@ func (c *Client5) LookupAddr(ctx context.Context, address string) ([]string, err
 		return nil, err
 	}
 
-	return []string{reply.ToNetAddr("").String()}, nil
+	return []string{reply.String()}, nil
 }
 
 func (c *Client5) String() string {

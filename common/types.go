@@ -2,31 +2,19 @@ package common
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strconv"
+	"strings"
 )
-
-type Resolver interface {
-	LookupPort(ctx context.Context, network, service string) (port int, err error)
-	LookupIP(ctx context.Context, network, host string) ([]net.IP, error)
-	LookupAddr(ctx context.Context, address string) ([]string, error)
-}
-
-type Dialer = func(ctx context.Context, network, address string) (net.Conn, error)
-
-type Listener = func(ctx context.Context, network, address string) (net.Listener, error)
-
-// Return true if dial should go through a proxy, false if direct
-// network may be "" if it is unknown
-type DirectFilter = func(network, address string) bool
 
 const (
 	V4 = 0x04
 	V5 = 0x05
 
-	V4Name  = "socks4"
-	V4aName = "socks4a"
-	V5aName = "socks5"
+	IP4Addr AddrType = 0x01
+	IP6Addr AddrType = 0x04
+	DomAddr AddrType = 0x03
 
 	CmdConnect       Cmd = 0x01
 	CmdBind          Cmd = 0x02
@@ -45,10 +33,6 @@ const (
 	GSSAuth   AuthMethod = 0x1
 	PassAuth  AuthMethod = 0x02
 	NoAccAuth AuthMethod = 0xff
-
-	IP4Addr AddrType = 0x01
-	IP6Addr AddrType = 0x04
-	DomAddr AddrType = 0x03
 
 	SuccReply        ReplyStatus = 0x0
 	FailReply        ReplyStatus = 0x1
@@ -70,6 +54,148 @@ const (
 	TorInvalidAddr  ReplyStatus = 0xf6
 	TorIntroTimeOut ReplyStatus = 0xf7
 )
+
+var (
+	_ net.Addr = Addr{}
+)
+
+type Resolver interface {
+	LookupPort(ctx context.Context, network, service string) (port int, err error)
+	LookupIP(ctx context.Context, network, host string) ([]net.IP, error)
+	LookupAddr(ctx context.Context, address string) ([]string, error)
+}
+
+type Dialer = func(ctx context.Context, network, address string) (net.Conn, error)
+
+type Listener = func(ctx context.Context, network, address string) (net.Listener, error)
+
+// Return true if dial should go through a proxy, false if direct
+// network may be "" if it is unknown
+type DirectFilter = func(network, address string) bool
+
+type AddrType uint8
+
+func (a AddrType) String() string {
+	switch a {
+	case IP4Addr:
+		return "IPv4 addr"
+	case IP6Addr:
+		return "IPv6 addr"
+	case DomAddr:
+		return "domain name addr"
+	default:
+		return "addr type no" + strconv.Itoa(int(a))
+	}
+}
+
+type Addr struct {
+	Type AddrType
+	Host []byte
+	Port uint16
+	Net  string // tcp | udp ; not tcp4 | udp6 | etc; Default net is "tcp"
+}
+
+// TODO: Test
+func AddrFromNetAddr(addr net.Addr) Addr {
+	host, port := SplitHostPort(addr.Network(), addr.String(), 0)
+
+	network := addr.Network()
+	if strings.HasSuffix(network, "4") {
+		network = strings.TrimRight(network, "4")
+	} else if strings.HasSuffix(network, "6") {
+		network = strings.TrimRight(network, "6")
+	}
+
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return AddrFromIP(ip, port, addr.Network())
+	}
+
+	return AddrFromDom(host, port, addr.Network())
+}
+
+func AddrFromIP(ip net.IP, port uint16, net string) Addr {
+	if ip4 := ip.To4(); ip != nil {
+		return Addr{
+			Type: IP4Addr,
+			Host: append([]byte{}, []byte(ip4)...),
+			Port: port,
+			Net:  net,
+		}
+	}
+	ip6 := ip.To16()
+	return Addr{
+		Type: IP6Addr,
+		Host: append([]byte{}, []byte(ip6)...),
+		Port: port,
+		Net:  net,
+	}
+}
+
+// If dom already contains port (e.g. "example.com:80") it will be used instead of port arg.
+func AddrFromDom(dom string, port uint16, net string) Addr {
+	dom, port = SplitHostPort(net, dom, port)
+	return Addr{
+		Type: DomAddr,
+		Host: []byte(dom),
+		Port: port,
+		Net:  net,
+	}
+}
+
+func (a Addr) IsUnspecified() bool {
+	if a.Type == IP4Addr || a.Type == IP6Addr {
+		return net.IP(a.Host).IsUnspecified()
+	}
+	return false
+}
+
+func (a Addr) ToIP() net.IP {
+	switch a.Type {
+	case IP4Addr:
+		return net.IP(a.Host)
+	case IP6Addr:
+		return net.IP(a.Host)
+	}
+	return nil
+}
+
+func (a Addr) ToFQDN() string {
+	if a.Type == DomAddr {
+		return string(a.Host)
+	}
+	return ""
+}
+
+func (a Addr) Network() string {
+	net := a.Net
+	if net == "" {
+		net = "tcp"
+	}
+	switch a.Type {
+	case IP4Addr:
+		return net + "4"
+	case IP6Addr:
+		return net + "6"
+	}
+	return net
+}
+
+func (a Addr) HostString() string {
+	switch a.Type {
+	case IP4Addr:
+		return net.IP(a.Host).String()
+	case IP6Addr:
+		return net.IP(a.Host).String()
+	case DomAddr:
+		return string(a.Host)
+	}
+	return a.Type.String()
+}
+
+func (a Addr) String() string {
+	return net.JoinHostPort(a.HostString(), strconv.Itoa(int(a.Port)))
+}
 
 type ReplyStatus uint8
 
@@ -111,21 +237,6 @@ func (r ReplyStatus) String() string {
 		return "onion service introduction timed out"
 	default:
 		return "reply code no" + strconv.Itoa(int(r))
-	}
-}
-
-type AddrType uint8
-
-func (a AddrType) String() string {
-	switch a {
-	case IP4Addr:
-		return "IPv4 addr"
-	case IP6Addr:
-		return "IPv6 addr"
-	case DomAddr:
-		return "domain name addr"
-	default:
-		return "addr type no" + strconv.Itoa(int(a))
 	}
 }
 
@@ -191,4 +302,46 @@ func (cmd CmdResp4) String() string {
 type BufferPool interface {
 	GetBuffer(length int) []byte
 	PutBuffer(buf []byte)
+}
+
+func LookupPortOffline(network, service string) (port int, err error) {
+	// A bit dirty hack to prevent Resolver for sending DNS requests
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return nil, errors.New("BLOCKED")
+		},
+	}
+	port, err = r.LookupPort(context.Background(), network, service)
+	if err != nil {
+		err = &net.DNSError{
+			Err:        "unknown port",
+			Name:       network + "/" + service,
+			IsNotFound: true,
+		}
+	}
+	return
+}
+
+// defport will be used as port if there is no port in hostport or it is invalid.
+// TODO: Test
+func SplitHostPort(network, hostport string, defport uint16) (host string, port uint16) {
+	const MAX_UINT16 = 65535
+
+	host, strPort, err := net.SplitHostPort(hostport)
+	if err != nil {
+		// There is no port in hostport, only host
+		return hostport, defport
+	}
+
+	port = defport
+	intPort, err := strconv.Atoi(strPort)
+	if err != nil {
+		intPort, err = LookupPortOffline(network, strPort)
+	}
+	if err == nil && intPort <= MAX_UINT16 {
+		port = uint16(intPort)
+	}
+
+	return host, port
 }
