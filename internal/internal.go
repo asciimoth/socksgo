@@ -17,32 +17,6 @@ const (
 	GOST_UDP_FRAG_FLAG        = 255
 )
 
-func GetBuffer(pool common.BufferPool, size int) []byte {
-	if pool == nil {
-		return make([]byte, size)
-	}
-	return pool.GetBuffer(size)
-}
-
-func PutBuffer(pool common.BufferPool, buf []byte) {
-	if pool == nil {
-		return
-	}
-	pool.PutBuffer(buf)
-
-}
-
-func writeAll(w io.Writer, data []byte) error {
-	for len(data) > 0 {
-		n, err := w.Write(data)
-		if err != nil {
-			return err
-		}
-		data = data[n:]
-	}
-	return nil
-}
-
 type Socks5Reply struct {
 	common.Addr
 	Rep common.ReplyStatus
@@ -454,7 +428,7 @@ func Write5ToUDPaddr(
 		buf = append(buf, p...)
 
 		if gostUDPTun {
-			return len(p), writeAll(writer, buf)
+			return len(p), WriteAll(writer, buf)
 		}
 		n, err = writer.Write(buf)
 		if err != nil {
@@ -471,7 +445,7 @@ func Write5ToUDPaddr(
 	buf = append(buf, p...)
 
 	if gostUDPTun {
-		return len(p), writeAll(writer, buf)
+		return len(p), WriteAll(writer, buf)
 	}
 
 	n, err = writer.Write(buf)
@@ -523,7 +497,7 @@ func Write5ToUDPFQDN(
 	buf = append(buf, p...)
 
 	if gostUDPTun {
-		return len(p), writeAll(writer, buf)
+		return len(p), WriteAll(writer, buf)
 	}
 
 	n, err = writer.Write(buf)
