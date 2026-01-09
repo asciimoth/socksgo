@@ -104,12 +104,8 @@ func ReadSocks5TCPReply(reader io.Reader, pool BufferPool) (
 ) {
 	// Socks5 request & reply have nearly same format
 	// except meaning of cmd/reply codes
-	cmd, addr, err := ReadSocks5TCPReqest(reader, pool)
+	var cmd Cmd
+	cmd, addr, err = ReadSocks5TCPReqest(reader, pool)
 	stat = ReplyStatus(cmd).To5()
-	if stat != SuccReply {
-		// TODO: Use sentinel err var
-		err = fmt.Errorf("request failed: %s", stat.String())
-		return stat, addr, err
-	}
-	return stat, addr, err
+	return
 }

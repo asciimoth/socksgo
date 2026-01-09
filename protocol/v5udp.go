@@ -100,6 +100,7 @@ loop:
 			// Packet is too small to contain any meaningfull socks5 header
 			continue
 		}
+
 		if buf[0] != 0 || buf[1] != 0 {
 			// RSV is not 0
 			continue

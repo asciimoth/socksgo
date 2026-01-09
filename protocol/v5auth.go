@@ -172,6 +172,29 @@ func (m *AuthMethods) Add(method AuthMethod) *AuthMethods {
 	return m
 }
 
+// If there is PassAuthMethod provided, return its User field.
+func (m *AuthMethods) User() string {
+	if m == nil || m.methodsMap == nil {
+		return ""
+	}
+	user := ""
+	method := m.methodsMap[PassAuthCode]
+	if method != nil {
+		if p, ok := method.(*PassAuthMethod); ok {
+			user = p.User
+		}
+	}
+	return user
+}
+
+func (m *AuthMethods) Clone() *AuthMethods {
+	var clone *AuthMethods
+	for _, v := range m.methodsMap {
+		clone.Add(v)
+	}
+	return clone
+}
+
 type AuthHandlers struct {
 	handlers map[AuthMethodCode]AuthHandler
 }

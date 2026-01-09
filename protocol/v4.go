@@ -13,7 +13,7 @@ import (
 // request is a buffer retireved from provided pool and should be putted back
 func BuildSocsk4TCPRequest(
 	cmd Cmd, addr Addr, user string, pool BufferPool,
-) (request []byte) {
+) (request []byte, err error) {
 	if addr.Type == IP4Addr {
 		// Socks4
 		request = internal.GetBuffer(pool, 9+len(user))[:0]
@@ -26,6 +26,9 @@ func BuildSocsk4TCPRequest(
 		return
 	}
 	// Socks4a
+	if addr.Len() > MAX_HEADER_STR_LENGTH {
+		return nil, fmt.Errorf("too long host: %s", addr.ToFQDN())
+	}
 	host := addr.ToFQDN() // String representation
 	request = internal.GetBuffer(pool, 10+len(user)+len(host))[:0]
 	request = append(request, 4) // Socks version
@@ -99,23 +102,24 @@ func BuildSocsk4TCPReply(
 	return
 }
 
-func ReadSocks4TCPReply(reader io.Reader) (addr Addr, err error) {
+func ReadSocks4TCPReply(reader io.Reader) (
+	stat ReplyStatus,
+	addr Addr,
+	err error,
+) {
 	var resp [8]byte
 	_, err = io.ReadFull(reader, resp[:])
 	if err != nil {
 		return
 	}
 
-	switch ReplyStatus(resp[1]).To4() {
-	case Granted:
+	stat = ReplyStatus(resp[1]).To4()
+	if stat.Ok() {
 		addr = AddrFromIP(
 			net.IP(internal.CopyBytes(resp[4:8])),
 			binary.BigEndian.Uint16(resp[2:4]),
 			"",
 		)
-	default:
-		// TODO: Use sentinel err var
-		err = fmt.Errorf("request failed: %s", ReplyStatus(resp[1]).String())
 	}
 	return
 }

@@ -34,6 +34,10 @@ const (
 
 type ReplyStatus uint8
 
+func (r ReplyStatus) Ok() bool {
+	return r == Granted || r == SuccReply
+}
+
 func (r ReplyStatus) String() string {
 	switch r {
 	// socks4
