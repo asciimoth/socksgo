@@ -50,8 +50,19 @@ func AddrFromNetAddr(addr net.Addr) Addr {
 	if udp, ok := addr.(*net.UDPAddr); ok {
 		return AddrFromUDPAddr(udp)
 	}
-	host, port := internal.SplitHostPort(addr.Network(), addr.String(), 0)
-	return AddrFromString(host, port, addr.Network())
+	return AddrFromHostPort(addr.String(), addr.Network())
+}
+
+func AddrFromHostPort(hostport, network string) Addr {
+	if hostport == "" {
+		if network == "tcp6" || network == "udp6" {
+			hostport = "[::]:0"
+		} else {
+			hostport = "0.0.0.0:0"
+		}
+	}
+	host, port := internal.SplitHostPort(network, hostport, 0)
+	return AddrFromString(host, port, network)
 }
 
 func AddrFromString(host string, port uint16, network string) Addr {
