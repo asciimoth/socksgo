@@ -1,6 +1,6 @@
 //go:build gost
 
-package socks_test
+package socksgo_test
 
 import (
 	"context"

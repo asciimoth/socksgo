@@ -1,4 +1,4 @@
-package socks_test
+package socksgo_test
 
 import (
 	"bufio"
@@ -95,8 +95,8 @@ func GetEnvConfig() EnvConfig {
 	return ret
 }
 
-func buildClient(url string, t *testing.T) *socks.Client {
-	c, err := socks.ClientFromURL(url)
+func buildClient(url string, t *testing.T) *socksgo.Client {
+	c, err := socksgo.ClientFromURL(url)
 	c.Pool = GlobalTestPool
 	if err != nil {
 		t.Fatalf("failed to create gost socks client: %s %v", url, err)
@@ -104,7 +104,7 @@ func buildClient(url string, t *testing.T) *socks.Client {
 	return c
 }
 
-func testUDPListen(c *socks.Client, t *testing.T, times int) {
+func testUDPListen(c *socksgo.Client, t *testing.T, times int) {
 	serverConn, err := c.ListenPacket(context.Background(), "udp4", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("failed to start udp server with client %T: %v", c, err)
@@ -198,7 +198,7 @@ func testUDPListen(c *socks.Client, t *testing.T, times int) {
 	<-done
 }
 
-func testListen(c *socks.Client, t *testing.T, times int) {
+func testListen(c *socksgo.Client, t *testing.T, times int) {
 	l, err := c.Listen(t.Context(), "tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("failed to start listener with client %T: %v", c, err)
@@ -265,7 +265,7 @@ func testListen(c *socks.Client, t *testing.T, times int) {
 	}
 }
 
-func testUDPDial(c *socks.Client, t *testing.T, pairs ...HostPort) {
+func testUDPDial(c *socksgo.Client, t *testing.T, pairs ...HostPort) {
 	resolver := net.Resolver{
 		PreferGo: true,
 		Dial:     c.Dial,
@@ -284,7 +284,7 @@ func testUDPDial(c *socks.Client, t *testing.T, pairs ...HostPort) {
 	}
 }
 
-func testLookup(c *socks.Client, t *testing.T, lookupAddr bool, pairs ...HostPort) {
+func testLookup(c *socksgo.Client, t *testing.T, lookupAddr bool, pairs ...HostPort) {
 	var (
 		err error
 		ips []string = []string{
@@ -321,7 +321,7 @@ func testLookup(c *socks.Client, t *testing.T, lookupAddr bool, pairs ...HostPor
 	}
 }
 
-func testDial(c *socks.Client, t *testing.T, pairs ...HostPort) {
+func testDial(c *socksgo.Client, t *testing.T, pairs ...HostPort) {
 	var (
 		conn net.Conn
 		hp   HostPort

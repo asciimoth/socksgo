@@ -1,4 +1,4 @@
-package socks_test
+package socksgo_test
 
 import (
 	"math"

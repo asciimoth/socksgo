@@ -1,4 +1,4 @@
-package socks_test
+package socksgo_test
 
 import (
 	"testing"
@@ -15,36 +15,36 @@ func TestClientFromURL(t *testing.T) {
 		Version               string
 		GetAddr               string
 		IsTLS                 bool
-		IsUDPAllowed           bool
+		IsUDPAllowed          bool
 		TLSInsecureSkipVerify bool
 		WebSocketURL          string
 	}{
 		{
-			Name:        "Standard socks5",
-			Url:         "socks5://127.0.0.1:8080",
-			Version:     "5",
-			GetAddr:     "127.0.0.1:8080",
+			Name:         "Standard socks5",
+			Url:          "socks5://127.0.0.1:8080",
+			Version:      "5",
+			GetAddr:      "127.0.0.1:8080",
 			IsUDPAllowed: true,
 		},
 		{
-			Name:        "Standard socks5h",
-			Url:         "socks5h://127.0.0.1:8080",
-			Version:     "5",
-			GetAddr:     "127.0.0.1:8080",
+			Name:         "Standard socks5h",
+			Url:          "socks5h://127.0.0.1:8080",
+			Version:      "5",
+			GetAddr:      "127.0.0.1:8080",
 			IsUDPAllowed: true,
 		},
 		{
-			Name:        "Standard socks4",
-			Url:         "socks4://127.0.0.1:8080",
-			Version:     "4",
-			GetAddr:     "127.0.0.1:8080",
+			Name:         "Standard socks4",
+			Url:          "socks4://127.0.0.1:8080",
+			Version:      "4",
+			GetAddr:      "127.0.0.1:8080",
 			IsUDPAllowed: true,
 		},
 		{
-			Name:        "Standard socks4a",
-			Url:         "socks4a://127.0.0.1:8080",
-			Version:     "4a",
-			GetAddr:     "127.0.0.1:8080",
+			Name:         "Standard socks4a",
+			Url:          "socks4a://127.0.0.1:8080",
+			Version:      "4a",
+			GetAddr:      "127.0.0.1:8080",
 			IsUDPAllowed: true,
 		},
 		{
@@ -52,7 +52,7 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+tls://127.0.0.1:8080",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           false,
+			IsUDPAllowed:          false,
 			IsTLS:                 true,
 			TLSInsecureSkipVerify: true,
 		},
@@ -61,7 +61,7 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+tls://127.0.0.1:8080?secure",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           false,
+			IsUDPAllowed:          false,
 			IsTLS:                 true,
 			TLSInsecureSkipVerify: false,
 		},
@@ -70,7 +70,7 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+ws://127.0.0.1:8080",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           true,
+			IsUDPAllowed:          true,
 			WebSocketURL:          "ws://127.0.0.1:8080/ws",
 			IsTLS:                 false,
 			TLSInsecureSkipVerify: false,
@@ -80,7 +80,7 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+ws://127.0.0.1:8080/custom/path",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           true,
+			IsUDPAllowed:          true,
 			WebSocketURL:          "ws://127.0.0.1:8080/custom/path",
 			IsTLS:                 false,
 			TLSInsecureSkipVerify: false,
@@ -90,7 +90,7 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+wss://127.0.0.1:8080",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           false,
+			IsUDPAllowed:          false,
 			WebSocketURL:          "wss://127.0.0.1:8080/ws",
 			IsTLS:                 true,
 			TLSInsecureSkipVerify: true,
@@ -100,7 +100,7 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+wss://127.0.0.1:8080?secure",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           false,
+			IsUDPAllowed:          false,
 			WebSocketURL:          "wss://127.0.0.1:8080/ws",
 			IsTLS:                 true,
 			TLSInsecureSkipVerify: false,
@@ -110,23 +110,23 @@ func TestClientFromURL(t *testing.T) {
 			Url:                   "socks5+ws+tls://127.0.0.1:8080",
 			Version:               "5",
 			GetAddr:               "127.0.0.1:8080",
-			IsUDPAllowed:           false,
+			IsUDPAllowed:          false,
 			WebSocketURL:          "wss://127.0.0.1:8080/ws",
 			IsTLS:                 true,
 			TLSInsecureSkipVerify: true,
 		},
 		{
-			Name:        "Default port",
-			Url:         "socks5://127.0.0.1",
-			Version:     "5",
-			GetAddr:     "127.0.0.1:1080",
+			Name:         "Default port",
+			Url:          "socks5://127.0.0.1",
+			Version:      "5",
+			GetAddr:      "127.0.0.1:1080",
 			IsUDPAllowed: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			client, err := socks.ClientFromURL(tc.Url)
+			client, err := socksgo.ClientFromURL(tc.Url)
 			if err != nil {
 				t.Errorf("unexpected error %v", err)
 				return
