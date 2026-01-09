@@ -66,17 +66,6 @@ func SplitHostPort(network, hostport string, defport uint16) (host string, port 
 	return host, port
 }
 
-func WriteAll(w io.Writer, data []byte) error {
-	for len(data) > 0 {
-		n, err := w.Write(data)
-		if err != nil {
-			return err
-		}
-		data = data[n:]
-	}
-	return nil
-}
-
 var TooLongStringErr = errors.New("string is too long")
 
 // Should be cap(buf) >= 1
@@ -100,12 +89,6 @@ func ReadNullTerminatedString(r io.Reader, buf []byte) (string, error) {
 		buf = buf[:len(buf)+1] //grow
 	}
 	return string(buf), nil
-}
-
-func PopByte(r io.Reader) (byte, error) {
-	var buf [1]byte
-	_, err := io.ReadFull(r, buf[:])
-	return buf[0], err
 }
 
 func CopyBytes(src []byte) (dst []byte) {
