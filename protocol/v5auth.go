@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/asciimoth/socks/internal"
 )
@@ -54,6 +55,15 @@ type AuthInfo struct {
 	Code AuthMethodCode
 	Name string // May be ""; Use GetName()
 	Info map[string]any
+}
+
+func (a AuthInfo) String() string {
+	var str strings.Builder
+	fmt.Fprintf(&str, "%d %s\n", a.Code, a.GetName())
+	for k, v := range a.Info {
+		fmt.Fprintf(&str, "%s: %v", k, v)
+	}
+	return str.String()
 }
 
 func (a AuthInfo) GetName() string {

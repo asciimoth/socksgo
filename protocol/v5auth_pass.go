@@ -77,7 +77,7 @@ func (m *PassAuthMethod) RunAuth(conn net.Conn, pool BufferPool) (net.Conn, Auth
 }
 
 type PassAuthHandler struct {
-	// Nil means any user+pass combination is allowedl
+	// Nil means any user+pass combination is allowed
 	VerifyFn func(user, pass string) bool
 }
 
