@@ -1,3 +1,5 @@
+//go:build gost
+
 package socks_test
 
 import (

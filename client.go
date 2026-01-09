@@ -10,24 +10,20 @@ import (
 	"github.com/xtaci/smux"
 )
 
-func ClientFomURLObj(u *url.URL, mods ...func(*Client)) *Client {
+func ClientFomURLObj(u *url.URL) *Client {
 	config := clientConfigFromURL(u, nil)
 	client := &Client{
 		ClientConfig: config,
 	}
-	for _, mod := range mods {
-		mod(client)
-	}
 	return client
 }
 
-// TODO: Test
-func ClientFomURL(urlstr string, mods ...func(*Client)) (*Client, error) {
+func ClientFomURL(urlstr string) (*Client, error) {
 	u, err := url.Parse(urlstr)
 	if err != nil {
 		return nil, err
 	}
-	return ClientFomURLObj(u, mods...), nil
+	return ClientFomURLObj(u), nil
 }
 
 type Client struct {

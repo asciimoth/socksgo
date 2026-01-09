@@ -1,3 +1,5 @@
+//go:build tor
+
 package socks_test
 
 import "testing"

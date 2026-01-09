@@ -18,7 +18,6 @@ func checkURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
 }
 
 // base = "4" | "4a" | "5"
-// TODO: Test
 func parseSheme(scheme string) (base string, tls, ws bool) {
 	parts := strings.Split(strings.TrimSpace(strings.ToLower(scheme)), "+")
 	for _, p := range []string{"socks", "socks5", "socks5h"} {
