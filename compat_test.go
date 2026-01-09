@@ -96,7 +96,7 @@ func GetEnvConfig() EnvConfig {
 }
 
 func buildClient(url string, t *testing.T) *socks.Client {
-	c, err := socks.ClientFomURL(url)
+	c, err := socks.ClientFromURL(url)
 	c.Pool = GlobalTestPool
 	if err != nil {
 		t.Fatalf("failed to create gost socks client: %s %v", url, err)
@@ -210,12 +210,12 @@ func testListen(c *socks.Client, t *testing.T, times int) {
 
 		_, err := bufio.NewReader(conn).ReadString('\n')
 		if err != nil {
-			t.Fatalf("error while reading reqest: %v", err)
+			t.Fatalf("error while reading request: %v", err)
 		}
 
-		text := fmt.Sprintf("responce #%d\n", i)
+		text := fmt.Sprintf("response #%d\n", i)
 
-		responce := fmt.Sprintf(
+		response := fmt.Sprintf(
 			"HTTP/1.1 200 OK\r\n"+
 				"Content-Type: text/plain; charset=utf-8\r\n"+
 				"Content-Length: %d\r\n"+
@@ -224,7 +224,7 @@ func testListen(c *socks.Client, t *testing.T, times int) {
 			len(text), text,
 		)
 
-		_, err = conn.Write([]byte(responce))
+		_, err = conn.Write([]byte(response))
 		if err != nil {
 			t.Fatalf("error while responding: %v", err)
 		}
@@ -253,10 +253,10 @@ func testListen(c *socks.Client, t *testing.T, times int) {
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			t.Fatalf("fail to read responce: %v", err)
+			t.Fatalf("fail to read response: %v", err)
 		}
 
-		expect := fmt.Sprintf("responce #%d", i)
+		expect := fmt.Sprintf("response #%d", i)
 		got := strings.TrimSpace(string(body))
 
 		if got != expect {
@@ -355,16 +355,16 @@ func testDial(c *socks.Client, t *testing.T, pairs ...HostPort) {
 		t.Fatalf("failed to send request with client %T: %v", c, err)
 	}
 
-	responce, err := io.ReadAll(conn)
+	response, err := io.ReadAll(conn)
 	if err != nil {
-		t.Fatalf("failed to read responce with client %T: %v", c, err)
+		t.Fatalf("failed to read response with client %T: %v", c, err)
 	}
 
-	lower := strings.ToLower(string(responce))
+	lower := strings.ToLower(string(response))
 
 	if strings.Contains(lower, "ok") || strings.Contains(lower, "moved") {
 		return
 	}
 
-	t.Fatalf("responce from %s is not ok:\n%s", hp.String(), string(responce))
+	t.Fatalf("response from %s is not ok:\n%s", hp.String(), string(response))
 }

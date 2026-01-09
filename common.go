@@ -39,7 +39,7 @@ type Resolver interface {
 // network may be "" if it is unknown.
 type Filter = func(network, address string) bool
 
-// Allways returns false
+// Always returns false
 func PassAllFilter(_, _ string) bool {
 	return false
 }

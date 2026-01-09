@@ -30,12 +30,12 @@ type AuthMethodCode uint8
 
 func (a AuthMethodCode) String() string {
 	if a >= 0x3 && a <= 0x7f {
-		return "IANA assiged auth"
+		return "IANA assigned auth"
 	}
 	if a >= 0x80 && a <= 0xfe {
 		return "private auth method"
 	}
-	// Standart auth method
+	// Standard auth method
 	switch a {
 	case NoAuthCode:
 		return "no auth required"
@@ -50,7 +50,7 @@ func (a AuthMethodCode) String() string {
 	}
 }
 
-// AuthInfo provides information about succsessfull auth like used password.
+// AuthInfo provides information about successful auth like used password.
 type AuthInfo struct {
 	Code AuthMethodCode
 	Name string // May be ""; Use GetName()
@@ -210,8 +210,8 @@ type AuthHandlers struct {
 }
 
 // For nil or void AuthHandlers
-// - Get(NoAuthCode) allways return blank method that just do nothing
-// - Get(PassAuthCode) allways return PassAuthHandler that accept any user+pass
+// - Get(NoAuthCode) always return blank method that just do nothing
+// - Get(PassAuthCode) always return PassAuthHandler that accept any user+pass
 func (m *AuthHandlers) Get(code AuthMethodCode) AuthHandler {
 	if m == nil || m.handlers == nil {
 		if code == NoAuthCode {

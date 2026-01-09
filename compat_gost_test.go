@@ -23,7 +23,7 @@ func runGost(url string, ctx context.Context) (func(), error) {
 	}, nil
 }
 
-func getShcemes(tls bool, ws bool) (socks5, socks4, socks4a string) {
+func getSchemes(tls bool, ws bool) (socks5, socks4, socks4a string) {
 	socks5 = "socks5"
 	socks4 = "socks4"
 	socks4a = "socks4a"
@@ -47,7 +47,7 @@ func getShcemes(tls bool, ws bool) (socks5, socks4, socks4a string) {
 }
 
 func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) func() {
-	socks5, socks4, _ := getShcemes(tls, ws)
+	socks5, socks4, _ := getSchemes(tls, ws)
 
 	killfuncs := []func(){}
 
@@ -101,7 +101,7 @@ func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
 	kill := runGostAll(t, cfg, tls, ws)
 	defer kill()
 
-	socks5, socks4, socks4a := getShcemes(tls, ws)
+	socks5, socks4, socks4a := getSchemes(tls, ws)
 
 	c5g := buildClient(socks5+"://"+cfg.Addr5+"?gost", t)
 	c5gp := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass+"?gost", t)

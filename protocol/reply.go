@@ -46,7 +46,7 @@ func (r ReplyStatus) String() string {
 	case Rejected:
 		return "request rejected or failed"
 	case IdentFailed:
-		return "request rejected becasue socks server cannot connect to identd on the client"
+		return "request rejected because socks server cannot connect to identd on the client"
 	case IdentRequired:
 		return "request rejected because the client program and identd report different user-ids"
 

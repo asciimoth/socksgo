@@ -11,7 +11,7 @@ import (
 	"github.com/asciimoth/socks/internal"
 )
 
-// For standart socks UDP ASSOC leave rsv == 0.
+// For standard socks UDP ASSOC leave rsv == 0.
 // For gost's UDP TUN extension
 func AppendSocks5UDPHeader(
 	buf []byte,
@@ -47,7 +47,7 @@ func WriteSocks5UDPPacket(
 ) (n int, err error) {
 	if _, ok := conn.(net.PacketConn); ok {
 		// conn is a packet one (udp)
-		// standart UDP ASSOC should be used
+		// standard UDP ASSOC should be used
 
 		buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN+len(data))[:0]
 		defer internal.PutBuffer(pool, buf)
@@ -82,7 +82,7 @@ func WriteSocks5UDPPacket(
 	}
 }
 
-func readStandartSocks5UDPPacket(
+func readStandardSocks5UDPPacket(
 	pool BufferPool,
 	conn net.Conn,
 	p []byte,
@@ -97,7 +97,7 @@ loop:
 			return
 		}
 		if n < 8 {
-			// Packet is too small to contain any meaningfull socks5 header
+			// Packet is too small to contain any meaningful socks5 header
 			continue
 		}
 
@@ -111,7 +111,7 @@ loop:
 			continue
 		}
 
-		start := 0 // Place in pkg where paylaod starts
+		start := 0 // Place in pkg where payload starts
 		switch AddrType(buf[3]) {
 		case IP4Addr:
 			if n < 10 {
@@ -172,7 +172,7 @@ func readSocks5TunUDPPacket(
 	}
 
 	for {
-		// If pkg is malformed or unsupproted for any reason we still need to
+		// If pkg is malformed or unsupported for any reason we still need to
 		// read it before continue to next one.
 		skip := false
 
@@ -262,8 +262,8 @@ func ReadSocks5UDPPacket(
 ) (n int, addr Addr, err error) {
 	if _, ok := conn.(net.PacketConn); ok {
 		// conn is a packet one (udp)
-		// standart UDP ASSOC should be used
-		return readStandartSocks5UDPPacket(pool, conn, p, skipAddr)
+		// standard UDP ASSOC should be used
+		return readStandardSocks5UDPPacket(pool, conn, p, skipAddr)
 	} else {
 		// conn is not a packet one (udp) conn
 		// gost's UDP TUN extension should be used

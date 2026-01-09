@@ -10,7 +10,7 @@ import (
 	"github.com/xtaci/smux"
 )
 
-func ClientFomURLObj(u *url.URL) *Client {
+func ClientFromURLObj(u *url.URL) *Client {
 	config := clientConfigFromURL(u, nil)
 	client := &Client{
 		ClientConfig: config,
@@ -18,12 +18,12 @@ func ClientFomURLObj(u *url.URL) *Client {
 	return client
 }
 
-func ClientFomURL(urlstr string) (*Client, error) {
+func ClientFromURL(urlstr string) (*Client, error) {
 	u, err := url.Parse(urlstr)
 	if err != nil {
 		return nil, err
 	}
-	return ClientFomURLObj(u), nil
+	return ClientFromURLObj(u), nil
 }
 
 type Client struct {
@@ -190,7 +190,7 @@ func (c *Client) LookupIP(ctx context.Context, network, address string) ([]net.I
 
 	ip := addr.ToIP()
 	if ip == nil {
-		return nil, ErrWrongAddrInLookupResponce
+		return nil, ErrWrongAddrInLookupResponse
 	}
 	return []net.IP{ip}, nil
 }

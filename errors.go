@@ -11,7 +11,7 @@ import (
 var (
 	ErrUDPDisallowed             = errors.New("plaintext UDP is disallowed for tls/wss proxies")
 	ErrResolveDisabled           = errors.New("tor resolve extension for socks is disabled")
-	ErrWrongAddrInLookupResponce = errors.New("wrong addr type in lookup responce")
+	ErrWrongAddrInLookupResponse = errors.New("wrong addr type in lookup response")
 )
 
 type WrongNetworkError struct {

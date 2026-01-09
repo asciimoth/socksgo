@@ -241,26 +241,26 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := bytes.NewReader(tt.data)
-			cmd, addr, err := protocol.ReadSocks5TCPReqest(reader, nil)
+			cmd, addr, err := protocol.ReadSocks5TCPRequest(reader, nil)
 
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("ReadSocks5TCPReqest() expected error, got nil")
+					t.Errorf("ReadSocks5TCPRequest() expected error, got nil")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("ReadSocks5TCPReqest() unexpected error: %v", err)
+				t.Errorf("ReadSocks5TCPRequest() unexpected error: %v", err)
 				return
 			}
 
 			if cmd != tt.wantCmd {
-				t.Errorf("ReadSocks5TCPReqest() cmd = %v, want %v", cmd, tt.wantCmd)
+				t.Errorf("ReadSocks5TCPRequest() cmd = %v, want %v", cmd, tt.wantCmd)
 			}
 
 			if addr.String() != tt.wantAddr {
-				t.Errorf("ReadSocks5TCPReqest() addr = %v, want %v", addr.String(), tt.wantAddr)
+				t.Errorf("ReadSocks5TCPRequest() addr = %v, want %v", addr.String(), tt.wantAddr)
 			}
 		})
 	}
@@ -313,9 +313,9 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 				t.Fatal("Request too short")
 			}
 			reader := bytes.NewReader(request)
-			cmd, addr, err := protocol.ReadSocks5TCPReqest(reader, nil)
+			cmd, addr, err := protocol.ReadSocks5TCPRequest(reader, nil)
 			if err != nil {
-				t.Fatalf("ReadSocks5TCPReqest failed: %v", err)
+				t.Fatalf("ReadSocks5TCPRequest failed: %v", err)
 			}
 
 			// Compare results
@@ -335,7 +335,7 @@ func TestReadWithPartialData(t *testing.T) {
 	// Create a broken reader that returns EOF early
 	brokenReader := &io.LimitedReader{R: bytes.NewReader([]byte{0x01, 0x00, 0x01}), N: 2}
 
-	_, _, err := protocol.ReadSocks5TCPReqest(brokenReader, nil)
+	_, _, err := protocol.ReadSocks5TCPRequest(brokenReader, nil)
 	if err == nil {
 		t.Error("Expected error with partial data, got nil")
 	}

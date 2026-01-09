@@ -169,30 +169,30 @@ func TestReadSocks4TCPRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := bytes.NewReader(tt.data)
-			gotCmd, gotAddr, gotUser, err := protocol.ReadSocks4TCPReqest(reader, nil)
+			gotCmd, gotAddr, gotUser, err := protocol.ReadSocks4TCPRequest(reader, nil)
 
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("ReadSocks4TCPReqest() expected error, got nil")
+					t.Errorf("ReadSocks4TCPRequest() expected error, got nil")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("ReadSocks4TCPReqest() unexpected error: %v", err)
+				t.Errorf("ReadSocks4TCPRequest() unexpected error: %v", err)
 				return
 			}
 
 			if gotCmd != tt.wantCmd {
-				t.Errorf("ReadSocks4TCPReqest() cmd = %v, want %v", gotCmd, tt.wantCmd)
+				t.Errorf("ReadSocks4TCPRequest() cmd = %v, want %v", gotCmd, tt.wantCmd)
 			}
 
 			if gotAddr.String() != tt.wantAddr {
-				t.Errorf("ReadSocks4TCPReqest() addr = %v, want %v", gotAddr.String(), tt.wantAddr)
+				t.Errorf("ReadSocks4TCPRequest() addr = %v, want %v", gotAddr.String(), tt.wantAddr)
 			}
 
 			if gotUser != tt.wantUser {
-				t.Errorf("ReadSocks4TCPReqest() user = %v, want %v", gotUser, tt.wantUser)
+				t.Errorf("ReadSocks4TCPRequest() user = %v, want %v", gotUser, tt.wantUser)
 			}
 		})
 	}
@@ -246,13 +246,13 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 				t.Errorf("unexpected error %v", err)
 			}
 
-			// Skip the first byte (version) as ReadSocks4TCPReqest expects
+			// Skip the first byte (version) as ReadSocks4TCPRequest expects
 			reader := bytes.NewReader(request[1:])
 
 			// Read the request
-			readCmd, readAddr, readUser, err := protocol.ReadSocks4TCPReqest(reader, nil)
+			readCmd, readAddr, readUser, err := protocol.ReadSocks4TCPRequest(reader, nil)
 			if err != nil {
-				t.Errorf("ReadSocks4TCPReqest() failed: %v", err)
+				t.Errorf("ReadSocks4TCPRequest() failed: %v", err)
 				return
 			}
 
@@ -306,10 +306,10 @@ func TestReadSocks4TCPRequest_ErrorCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := bytes.NewReader(tt.data)
-			_, _, _, err := protocol.ReadSocks4TCPReqest(reader, nil)
+			_, _, _, err := protocol.ReadSocks4TCPRequest(reader, nil)
 
 			if err == nil {
-				t.Errorf("ReadSocks4TCPReqest() expected error, got nil")
+				t.Errorf("ReadSocks4TCPRequest() expected error, got nil")
 			}
 		})
 	}

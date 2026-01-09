@@ -98,7 +98,7 @@ type ClientConfig struct {
 	// "" means default means "5"
 	SocksVersion string
 
-	// For standart (not ws) proxies
+	// For standard (not ws) proxies
 	// Default: "tcp"
 	ProxyNet string
 	// If port not provided ("<host>" instead of "<host>:<port>")
@@ -135,7 +135,7 @@ type ClientConfig struct {
 	TLS       bool
 	TLSConfig *tls.Config
 
-	// If not "" socks over ws/wss wil be enabled
+	// If not "" socks over ws/wss will be enabled
 	// For ws/wss connections ProxyNet and ProxyAddr are ignored
 	WebSocketURL    string
 	WebSocketConfig *WebSocketConfig
@@ -176,7 +176,7 @@ func (c *ClientConfig) IsTLS() bool {
 }
 
 // !c.IsTLS() || c.InsecureUDP
-func (c *ClientConfig) IsUDPAlowed() bool {
+func (c *ClientConfig) IsUDPAllowed() bool {
 	return !c.IsTLS() || c.InsecureUDP
 }
 
@@ -237,9 +237,9 @@ func (c *ClientConfig) GetResolver() Resolver {
 	return c.Resolver
 }
 
-// Buld TLS config from c.TLSConfig or default tls.Config{}.
+// Build TLS config from c.TLSConfig or default tls.Config{}.
 // If config.ServerName == "", set it to c.GetAddr().
-// If !c.IsTLS() allways return nil.
+// If !c.IsTLS() always return nil.
 func (c *ClientConfig) GetTLSConfig() (config *tls.Config) {
 	if !c.IsTLS() {
 		return nil
@@ -263,7 +263,7 @@ func (c *ClientConfig) GetTLSConfig() (config *tls.Config) {
 
 // Build webSocket.Dialer from c.WebSocketConfig,
 // c.GetDialer() and c.GetTLSConfig.
-// if c.WebSocketURL == "" allways return nil.
+// if c.WebSocketURL == "" always return nil.
 func (c *ClientConfig) GetWsDialer() *websocket.Dialer {
 	if c.WebSocketURL == "" {
 		return nil
@@ -387,7 +387,7 @@ func clientConfigFromURL(u *url.URL, defaultCfg *ClientConfig) ClientConfig {
 		return cfg
 	}
 
-	version, isTLS, isWS := parseSheme(u.Scheme)
+	version, isTLS, isWS := parseScheme(u.Scheme)
 	cfg.SocksVersion = version
 	cfg.TLS = isTLS
 

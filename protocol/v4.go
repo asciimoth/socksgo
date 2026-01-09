@@ -10,7 +10,7 @@ import (
 	"github.com/asciimoth/socks/internal"
 )
 
-// request is a buffer retireved from provided pool and should be putted back
+// request is a buffer retrieved from provided pool and should be putted back
 func BuildSocsk4TCPRequest(
 	cmd Cmd, addr Addr, user string, pool BufferPool,
 ) (request []byte, err error) {
@@ -43,7 +43,7 @@ func BuildSocsk4TCPRequest(
 }
 
 // Reading request WITHOUT first byte.
-func ReadSocks4TCPReqest(reader io.Reader, pool BufferPool) (
+func ReadSocks4TCPRequest(reader io.Reader, pool BufferPool) (
 	cmd Cmd, addr Addr, user string, err error,
 ) {
 	var resp [7]byte
@@ -86,7 +86,7 @@ func ReadSocks4TCPReqest(reader io.Reader, pool BufferPool) (
 	return
 }
 
-// reply is a buffer retireved from provided pool and should be putted back
+// reply is a buffer retrieved from provided pool and should be putted back
 func BuildSocsk4TCPReply(
 	stat ReplyStatus, addr Addr, pool BufferPool,
 ) (request []byte) {

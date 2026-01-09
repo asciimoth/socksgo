@@ -487,7 +487,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 
 				if !tt.skipAddr {
 					if tt.wantAddr.String() != addr.String() {
-						t.Errorf("expercted addr %s but got %s", tt.wantAddr.String(), addr.String())
+						t.Errorf("expected addr %s but got %s", tt.wantAddr.String(), addr.String())
 					}
 				}
 			}

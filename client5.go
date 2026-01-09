@@ -77,7 +77,7 @@ func (c *Client) dialPacket5(
 	ctx context.Context,
 	addr protocol.Addr,
 ) (*clientPacketConn5, error) {
-	if !c.IsUDPAlowed() {
+	if !c.IsUDPAllowed() {
 		return nil, ErrUDPDisallowed
 	}
 
@@ -130,7 +130,7 @@ func (c *Client) setupUDPTun5(
 	laddr protocol.Addr,
 	raddr *protocol.Addr,
 ) (*clientPacketConn5, error) {
-	if !c.IsUDPAlowed() {
+	if !c.IsUDPAllowed() {
 		return nil, ErrUDPDisallowed
 	}
 

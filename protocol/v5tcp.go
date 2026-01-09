@@ -10,7 +10,7 @@ import (
 	"github.com/asciimoth/socks/internal"
 )
 
-// request is a buffer retireved from provided pool and should be putted back
+// request is a buffer retrieved from provided pool and should be putted back
 func BuildSocks5TCPRequest(
 	cmd Cmd, addr Addr, pool BufferPool,
 ) (request []byte, err error) {
@@ -35,7 +35,7 @@ func BuildSocks5TCPRequest(
 	return
 }
 
-func ReadSocks5TCPReqest(reader io.Reader, pool BufferPool) (
+func ReadSocks5TCPRequest(reader io.Reader, pool BufferPool) (
 	cmd Cmd, addr Addr, err error,
 ) {
 	buf := internal.GetBuffer(pool, MAX_SOCKS_TCP_HEADER_LEN)
@@ -89,7 +89,7 @@ func ReadSocks5TCPReqest(reader io.Reader, pool BufferPool) (
 	return
 }
 
-// reply is a buffer retireved from provided pool and should be putted back
+// reply is a buffer retrieved from provided pool and should be putted back
 func BuildSocks5TCPReply(
 	stat ReplyStatus, addr Addr, pool BufferPool,
 ) (reply []byte, err error) {
@@ -105,7 +105,7 @@ func ReadSocks5TCPReply(reader io.Reader, pool BufferPool) (
 	// Socks5 request & reply have nearly same format
 	// except meaning of cmd/reply codes
 	var cmd Cmd
-	cmd, addr, err = ReadSocks5TCPReqest(reader, pool)
+	cmd, addr, err = ReadSocks5TCPRequest(reader, pool)
 	stat = ReplyStatus(cmd).To5()
 	return
 }
