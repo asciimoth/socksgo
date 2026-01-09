@@ -3,7 +3,7 @@ package socks_test
 import (
 	"testing"
 
-	"github.com/asciimoth/socks"
+	"github.com/asciimoth/socksgo"
 )
 
 func TestClientFromURL(t *testing.T) {

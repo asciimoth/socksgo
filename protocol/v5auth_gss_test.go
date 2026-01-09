@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/asciimoth/socks/protocol"
+	"github.com/asciimoth/socksgo/protocol"
 )
 
 type MockGSSClient struct {

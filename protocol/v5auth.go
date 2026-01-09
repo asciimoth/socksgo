@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asciimoth/socks/internal"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 const (

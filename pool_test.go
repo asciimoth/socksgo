@@ -5,7 +5,7 @@ import (
 	"math/bits"
 	"sync"
 
-	"github.com/asciimoth/socks/protocol"
+	"github.com/asciimoth/socksgo/protocol"
 )
 
 var (

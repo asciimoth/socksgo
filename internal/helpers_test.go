@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/asciimoth/socks/internal"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 func TestReadNullTerminatedString(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asciimoth/socks/protocol"
+	"github.com/asciimoth/socksgo/protocol"
 )
 
 func TestBuildSocks4TCPRequest(t *testing.T) {

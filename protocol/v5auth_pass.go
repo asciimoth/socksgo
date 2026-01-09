@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/socks/internal"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 // Static type assertion

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asciimoth/socks"
+	"github.com/asciimoth/socksgo"
 )
 
 type HostPort struct {

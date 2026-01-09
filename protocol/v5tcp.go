@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/socks/internal"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 // request is a buffer retrieved from provided pool and should be putted back

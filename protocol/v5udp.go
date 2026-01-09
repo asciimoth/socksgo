@@ -8,7 +8,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/asciimoth/socks/internal"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 // For standard socks UDP ASSOC leave rsv == 0.

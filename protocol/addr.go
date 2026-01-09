@@ -4,7 +4,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/asciimoth/socks/internal"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/asciimoth/socks/protocol"
+	"github.com/asciimoth/socksgo/protocol"
 )
 
 var (

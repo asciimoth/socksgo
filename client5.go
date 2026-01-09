@@ -8,8 +8,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/asciimoth/socks/internal"
-	"github.com/asciimoth/socks/protocol"
+	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
 

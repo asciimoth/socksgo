@@ -1,4 +1,4 @@
-module github.com/asciimoth/socks
+module github.com/asciimoth/socksgo
 
 go 1.25.4
 

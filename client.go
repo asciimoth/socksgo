@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/url"
 
-	"github.com/asciimoth/socks/protocol"
+	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
 
