@@ -16,6 +16,10 @@ type Server struct {
 	Pool protocol.BufferPool
 	Auth *protocol.AuthHandlers
 
+	// Should IPv4 addrs be preferred ip both IPv4 and IPv6 addr are available
+	// when replying to CmdTorResolve
+	DoNotPreferIP4 bool
+
 	// TODO: Add option to use IDENT for socks4 instead of Auth
 
 	// If non nil error or non Ok status will be reutrned, request
@@ -51,6 +55,14 @@ func (s *Server) getHandler(cmd protocol.Cmd) *CommandHandler {
 		return nil
 	}
 	return &handler
+}
+
+// true by default (for s == nil)
+func (s *Server) IsPreferIPv4() bool {
+	if s == nil {
+		return true
+	}
+	return !s.DoNotPreferIP4
 }
 
 func (s *Server) GetAuth() *protocol.AuthHandlers {

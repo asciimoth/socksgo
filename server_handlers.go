@@ -28,7 +28,8 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
 				return err
 			}
-			protocol.Reply(
+			defer conn2.Close()
+			err = protocol.Reply(
 				ver,
 				conn,
 				protocol.SuccReply,
@@ -39,6 +40,50 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 				return err
 			}
 			return internal.PipeConn(conn, conn2)
+		},
+	},
+	protocol.CmdTorResolve: {
+		Socks4:    true,
+		Socks5:    true,
+		TLSCompat: true,
+		Handler: func(
+			ctx context.Context,
+			server *Server,
+			conn net.Conn,
+			ver string,
+			info protocol.AuthInfo,
+			cmd protocol.Cmd,
+			addr protocol.Addr) error {
+			pool := server.GetPool()
+			ips, err := server.GetResolver().LookupIP(ctx, addr.IpNetwork(), addr.ToFQDN())
+			if err != nil {
+				return err
+			}
+			if len(ips) < 1 {
+				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
+				return &net.DNSError{
+					Err:        "zero IPs found",
+					Name:       addr.ToFQDN(),
+					IsNotFound: true,
+				}
+			}
+			ip := ips[0]
+			if server.IsPreferIPv4() {
+				for _, elem := range ips {
+					if ip4 := elem.To4(); ip4 != nil {
+						ip = ip4
+						break
+					}
+				}
+			}
+			err = protocol.Reply(
+				ver,
+				conn,
+				protocol.SuccReply,
+				protocol.AddrFromIP(ip, 0, ""),
+				pool,
+			)
+			return err
 		},
 	},
 }

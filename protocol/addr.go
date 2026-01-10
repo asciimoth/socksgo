@@ -192,6 +192,18 @@ func (a Addr) Network() string {
 	return net
 }
 
+func (a Addr) IpNetwork() string {
+	switch a.NetTyp {
+	case "", "tcp", "udp", "ip":
+		return "ip"
+	case "tcp4", "udp4", "ip4":
+		return "ip4"
+	case "tcp6", "udp6", "ip6":
+		return "ip6"
+	}
+	return a.NetTyp
+}
+
 func (a Addr) String() string {
 	if a.Port == 0 {
 		return a.ToFQDN()
