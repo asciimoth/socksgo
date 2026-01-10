@@ -95,7 +95,7 @@ func BuildSocks4TCPReply(
 		ip = net.IPv4(0, 0, 0, 0).To4()
 	}
 	request = internal.GetBuffer(pool, 9)[:0]
-	request = append(request, 4) // Socks version
+	request = append(request, 0) // Reply ver
 	request = append(request, byte(stat.To4()))
 	request = binary.BigEndian.AppendUint16(request, addr.Port)
 	request = append(request, addr.ToIP().To4()...)
@@ -111,6 +111,10 @@ func ReadSocks4TCPReply(reader io.Reader) (
 	_, err = io.ReadFull(reader, resp[:])
 	if err != nil {
 		return
+	}
+
+	if resp[0] != 0 {
+		err = fmt.Errorf("wrong socks4 reply version %d, should be 0", int(resp[0]))
 	}
 
 	stat = ReplyStatus(resp[1]).To4()

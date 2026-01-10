@@ -327,7 +327,7 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 			cmd:  protocol.Granted,
 			addr: protocol.AddrFromIP(net.IPv4(192, 168, 1, 100), 1080, ""),
 			expected: []byte{
-				4,                      // SOCKS version
+				0,                      // Reply version
 				byte(protocol.Granted), // Command (90 = granted)
 				4, 56,                  // Port 1080 (0x0438)
 				192, 168, 1, 100, // IP address
@@ -338,7 +338,7 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 			cmd:  protocol.Rejected,
 			addr: protocol.AddrFromIP(net.IPv4(10, 0, 0, 1), 8080, ""),
 			expected: []byte{
-				4,                       // SOCKS version
+				0,                       // Reply version
 				byte(protocol.Rejected), // Command (91 = rejected)
 				31, 144,                 // Port 8080 (0x1F90)
 				10, 0, 0, 1, // IP address
@@ -349,7 +349,7 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 			cmd:  protocol.Granted,
 			addr: protocol.AddrFromIP(net.IPv4(127, 0, 0, 1), 3000, ""),
 			expected: []byte{
-				4,                      // SOCKS version
+				0,                      // Reply version
 				byte(protocol.Granted), // Command
 				11, 184,                // Port 3000 (0x0BB8)
 				127, 0, 0, 1, // Loopback IP
@@ -369,9 +369,9 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 				t.Errorf("BuildSocsk4TCPReply() length = %d, want %d", len(got), len(tt.expected))
 			}
 
-			// Verify first byte is version 4
-			if got[0] != 4 {
-				t.Errorf("BuildSocsk4TCPReply() version = %d, want 4", got[0])
+			// Verify first byte is version 0
+			if got[0] != 0 {
+				t.Errorf("BuildSocsk4TCPReply() version = %d, want 0", got[0])
 			}
 		})
 	}
@@ -388,7 +388,7 @@ func TestReadSocks4TCPReply(t *testing.T) {
 		{
 			name: "Successful Granted reply",
 			data: []byte{
-				4,                      // SOCKS version
+				0,                      // Reply version
 				byte(protocol.Granted), // Granted (90)
 				4, 56,                  // Port 1080
 				192, 168, 1, 100, // IP address
@@ -398,7 +398,7 @@ func TestReadSocks4TCPReply(t *testing.T) {
 		{
 			name: "Successful Granted reply with 0.0.0.0",
 			data: []byte{
-				4,                      // SOCKS version
+				0,                      // Reply version
 				byte(protocol.Granted), // Granted (90)
 				1, 187,                 // Port 443
 				0, 0, 0, 0, // 0.0.0.0

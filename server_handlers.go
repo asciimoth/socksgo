@@ -1,9 +1,7 @@
 package socksgo
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"net"
 
 	"github.com/asciimoth/socksgo/internal"
@@ -23,21 +21,20 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			info protocol.AuthInfo,
 			cmd protocol.Cmd,
 			addr protocol.Addr) error {
+			pool := server.GetPool()
 			conn2, err := server.GetDialer()(ctx, addr.Network(), addr.String())
 			if err != nil {
-				// TODO: Select reply depending on err type
-				server.reject5(conn, protocol.HostUnreachReply)
+				// TODO: Select reply code depending on err type
+				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
 				return err
 			}
-			reply, err := protocol.BuildSocks5TCPReply(
+			protocol.Reply(
+				ver,
+				conn,
 				protocol.SuccReply,
 				protocol.AddrFromNetAddr(conn2.RemoteAddr()),
-				server.GetPool(),
+				pool,
 			)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(conn, bytes.NewReader(reply))
 			if err != nil {
 				return err
 			}

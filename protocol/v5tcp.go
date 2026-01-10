@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -47,7 +46,9 @@ func ReadSocks5TCPRequest(reader io.Reader, pool BufferPool) (
 	}
 
 	if buf[0] != 5 {
-		err = errors.New("wrong protocol version constant in socks request")
+		err = fmt.Errorf(
+			"wrong protocol version %d in socks5 request", int(buf[0]),
+		)
 		return
 	}
 

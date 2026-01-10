@@ -197,7 +197,7 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 		if stat.Ok() {
 			stat = protocol.Rejected
 		}
-		s.reject4(conn, stat)
+		protocol.Reject("4", conn, stat, pool)
 		return err
 	}
 
@@ -221,7 +221,7 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 	handler := s.getHandler(cmd)
 	if handler == nil || !handler.Allowed("5", isTLS) {
-		s.reject5(conn, protocol.CmdNotSuppReply)
+		protocol.Reject("5", conn, protocol.CmdNotSuppReply, pool)
 		return UnsupportedCommandError{
 			SocksVersion: "5",
 			Cmd:          cmd,
@@ -230,35 +230,8 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 	err, stat := s.runPreCmd(ctx, conn, "5", info, cmd, addr)
 	if err != nil || !stat.Ok() {
-		s.reject5(conn, stat)
+		protocol.Reject("5", conn, stat, pool)
 		return err
 	}
 	return handler.Run(ctx, s, conn, "5", info, cmd, addr)
-}
-
-func (s *Server) reject4(conn net.Conn, stat protocol.ReplyStatus) {
-	defer conn.Close()
-	pool := s.GetPool()
-	reply := protocol.BuildSocks4TCPReply(
-		stat.To4(),
-		protocol.AddrFromIP(net.IPv4(0, 0, 0, 0).To4(), 0, ""),
-		pool,
-	)
-	defer internal.PutBuffer(pool, reply)
-	_, _ = io.Copy(conn, bytes.NewReader(reply))
-}
-
-func (s *Server) reject5(conn net.Conn, stat protocol.ReplyStatus) {
-	defer conn.Close()
-	pool := s.GetPool()
-	reply, err := protocol.BuildSocks5TCPReply(
-		stat.To5(),
-		protocol.AddrFromIP(net.IPv4(0, 0, 0, 0).To4(), 0, ""),
-		pool,
-	)
-	if err != nil {
-		return
-	}
-	defer internal.PutBuffer(pool, reply)
-	_, _ = io.Copy(conn, bytes.NewReader(reply))
 }
