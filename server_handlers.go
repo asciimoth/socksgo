@@ -57,6 +57,7 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			pool := server.GetPool()
 			ips, err := server.GetResolver().LookupIP(ctx, addr.IpNetwork(), addr.ToFQDN())
 			if err != nil {
+				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
 				return err
 			}
 			if len(ips) < 1 {
@@ -81,6 +82,42 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 				conn,
 				protocol.SuccReply,
 				protocol.AddrFromIP(ip, 0, ""),
+				pool,
+			)
+			return err
+		},
+	},
+	protocol.CmdTorResolvePtr: {
+		Socks4:    true,
+		Socks5:    true,
+		TLSCompat: true,
+		Handler: func(
+			ctx context.Context,
+			server *Server,
+			conn net.Conn,
+			ver string,
+			info protocol.AuthInfo,
+			cmd protocol.Cmd,
+			addr protocol.Addr) error {
+			pool := server.GetPool()
+			names, err := server.GetResolver().LookupAddr(ctx, addr.ToIP().String())
+			if err != nil {
+				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
+				return err
+			}
+			if len(names) < 1 {
+				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
+				return &net.DNSError{
+					Err:        "zero IPs found",
+					Name:       addr.ToFQDN(),
+					IsNotFound: true,
+				}
+			}
+			err = protocol.Reply(
+				ver,
+				conn,
+				protocol.SuccReply,
+				protocol.AddrFromFQDNNoDot(names[0], 0, ""),
 				pool,
 			)
 			return err

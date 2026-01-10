@@ -3,6 +3,7 @@ package protocol
 import (
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/asciimoth/socksgo/internal"
 )
@@ -94,6 +95,22 @@ func AddrFromIP(ip net.IP, port uint16, net string) Addr {
 // If fqdn already contains port (e.g. "example.com:80") it will be used instead of port arg.
 func AddrFromFQDN(fqdn string, port uint16, net string) Addr {
 	fqdn, port = internal.SplitHostPort(net, fqdn, port)
+	return Addr{
+		Type:   FQDNAddr,
+		Host:   []byte(fqdn),
+		Port:   port,
+		NetTyp: net,
+	}
+}
+
+// Like AddrFromFQDN but with trimming trailing dot
+// Need for compat with ResolvePtr implementation in tor
+func AddrFromFQDNNoDot(fqdn string, port uint16, net string) Addr {
+	fqdn, port = internal.SplitHostPort(net, fqdn, port)
+	trimmed := strings.TrimRight(fqdn, ".")
+	if len(trimmed) > 0 {
+		fqdn = trimmed
+	}
 	return Addr{
 		Type:   FQDNAddr,
 		Host:   []byte(fqdn),
