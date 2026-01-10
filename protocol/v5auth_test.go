@@ -3,6 +3,7 @@ package protocol_test
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"testing"
 
@@ -18,11 +19,17 @@ func runAuthHandshakeTest(
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
-
 	readyCh := make(chan any, 2)
 
 	// Server side
 	go func() {
+		var ver [1]byte
+		_, serverErr = io.ReadFull(serverConn, ver[:])
+		if serverErr != nil {
+			readyCh <- nil
+			return
+		}
+
 		_, serverInfo, serverErr = protocol.HandleAuth(serverConn, nil, handlers)
 		readyCh <- nil
 	}()

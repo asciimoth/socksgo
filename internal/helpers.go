@@ -99,3 +99,43 @@ func CopyBytes(src []byte) (dst []byte) {
 	copy(dst, src)
 	return
 }
+
+func ClosedNetworkErrToNil(err error) error {
+	var unwrapped = err
+	for {
+		u := errors.Unwrap(unwrapped)
+		if u == nil {
+			break
+		}
+		unwrapped = u
+	}
+	if unwrapped != nil && unwrapped.Error() == "use of closed network connection" {
+		return nil
+	}
+	return err
+}
+
+func PipeConn(a, b net.Conn) (err error) {
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(a, b)
+		a.Close()
+		b.Close()
+		done <- ClosedNetworkErrToNil(err)
+	}()
+
+	_, err1 := io.Copy(b, a)
+	a.Close()
+	b.Close()
+	err1 = ClosedNetworkErrToNil(err1)
+	err2 := <-done
+
+	if err1 != nil && err2 == nil {
+		err = err1
+	} else if err2 != nil && err1 == nil {
+		err = err2
+	} else if err1 != nil && err2 != nil {
+		err = errors.Join(err1, err2)
+	}
+	return
+}

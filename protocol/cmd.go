@@ -26,6 +26,10 @@ func (cmd Cmd) String() string {
 		return "cmd tor resolve"
 	case CmdTorResolvePtr:
 		return "cmd tor resolve_ptr"
+	case CmdGostMuxBind:
+		return "cmd gost mbind"
+	case CmdGostUDPTun:
+		return "cmd gost udp tun"
 	default:
 		return "cmd no" + strconv.Itoa(int(cmd))
 	}

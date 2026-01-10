@@ -136,6 +136,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "IPv4 Connect request",
 			data: []byte{
+				0x05, // SOCKS version
 				0x01, // CONNECT command
 				0x00, // Reserved
 				0x01, // IPv4 address type
@@ -148,6 +149,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "IPv6 Bind request",
 			data: []byte{
+				0x05, // SOCKS version
 				0x02, // BIND command
 				0x00, // Reserved
 				0x04, // IPv6 address type
@@ -163,6 +165,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "FQDN UDP Associate request",
 			data: []byte{
+				0x05, // SOCKS version
 				0x03, // UDP ASSOCIATE command
 				0x00, // Reserved
 				0x03, // Domain name address type
@@ -176,6 +179,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "Empty FQDN",
 			data: []byte{
+				0x05,       // SOCKS version
 				0x01,       // CONNECT command
 				0x00,       // Reserved
 				0x03,       // Domain name address type
@@ -188,6 +192,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "Invalid address type",
 			data: []byte{
+				0x05, // SOCKS version
 				0x01, // CONNECT command
 				0x00, // Reserved
 				0xFF, // Invalid address type
@@ -199,6 +204,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "Incomplete IPv4 data",
 			data: []byte{
+				0x05,        // SOCKS version
 				0x01,        // CONNECT command
 				0x00,        // Reserved
 				0x01,        // IPv4 address type
@@ -209,6 +215,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "Incomplete FQDN length byte",
 			data: []byte{
+				0x05, // SOCKS version
 				0x01, // CONNECT command
 				0x00, // Reserved
 				0x03, // Domain name address type
@@ -219,6 +226,7 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 		{
 			name: "Reserved byte should be ignored",
 			data: []byte{
+				0x05, // SOCKS version
 				0x01, // CONNECT command
 				0xFF, // Reserved (non-zero, should be ignored)
 				0x01, // IPv4 address type
@@ -300,11 +308,11 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 				t.Fatalf("BuildSocks5TCPRequest failed: %v", err)
 			}
 
-			// Read it back (skip the first version byte as per function spec)
+			// Read it back
 			if len(request) < 1 {
 				t.Fatal("Request too short")
 			}
-			reader := bytes.NewReader(request[1:])
+			reader := bytes.NewReader(request)
 			cmd, addr, err := protocol.ReadSocks5TCPRequest(reader, nil)
 			if err != nil {
 				t.Fatalf("ReadSocks5TCPRequest failed: %v", err)

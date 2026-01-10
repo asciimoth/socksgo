@@ -1,0 +1,264 @@
+package socksgo
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net"
+	"strconv"
+
+	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/socksgo/protocol"
+)
+
+type Server struct {
+	Pool protocol.BufferPool
+	Auth *protocol.AuthHandlers
+
+	// TODO: Add option to use IDENT for socks4 instead of Auth
+
+	// If non nil error or non Ok status will be reutrned, request
+	// will be rejected.
+	// For non nil error but Ok status, Rejected(91) will be used.
+	// Status will be automaticlaly translated to relevant socks version.
+	PreCmd func(
+		ctx context.Context,
+		conn net.Conn,
+		ver string, // "4" | "5"
+		info protocol.AuthInfo,
+		cmd protocol.Cmd,
+		addr protocol.Addr,
+	) (error, protocol.ReplyStatus)
+
+	// If nil, DefaultCommandHandlers will be used
+	Handlers map[protocol.Cmd]CommandHandler
+
+	Dialer         Dialer
+	PacketDialer   PacketDialer
+	Listener       Listener
+	PacketListener PacketListener
+	Resolver       Resolver
+}
+
+func (s *Server) getHandler(cmd protocol.Cmd) *CommandHandler {
+	handlers := DefaultCommandHandlers
+	if s != nil && s.Handlers != nil {
+		handlers = s.Handlers
+	}
+	handler, ok := handlers[cmd]
+	if !ok {
+		return nil
+	}
+	return &handler
+}
+
+func (s *Server) GetAuth() *protocol.AuthHandlers {
+	if s == nil {
+		return nil
+	}
+	return s.Auth
+}
+
+func (s *Server) GetPool() protocol.BufferPool {
+	if s == nil {
+		return nil
+	}
+	return s.Pool
+}
+
+// Return s.Listener or default net listener.
+func (s *Server) GetListener() Listener {
+	if s.Listener == nil {
+		return (&net.ListenConfig{}).Listen
+	}
+	return s.Listener
+}
+
+// Return s.PacketListener or default net UDP listener.
+func (s *Server) GetPacketListener() PacketListener {
+	if s.PacketListener == nil {
+		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
+			udpAddr := protocol.AddrFromHostPort(laddr, network).ToUDP()
+			return net.ListenUDP(network, udpAddr)
+		}
+	}
+	return s.PacketListener
+}
+
+// Return s.Dialer or default net dialer.
+func (s *Server) GetDialer() Dialer {
+	if s.Dialer == nil {
+		return func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		}
+	}
+	return s.Dialer
+}
+
+// Return s.PacketDialer or default net udp dialer.
+func (s *Server) GetPacketDialer() PacketDialer {
+	if s.Dialer == nil {
+		return func(ctx context.Context, network, raddr string) (PacketConn, error) {
+			udpAddr := protocol.AddrFromHostPort(raddr, network).ToUDP()
+			return net.DialUDP(network, nil, udpAddr)
+		}
+	}
+	return s.PacketDialer
+}
+
+// Return s.Resolver4 or net.DefaultResolver
+func (s *Server) GetResolver() Resolver {
+	if s.Resolver == nil {
+		return net.DefaultResolver
+	}
+	return s.Resolver
+}
+
+func (s *Server) runPreCmd(
+	ctx context.Context,
+	conn net.Conn,
+	ver string,
+	info protocol.AuthInfo,
+	cmd protocol.Cmd,
+	addr protocol.Addr,
+) (error, protocol.ReplyStatus) {
+	if s == nil || s.PreCmd == nil {
+		return nil, 0
+	}
+	return s.PreCmd(ctx, conn, ver, info, cmd, addr)
+}
+
+// Thread-safe
+// TODO: AcceptWS
+func (s *Server) Accept(ctx context.Context, conn net.Conn, isTLS bool) error {
+	defer conn.Close()
+
+	// Read version
+	var ver [1]byte
+	_, err := io.ReadFull(conn, ver[:])
+	if err != nil {
+		return err
+	}
+	if ver[0] == 4 {
+		return s.accept4(ctx, conn, isTLS)
+	}
+	if ver[0] == 5 {
+		return s.accept5(ctx, conn, isTLS)
+	}
+	return UnknownSocksVersionError{
+		Version: strconv.Itoa(int(ver[0])),
+	}
+}
+
+func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
+	pool := s.GetPool()
+	cmd, addr, user, err := protocol.ReadSocks4TCPRequest(conn, pool)
+	if err != nil {
+		return errors.Join(
+			ErrClientAuthFailed,
+			err,
+		)
+	}
+
+	if !s.GetAuth().CheckSocks4User(user) {
+		// Reject
+		reply := protocol.BuildSocks4TCPReply(
+			protocol.Rejected.To4(),
+			protocol.Addr{},
+			pool,
+		)
+		defer internal.PutBuffer(pool, reply)
+		io.Copy(conn, bytes.NewReader(reply))
+		return errors.Join(
+			ErrClientAuthFailed,
+			errors.New("provided socks4 user rejected"),
+		)
+	}
+
+	handler := s.getHandler(cmd)
+	if handler == nil || !handler.Allowed("4", isTLS) {
+		return UnsupportedCommandError{
+			SocksVersion: "4",
+			Cmd:          cmd,
+		}
+	}
+
+	info := protocol.AuthInfo{
+		Code: protocol.PassAuthCode,
+		Info: map[string]any{
+			"user": user,
+			"pass": "",
+		},
+	}
+
+	err, stat := s.runPreCmd(ctx, conn, "4", info, cmd, addr)
+	if err != nil || !stat.Ok() {
+		if stat.Ok() {
+			stat = protocol.Rejected
+		}
+		s.reject4(conn, stat)
+		return err
+	}
+
+	return handler.Run(ctx, s, conn, "4", info, cmd, addr)
+}
+
+func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
+	pool := s.GetPool()
+	conn, info, err := protocol.HandleAuth(conn, pool, s.GetAuth())
+	if err != nil {
+		return errors.Join(
+			ErrClientAuthFailed,
+			err,
+		)
+	}
+
+	cmd, addr, err := protocol.ReadSocks5TCPRequest(conn, pool)
+	if err != nil {
+		return err
+	}
+
+	handler := s.getHandler(cmd)
+	if handler == nil || !handler.Allowed("5", isTLS) {
+		s.reject5(conn, protocol.CmdNotSuppReply)
+		return UnsupportedCommandError{
+			SocksVersion: "5",
+			Cmd:          cmd,
+		}
+	}
+
+	err, stat := s.runPreCmd(ctx, conn, "5", info, cmd, addr)
+	if err != nil || !stat.Ok() {
+		s.reject5(conn, stat)
+		return err
+	}
+	return handler.Run(ctx, s, conn, "5", info, cmd, addr)
+}
+
+func (s *Server) reject4(conn net.Conn, stat protocol.ReplyStatus) {
+	defer conn.Close()
+	pool := s.GetPool()
+	reply := protocol.BuildSocks4TCPReply(
+		stat.To4(),
+		protocol.AddrFromIP(net.IPv4(0, 0, 0, 0).To4(), 0, ""),
+		pool,
+	)
+	defer internal.PutBuffer(pool, reply)
+	_, _ = io.Copy(conn, bytes.NewReader(reply))
+}
+
+func (s *Server) reject5(conn net.Conn, stat protocol.ReplyStatus) {
+	defer conn.Close()
+	pool := s.GetPool()
+	reply, err := protocol.BuildSocks5TCPReply(
+		stat.To5(),
+		protocol.AddrFromIP(net.IPv4(0, 0, 0, 0).To4(), 0, ""),
+		pool,
+	)
+	if err != nil {
+		return
+	}
+	defer internal.PutBuffer(pool, reply)
+	_, _ = io.Copy(conn, bytes.NewReader(reply))
+}

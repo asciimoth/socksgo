@@ -359,7 +359,7 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := protocol.BuildSocsk4TCPReply(tt.cmd, tt.addr, nil)
+			got := protocol.BuildSocks4TCPReply(tt.cmd, tt.addr, nil)
 
 			if !bytes.Equal(got, tt.expected) {
 				t.Errorf("BuildSocsk4TCPReply() = %v, want %v", got, tt.expected)
@@ -513,7 +513,7 @@ func TestBuildAndReadSocks4TCPReply_RoundTrip(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Build the reply
-			reply := protocol.BuildSocsk4TCPReply(tc.cmd, tc.addr, nil)
+			reply := protocol.BuildSocks4TCPReply(tc.cmd, tc.addr, nil)
 
 			// Read the reply (note: ReadSocks4TCPReply reads the entire reply, including version byte)
 			reader := bytes.NewReader(reply)

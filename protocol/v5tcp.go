@@ -35,20 +35,24 @@ func BuildSocks5TCPRequest(
 	return
 }
 
-// Reading request WITHOUT first byte.
 func ReadSocks5TCPRequest(reader io.Reader, pool BufferPool) (
 	cmd Cmd, addr Addr, err error,
 ) {
 	buf := internal.GetBuffer(pool, MAX_SOCKS_TCP_HEADER_LEN)
 	defer internal.PutBuffer(pool, buf)
 
-	_, err = io.ReadFull(reader, buf[:3])
+	_, err = io.ReadFull(reader, buf[:4])
 	if err != nil {
 		return
 	}
 
-	cmd = Cmd(buf[0])
-	atyp := AddrType(buf[2])
+	if buf[0] != 5 {
+		err = errors.New("wrong protocol version constant in socks request")
+		return
+	}
+
+	cmd = Cmd(buf[1])
+	atyp := AddrType(buf[3])
 
 	switch atyp {
 	case IP4Addr:
@@ -98,17 +102,6 @@ func BuildSocks5TCPReply(
 func ReadSocks5TCPReply(reader io.Reader, pool BufferPool) (
 	stat ReplyStatus, addr Addr, err error,
 ) {
-	// Read version
-	var ver [1]byte
-	_, err = io.ReadFull(reader, ver[:])
-	if err != nil {
-		return
-	}
-	if ver[0] != 5 {
-		err = errors.New("wrong protocol version constant in socks request")
-		return
-	}
-
 	// Socks5 request & reply have nearly same format
 	// except meaning of cmd/reply codes
 	var cmd Cmd

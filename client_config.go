@@ -199,7 +199,7 @@ func (c *ClientConfig) GetListener() Listener {
 
 // Return c.DirectPacketListener or default net UDP listener.
 func (c *ClientConfig) GetPacketListener() PacketListener {
-	if c.DirectListener == nil {
+	if c.DirectPacketListener == nil {
 		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(laddr, network).ToUDP()
 			return net.ListenUDP(network, udpAddr)

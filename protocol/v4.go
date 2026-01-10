@@ -87,7 +87,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool BufferPool) (
 }
 
 // reply is a buffer retrieved from provided pool and should be putted back
-func BuildSocsk4TCPReply(
+func BuildSocks4TCPReply(
 	stat ReplyStatus, addr Addr, pool BufferPool,
 ) (request []byte) {
 	ip := addr.ToIP().To4()

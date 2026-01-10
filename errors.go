@@ -12,6 +12,7 @@ var (
 	ErrUDPDisallowed             = errors.New("plaintext UDP is disallowed for tls/wss proxies")
 	ErrResolveDisabled           = errors.New("tor resolve extension for socks is disabled")
 	ErrWrongAddrInLookupResponse = errors.New("wrong addr type in lookup response")
+	ErrClientAuthFailed          = errors.New("client auth failed")
 )
 
 type WrongNetworkError struct {
@@ -61,5 +62,31 @@ func (e RejectdError) Error() string {
 		"socks request rejected with code %d %s",
 		int(e.Status),
 		e.Status,
+	)
+}
+
+type UnsupportedCommandError struct {
+	SocksVersion string // "4" | "4a" | "5"
+	Cmd          protocol.Cmd
+}
+
+func (e UnsupportedCommandError) Error() string {
+	return fmt.Sprintf(
+		"socks%s client requested unsupported command %d (%s)",
+		e.SocksVersion,
+		int(e.Cmd),
+		e.Cmd.String(),
+	)
+}
+
+type NilHandlerError struct {
+	Cmd protocol.Cmd
+}
+
+func (e NilHandlerError) Error() string {
+	return fmt.Sprintf(
+		"attempt to run nil handler for cmd %d (%s)",
+		int(e.Cmd),
+		e.Cmd.String(),
 	)
 }

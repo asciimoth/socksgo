@@ -209,6 +209,18 @@ type AuthHandlers struct {
 	handlers map[AuthMethodCode]AuthHandler
 }
 
+func (m *AuthHandlers) CheckSocks4User(user string) bool {
+	handler := m.Get(PassAuthCode)
+	if handler == nil {
+		return false
+	}
+	pass, ok := handler.(*PassAuthHandler)
+	if !ok {
+		return false
+	}
+	return pass.verify(user, "")
+}
+
 // For nil or void AuthHandlers
 // - Get(NoAuthCode) always return blank method that just do nothing
 // - Get(PassAuthCode) always return PassAuthHandler that accept any user+pass
@@ -296,17 +308,17 @@ func HandleAuth(
 	buf := internal.GetBuffer(pool, MAX_AUTH_METHODS_COUNT+1)
 	defer internal.PutBuffer(pool, buf)
 
-	_, err = io.ReadFull(conn, buf[:2])
+	_, err = io.ReadFull(conn, buf[:1])
 	if err != nil {
 		return
 	}
 
-	if buf[0] != 5 {
-		err = fmt.Errorf("unknown auth version %d", buf[0])
-		return
-	}
+	// if buf[0] != 5 {
+	// 	err = fmt.Errorf("unknown auth version %d", buf[0])
+	// 	return
+	// }
 
-	count := int(buf[1])
+	count := int(buf[0])
 	_, err = io.ReadFull(conn, buf[:count])
 	if err != nil {
 		return
