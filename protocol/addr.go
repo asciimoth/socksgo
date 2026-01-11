@@ -218,6 +218,10 @@ func (a Addr) ToTCP() *net.TCPAddr {
 	return nil
 }
 
+func (a Addr) ToHostPort() string {
+	return net.JoinHostPort(a.ToFQDN(), strconv.Itoa(int(a.Port)))
+}
+
 func (a Addr) Network() string {
 	net := a.NetTyp
 	if a.Type != FQDNAddr {
@@ -251,5 +255,5 @@ func (a Addr) String() string {
 	if a.Port == 0 {
 		return a.ToFQDN()
 	}
-	return net.JoinHostPort(a.ToFQDN(), strconv.Itoa(int(a.Port)))
+	return a.ToHostPort()
 }

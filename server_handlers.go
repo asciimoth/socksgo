@@ -138,34 +138,71 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			return err
 		},
 	},
-	// protocol.CmdBind: {
-	// 	Socks4:    true,
-	// 	Socks5:    true,
-	// 	TLSCompat: true,
-	// 	Handler: func(
-	// 		ctx context.Context,
-	// 		server *Server,
-	// 		conn net.Conn,
-	// 		ver string,
-	// 		info protocol.AuthInfo,
-	// 		cmd protocol.Cmd,
-	// 		addr protocol.Addr) error {
-	// 		// TODO: Should we listen at addr?
-	// 		listener, err := net.Listen("tcp", server.GetListenHost())
-	// 		if err != nil {
-	// 			protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
-	// 			return err
-	// 		}
-	// 		return nil
-	// 	},
-	// },
+	protocol.CmdBind: {
+		Socks4:    true,
+		Socks5:    true,
+		TLSCompat: true,
+		Handler: func(
+			ctx context.Context,
+			server *Server,
+			conn net.Conn,
+			ver string,
+			info protocol.AuthInfo,
+			cmd protocol.Cmd,
+			addr protocol.Addr) error {
+			pool := server.GetPool()
+			addr = addr.WithDefaultHost(server.GetDefaultListenHost())
+			err := server.CheckLaddr(&addr)
+			if err != nil {
+				protocol.Reject(ver, conn, protocol.DisallowReply, pool)
+				return err
+			}
+			listener, err := net.Listen("tcp", addr.ToHostPort())
+			if err != nil {
+				// TODO: What ReplyCode should we return here?
+				protocol.Reject(ver, conn, protocol.FailReply, pool)
+				return err
+			}
+			defer listener.Close()
+			// Send first reply with laddr
+			err = protocol.Reply(
+				ver,
+				conn,
+				protocol.SuccReply,
+				protocol.AddrFromNetAddr(listener.Addr()),
+				pool,
+			)
+			if err != nil {
+				return err
+			}
+			conn2, err := listener.Accept()
+			if err != nil {
+				return err
+			}
+			// Send second reply with raddr
+			err = protocol.Reply(
+				ver,
+				conn,
+				protocol.SuccReply,
+				protocol.AddrFromNetAddr(conn2.RemoteAddr()),
+				pool,
+			)
+			if err != nil {
+				return err
+			}
+			return internal.PipeConn(conn, conn2)
+		},
+	},
 }
 
 type CommandHandler struct {
 	Socks4    bool
 	Socks5    bool
 	TLSCompat bool
-	Handler   func(
+
+	// If rejecting - raise err with reason
+	// Run addr.WithDefaultHosr before checking laddr filter
+	Handler func(
 		ctx context.Context,
 		server *Server,
 		conn net.Conn,
