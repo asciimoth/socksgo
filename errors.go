@@ -90,3 +90,16 @@ func (e NilHandlerError) Error() string {
 		e.Cmd.String(),
 	)
 }
+
+type AddrDisallowedError struct {
+	Addr       *protocol.Addr
+	FilterName string
+}
+
+func (e AddrDisallowedError) Error() string {
+	return fmt.Sprintf(
+		"address %s is disallowed by %s filter",
+		e.Addr.String(),
+		e.FilterName,
+	)
+}

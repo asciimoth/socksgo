@@ -22,6 +22,11 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			cmd protocol.Cmd,
 			addr protocol.Addr) error {
 			pool := server.GetPool()
+			err := server.CheckRaddr(&addr)
+			if err != nil {
+				protocol.Reject(ver, conn, protocol.DisallowReply, pool)
+				return err
+			}
 			conn2, err := server.GetDialer()(ctx, addr.Network(), addr.String())
 			if err != nil {
 				// TODO: Select reply code depending on err type
@@ -55,6 +60,11 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			cmd protocol.Cmd,
 			addr protocol.Addr) error {
 			pool := server.GetPool()
+			err := server.CheckRaddr(&addr)
+			if err != nil {
+				protocol.Reject(ver, conn, protocol.DisallowReply, pool)
+				return err
+			}
 			ips, err := server.GetResolver().LookupIP(ctx, addr.IpNetwork(), addr.ToFQDN())
 			if err != nil {
 				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
@@ -100,6 +110,11 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			cmd protocol.Cmd,
 			addr protocol.Addr) error {
 			pool := server.GetPool()
+			err := server.CheckRaddr(&addr)
+			if err != nil {
+				protocol.Reject(ver, conn, protocol.DisallowReply, pool)
+				return err
+			}
 			names, err := server.GetResolver().LookupAddr(ctx, addr.ToIP().String())
 			if err != nil {
 				protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
@@ -123,6 +138,27 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 			return err
 		},
 	},
+	// protocol.CmdBind: {
+	// 	Socks4:    true,
+	// 	Socks5:    true,
+	// 	TLSCompat: true,
+	// 	Handler: func(
+	// 		ctx context.Context,
+	// 		server *Server,
+	// 		conn net.Conn,
+	// 		ver string,
+	// 		info protocol.AuthInfo,
+	// 		cmd protocol.Cmd,
+	// 		addr protocol.Addr) error {
+	// 		// TODO: Should we listen at addr?
+	// 		listener, err := net.Listen("tcp", server.GetListenHost())
+	// 		if err != nil {
+	// 			protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
+	// 			return err
+	// 		}
+	// 		return nil
+	// 	},
+	// },
 }
 
 type CommandHandler struct {

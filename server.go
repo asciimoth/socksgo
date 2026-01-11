@@ -16,9 +16,23 @@ type Server struct {
 	Pool protocol.BufferPool
 	Auth *protocol.AuthHandlers
 
-	// Should IPv4 addrs be preferred ip both IPv4 and IPv6 addr are available
+	// Should IPv4 addrs be preferred if both IPv4 and IPv6 addr are available
 	// when replying to CmdTorResolve
 	DoNotPreferIP4 bool
+
+	// Default host that will be used in Bind/Mbind/UDPAssoc/UDPTun requests
+	// as local addr instead of "0.0.0.0"/"::"/"" if provided
+	DefaultListenHost string
+
+	// Local addr filter. For listening commands (bind, mbind, etc)
+	// true means allow, false means reject
+	// If nil (default) any laddr is allowed
+	LaddrFilter func(laddr *protocol.Addr) bool
+
+	// Remote addr filter. For connect/lookup commands (connect, raddr, etc)
+	// true means allow, false means reject
+	// If nil (default) any raddr is allowed
+	RaddrFilter func(raddr *protocol.Addr) bool
 
 	// TODO: Add option to use IDENT for socks4 instead of Auth
 
@@ -63,6 +77,33 @@ func (s *Server) IsPreferIPv4() bool {
 		return true
 	}
 	return !s.DoNotPreferIP4
+}
+
+func (s *Server) CheckLaddr(laddr *protocol.Addr) error {
+	if s != nil && s.LaddrFilter != nil && !s.LaddrFilter(laddr) {
+		return AddrDisallowedError{
+			Addr:       laddr,
+			FilterName: "server laddr",
+		}
+	}
+	return nil
+}
+
+func (s *Server) CheckRaddr(raddr *protocol.Addr) error {
+	if s != nil && s.RaddrFilter != nil && !s.RaddrFilter(raddr) {
+		return AddrDisallowedError{
+			Addr:       raddr,
+			FilterName: "server raddr",
+		}
+	}
+	return nil
+}
+
+func (s *Server) GetDefaultListenHost() string {
+	if s == nil {
+		return ""
+	}
+	return s.DefaultListenHost
 }
 
 func (s *Server) GetAuth() *protocol.AuthHandlers {

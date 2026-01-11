@@ -138,6 +138,9 @@ func AddrFromTCPAddr(t *net.TCPAddr) Addr {
 }
 
 func (a Addr) IsUnspecified() bool {
+	if len(a.Host) < 1 {
+		return true
+	}
 	if a.Type == IP4Addr || a.Type == IP6Addr {
 		return net.IP(a.Host).IsUnspecified()
 	}
@@ -152,6 +155,29 @@ func (a Addr) Len() int {
 		return 6
 	}
 	return len(a.Host)
+}
+
+// If host is not "" and a.IsUnspecified, a.Host will
+// be replaced with host.
+// If a.IsUnspecified and host is "", a.Host will be replaced with "0.0.0.0"
+func (a Addr) WithDefaultHost(host string) Addr {
+	if a.IsUnspecified() {
+		if host == "" {
+			return AddrFromString("0.0.0.0", a.Port, a.NetTyp)
+		} else {
+			return AddrFromString(host, a.Port, a.NetTyp)
+		}
+	}
+	var nhost []byte // nil
+	if a.Host != nil {
+		nhost = append(nhost, a.Host...)
+	}
+	return Addr{
+		Type:   a.Type,
+		Host:   nhost,
+		Port:   a.Port,
+		NetTyp: a.NetTyp,
+	}
 }
 
 func (a Addr) ToIP() net.IP {
