@@ -15,7 +15,8 @@ var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
 	protocol.CmdTorResolve:    DefaultResolveHandler,
 	protocol.CmdTorResolvePtr: DefaultResolvePtrHandler,
 
-	protocol.CmdGostUDPTun: DefaultGostUDPTUNHandler,
+	protocol.CmdGostUDPTun:  DefaultGostUDPTUNHandler,
+	protocol.CmdGostMuxBind: DefaultGostMBindHandler,
 }
 
 type CommandHandler struct {

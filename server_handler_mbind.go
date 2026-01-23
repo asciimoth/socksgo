@@ -4,10 +4,12 @@ import (
 	"context"
 	"net"
 
+	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
+	"github.com/xtaci/smux"
 )
 
-var DefaultBindHandler = CommandHandler{
+var DefaultGostMBindHandler = CommandHandler{
 	Socks4:    true,
 	Socks5:    true,
 	TLSCompat: true,
@@ -44,21 +46,27 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		proxy, err := listener.Accept()
-		if err != nil {
-			return err
+
+		session, err := smux.Client(conn, nil) // TODO: Add smux config to server
+		defer conn.Close()
+		defer session.Close()
+
+		// TODO: Use waitgroup
+		for {
+			var inc net.Conn
+			inc, err = listener.Accept()
+			if err != nil {
+				break
+			}
+			stream, err := session.OpenStream()
+			if err != nil {
+				break
+			}
+			go func() {
+				protocol.PipeConn(inc, stream)
+			}()
 		}
-		// Send second reply with raddr
-		err = protocol.Reply(
-			ver,
-			conn,
-			protocol.SuccReply,
-			protocol.AddrFromNetAddr(proxy.RemoteAddr()),
-			pool,
-		)
-		if err != nil {
-			return err
-		}
-		return protocol.PipeConn(conn, proxy)
+
+		return internal.ClosedNetworkErrToNil(err)
 	},
 }
