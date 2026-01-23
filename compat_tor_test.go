@@ -1,4 +1,4 @@
-//go:build tor
+////go:build tor
 
 package socksgo_test
 
