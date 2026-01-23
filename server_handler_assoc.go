@@ -61,7 +61,8 @@ var DefaultUDPAssocHandler = CommandHandler{
 		}
 
 		return protocol.ProxySocks5UDPAssoc(
-			assoc, proxy, ctrl, nil, pool, server.GetUDPBufferSize(),
+			assoc, proxy, ctrl, nil, pool,
+			server.GetUDPBufferSize(), server.GetUDPTimeout(),
 		)
 	},
 }

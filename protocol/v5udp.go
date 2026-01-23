@@ -3,11 +3,13 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/asciimoth/socksgo/internal"
 )
@@ -465,6 +467,7 @@ func ProxySocks5UDPAssoc(
 	assoc PacketConn, proxy net.PacketConn, ctrl net.Conn,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool BufferPool, bufSize int,
+	timeOut time.Duration,
 ) (err error) {
 	proxy, err = net.ListenUDP("udp4", &net.UDPAddr{
 		IP: net.IPv4(0, 0, 0, 0).To4(),
@@ -496,8 +499,12 @@ func ProxySocks5UDPAssoc(
 		var clientUDPAddr net.Addr
 		ctrlAddr := ctrl.RemoteAddr()
 		for {
+			assoc.SetReadDeadline(time.Now().Add(timeOut))
 			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(pool, assoc, assoc2proxy, false, clientUDPAddr)
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					err = errors.Join(errors.New("udp assoc timeout"), err)
+				}
 				done <- err
 				return
 			}

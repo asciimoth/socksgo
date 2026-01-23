@@ -213,14 +213,3 @@ func tcpUDPAddrEqual(aIP net.IP, aPort int, bIP net.IP, bPort int) bool {
 	}
 	return ipEqual(aIP, bIP)
 }
-
-func GetOutboundIP() (net.IP, error) {
-	// does not send packets, just lets kernel pick a source IP
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-	return localAddr.IP, nil
-}

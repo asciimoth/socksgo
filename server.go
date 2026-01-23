@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
@@ -17,7 +18,8 @@ type Server struct {
 	Pool protocol.BufferPool
 	Auth *protocol.AuthHandlers
 
-	UDPBufferSize int // 8192 default
+	UDPBufferSize int           // 8192 default
+	UDPTimeout    time.Duration // 2m default
 
 	// Should IPv4 addrs be preferred if both IPv4 and IPv6 addr are available
 	// when replying to CmdTorResolve
@@ -120,6 +122,13 @@ func (s *Server) GetUDPBufferSize() int {
 	return s.UDPBufferSize
 }
 
+func (s *Server) GetUDPTimeout() time.Duration {
+	if s.UDPTimeout == 0 {
+		return time.Second * 180
+	}
+	return s.UDPTimeout
+}
+
 func (s *Server) GetDefaultListenHost() string {
 	if s == nil {
 		return ""
@@ -203,13 +212,6 @@ func (s *Server) ListenForAssoc(ctx context.Context, ctrl net.Conn) (assoc Packe
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	// if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-	// 	oip, err := internal.GetOutboundIP()
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	host = oip.String()
-	// }
 	return s.GetPacketListener()(ctx, "udp", net.JoinHostPort(host, "0"))
 }
 
