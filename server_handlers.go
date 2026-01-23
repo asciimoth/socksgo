@@ -8,12 +8,14 @@ import (
 )
 
 var DefaultCommandHandlers = map[protocol.Cmd]CommandHandler{
-	protocol.CmdConnect: DefaultConnectHandler,
-	protocol.CmdBind:    DefaultBindHandler,
+	protocol.CmdConnect:  DefaultConnectHandler,
+	protocol.CmdBind:     DefaultBindHandler,
+	protocol.CmdUDPAssoc: DefaultUDPAssocHandler,
 
 	protocol.CmdTorResolve:    DefaultResolveHandler,
 	protocol.CmdTorResolvePtr: DefaultResolvePtrHandler,
-	protocol.CmdUDPAssoc:      DefaultUDPAssocHandler,
+
+	protocol.CmdGostUDPTun: DefaultGostUDPTUNHandler,
 }
 
 type CommandHandler struct {

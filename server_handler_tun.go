@@ -7,14 +7,14 @@ import (
 	"github.com/asciimoth/socksgo/protocol"
 )
 
-var DefaultUDPAssocHandler = CommandHandler{
+var DefaultGostUDPTUNHandler = CommandHandler{
 	Socks4:    false,
 	Socks5:    true,
 	TLSCompat: false,
 	Handler: func(
 		ctx context.Context,
 		server *Server,
-		ctrl net.Conn,
+		tun net.Conn,
 		ver string,
 		info protocol.AuthInfo,
 		cmd protocol.Cmd,
@@ -38,33 +38,24 @@ var DefaultUDPAssocHandler = CommandHandler{
 		}
 		if err != nil {
 			// TODO: What ReplyCode should we return here?
-			protocol.Reject(ver, ctrl, protocol.FailReply, pool)
-			return err
-
-		}
-
-		assoc, err := server.ListenForAssoc(ctx, ctrl)
-		if err != nil {
-			// TODO: What ReplyCode should we return here?
-			protocol.Reject(ver, ctrl, protocol.FailReply, pool)
+			protocol.Reject(ver, tun, protocol.FailReply, pool)
 			return err
 
 		}
 
 		err = protocol.Reply(
 			ver,
-			ctrl,
+			tun,
 			protocol.SuccReply,
-			protocol.AddrFromNetAddr(assoc.LocalAddr()),
+			protocol.AddrFromNetAddr(proxy.LocalAddr()),
 			pool,
 		)
 		if err != nil {
 			return err
 		}
 
-		return protocol.ProxySocks5UDPAssoc(
-			assoc, proxy, ctrl, binded, nil, pool,
-			server.GetUDPBufferSize(), server.GetUDPTimeout(),
+		return protocol.ProxySocks5UDPTun(
+			tun, proxy, binded, nil, pool, server.GetUDPBufferSize(),
 		)
 	},
 }

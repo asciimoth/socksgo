@@ -464,27 +464,12 @@ func (uc *Socks5UDPClientTUN) WriteTo(p []byte, addr net.Addr) (n int, err error
 }
 
 func ProxySocks5UDPAssoc(
-	assoc PacketConn, proxy net.PacketConn, ctrl net.Conn,
+	assoc, proxy PacketConn, ctrl net.Conn,
+	binded bool,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool BufferPool, bufSize int,
 	timeOut time.Duration,
 ) (err error) {
-	proxy, err = net.ListenUDP("udp4", &net.UDPAddr{
-		IP: net.IPv4(0, 0, 0, 0).To4(),
-	})
-	if err != nil {
-		panic(err)
-	}
-	defer proxy.Close()
-	_, err = proxy.WriteTo([]byte{0}, &net.UDPAddr{
-		IP: net.IPv4(192, 168, 2, 104).To4(),
-		// IP:   net.IPv4(8, 8, 8, 8).To4(),
-		Port: 59382,
-	})
-	if err != nil {
-		panic(err)
-	}
-
 	assoc2proxy := internal.GetBuffer(pool, bufSize)
 	proxy2assoc := internal.GetBuffer(pool, bufSize)
 	defer internal.PutBuffer(pool, assoc2proxy)
@@ -499,7 +484,8 @@ func ProxySocks5UDPAssoc(
 		var clientUDPAddr net.Addr
 		ctrlAddr := ctrl.RemoteAddr()
 		for {
-			assoc.SetReadDeadline(time.Now().Add(timeOut))
+			deadline := time.Now().Add(timeOut)
+			assoc.SetReadDeadline(deadline)
 			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(pool, assoc, assoc2proxy, false, clientUDPAddr)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -524,7 +510,7 @@ func ProxySocks5UDPAssoc(
 							done <- err
 							return
 						}
-						n, err = WriteSocksAssoc5UDPPacket(
+						_, err = WriteSocksAssoc5UDPPacket(
 							pool, assoc, clientUDPAddr, AddrFromNetAddr(addr), proxy2assoc[:n],
 						)
 						if err != nil {
@@ -534,16 +520,23 @@ func ProxySocks5UDPAssoc(
 					}
 				}()
 			}
-			// For some fucking reason net.UDPConn.WriteTo just crashing on any
-			// net.Addr that is not *net.UDPAddr so we handling it individually
-			if udpProxy, ok := proxy.(*net.UDPConn); ok {
-				udpAddr := addr.ToUDP()
-				if udpAddr == nil {
-					continue
-				}
-				_, err = udpProxy.WriteToUDP(assoc2proxy[:n], udpAddr)
+			if binded {
+				_, err = proxy.Write(assoc2proxy[:n])
 			} else {
-				_, err = proxy.WriteTo(assoc2proxy[:n], addr)
+				if addr.IsUnspecified() && defaultAddr != nil {
+					addr = *defaultAddr
+				}
+				// For some fucking reason net.UDPConn.WriteTo just crashing on any
+				// net.Addr that is not *net.UDPAddr so we handling it individually
+				if udpProxy, ok := proxy.(*net.UDPConn); ok {
+					udpAddr := addr.ToUDP()
+					if udpAddr == nil {
+						continue
+					}
+					_, err = udpProxy.WriteToUDP(assoc2proxy[:n], udpAddr)
+				} else {
+					_, err = proxy.WriteTo(assoc2proxy[:n], addr)
+				}
 			}
 			if err != nil {
 				done <- err
@@ -557,4 +550,73 @@ func ProxySocks5UDPAssoc(
 	proxy.Close()
 
 	return internal.JoinNetErrors(<-done, <-done)
+}
+
+func ProxySocks5UDPTun(
+	tun net.Conn, proxy PacketConn,
+	binded bool,
+	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
+	pool BufferPool, bufSize int,
+) (err error) {
+	tun2proxy := internal.GetBuffer(pool, bufSize)
+	tun2assoc := internal.GetBuffer(pool, bufSize)
+	defer internal.PutBuffer(pool, tun2proxy)
+	defer internal.PutBuffer(pool, tun2assoc)
+
+	done := make(chan error, 1)
+
+	go func() {
+		// tun -> proxy
+		defer tun.Close()
+		defer proxy.Close()
+
+		for {
+			n, addr, err := ReadSocks5TunUDPPacket(pool, tun, tun2proxy, false)
+			if err != nil {
+				done <- err
+				return
+			}
+			if binded {
+				_, err = proxy.Write(tun2proxy[:n])
+			} else {
+				if addr.IsUnspecified() && defaultAddr != nil {
+					addr = *defaultAddr
+				}
+				// For some fucking reason net.UDPConn.WriteTo just crashing on any
+				// net.Addr that is not *net.UDPAddr so we handling it individually
+				if udpProxy, ok := proxy.(*net.UDPConn); ok {
+					udpAddr := addr.ToUDP()
+					if udpAddr == nil {
+						continue
+					}
+					_, err = udpProxy.WriteToUDP(tun2proxy[:n], udpAddr)
+				} else {
+					_, err = proxy.WriteTo(tun2proxy[:n], addr)
+				}
+			}
+			if err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+
+	// tun <- proxy
+	for {
+		n, addr, err := proxy.ReadFrom(tun2assoc)
+		if err != nil {
+			break
+		}
+		_, err = WriteSocks5TUNUDPPacket(
+			pool, tun, AddrFromNetAddr(addr), tun2assoc[:n],
+		)
+		if err != nil {
+			break
+		}
+	}
+
+	tun.Close()
+	proxy.Close()
+
+	return internal.JoinNetErrors(err, <-done)
 }

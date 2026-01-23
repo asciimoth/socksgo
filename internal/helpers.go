@@ -109,8 +109,13 @@ func ClosedNetworkErrToNil(err error) error {
 		}
 		unwrapped = u
 	}
-	if unwrapped != nil && unwrapped.Error() == "use of closed network connection" {
-		return nil
+	if unwrapped != nil {
+		if unwrapped.Error() == "use of closed network connection" {
+			return nil
+		}
+		if unwrapped.Error() == "EOF" {
+			return nil
+		}
 	}
 	return err
 }
