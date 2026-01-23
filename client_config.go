@@ -378,7 +378,7 @@ func (c *ClientConfig) Clone() *ClientConfig {
 	return &cfg
 }
 
-func clientConfigFromURL(u *url.URL, defaultCfg *ClientConfig) ClientConfig {
+func clientConfigFromURLSafe(u *url.URL, defaultCfg *ClientConfig) ClientConfig {
 	cfg := ClientConfig{}
 	if defaultCfg != nil {
 		cfg = *defaultCfg.Clone()
@@ -439,10 +439,27 @@ func clientConfigFromURL(u *url.URL, defaultCfg *ClientConfig) ClientConfig {
 	cfg.TLSConfig = &tls.Config{
 		InsecureSkipVerify: true,
 	}
+	// In safe constructor we can enable it but not disable
+	if f, s := checkURLBoolKey(q, "secure"); s && f {
+		cfg.TLSConfig.InsecureSkipVerify = false
+	}
+
+	return cfg
+}
+
+func clientConfigFromURL(u *url.URL, defaultCfg *ClientConfig) ClientConfig {
+	cfg := clientConfigFromURLSafe(u, defaultCfg)
+
+	q := u.Query()
+	if f, s := checkURLBoolKey(q, "insecureudp"); s {
+		cfg.InsecureUDP = f
+	}
+	if f, s := checkURLBoolKey(q, "assocprob"); s {
+		cfg.DoNotSpawnUDPAsocProbber = !f
+	}
 	if f, s := checkURLBoolKey(q, "secure"); s {
 		cfg.TLSConfig.InsecureSkipVerify = !f
 	}
 	// TODO: Add more TLS related args
-
 	return cfg
 }

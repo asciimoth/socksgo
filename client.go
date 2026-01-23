@@ -10,6 +10,26 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// Keys ignored:
+// - insecureudp
+// - assocprob
+// - secure
+func ClientFromURLObjSafe(u *url.URL) *Client {
+	config := clientConfigFromURLSafe(u, nil)
+	client := &Client{
+		ClientConfig: config,
+	}
+	return client
+}
+
+func ClientFromURLSafe(urlstr string) (*Client, error) {
+	u, err := url.Parse(urlstr)
+	if err != nil {
+		return nil, err
+	}
+	return ClientFromURLObjSafe(u), nil
+}
+
 func ClientFromURLObj(u *url.URL) *Client {
 	config := clientConfigFromURL(u, nil)
 	client := &Client{
