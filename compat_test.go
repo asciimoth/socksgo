@@ -24,6 +24,19 @@ func (hp *HostPort) String() string {
 	return net.JoinHostPort(hp.Host, hp.Port)
 }
 
+type NetAddr struct {
+	Addr string
+	Net  string
+}
+
+func (na NetAddr) String() string {
+	return na.Addr
+}
+
+func (na NetAddr) Network() string {
+	return na.Network()
+}
+
 type EnvConfig struct {
 	Addr5, Addr5Pass, Addr4, Addr4Pass string
 	Tor                                string
@@ -104,16 +117,82 @@ func buildClient(url string, t *testing.T) *socksgo.Client {
 	return c
 }
 
-func testUDPListen(c *socksgo.Client, t *testing.T, times int) {
+func runUDPSTunSrv(t *testing.T) (io.Closer, net.Addr) {
+	srv, err := net.ListenUDP("udp4", &net.UDPAddr{
+		IP: net.IPv4(127, 0, 0, 1),
+	})
+	if err != nil {
+		t.Fatalf("failed to start udp strun service: %v", err)
+	}
+	go func() {
+		for {
+			buf := make([]byte, 4098)
+			_, addr, err := srv.ReadFrom(buf)
+			if err != nil {
+				break
+			}
+			t.Logf("stun request from %s", addr)
+			reply := []byte("YOUR ADDR IS: " + addr.String())
+			_, err = srv.WriteTo(reply, addr)
+			if err != nil {
+				break
+			}
+		}
+	}()
+	return srv, srv.LocalAddr()
+}
+
+func checkPacketConnLaddr(t *testing.T, conn net.PacketConn) (addr net.Addr) {
+	stun_srv, stun := runUDPSTunSrv(t)
+	defer stun_srv.Close()
+
+	const ATTEMPTS = 100
+	go func() {
+		for range ATTEMPTS {
+			_, err := conn.WriteTo([]byte{0}, stun)
+			if err != nil {
+				return
+			}
+			time.Sleep(time.Millisecond * 10)
+		}
+	}()
+	for range ATTEMPTS {
+		buf := make([]byte, 4098)
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			t.Fatalf("failed to get reply from stun: %v", err)
+			return
+		}
+		reply := string(buf[:n])
+		t.Logf("maybe stun reply %s", reply)
+		if after, ok := strings.CutPrefix(string(buf[:n]), "YOUR ADDR IS: "); ok {
+			addr = NetAddr{
+				Addr: after,
+				Net:  conn.LocalAddr().Network(),
+			}
+			return
+		}
+	}
+	t.Fatalf("failed to get reply from stun: too much attempts")
+	return
+}
+
+func testUDPListen(c *socksgo.Client, t *testing.T, times int, needStun bool) {
 	serverConn, err := c.ListenPacket(context.Background(), "udp4", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("failed to start udp server with client %T: %v", c, err)
 	}
 	defer serverConn.Close()
 
-	t.Log(serverConn.LocalAddr())
+	serverAddr := serverConn.LocalAddr()
 
-	clientConn, err := net.Dial("udp4", serverConn.LocalAddr().String())
+	if needStun {
+		serverAddr = checkPacketConnLaddr(t, serverConn)
+	}
+
+	t.Log(serverAddr)
+
+	clientConn, err := net.Dial("udp4", serverAddr.String())
 	if err != nil {
 		t.Fatalf("failed to start udp client with client %T: %v", c, err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 type Server struct {
 	Pool protocol.BufferPool
 	Auth *protocol.AuthHandlers
+
+	UDPBufferSize int // 8192 default
 
 	// Should IPv4 addrs be preferred if both IPv4 and IPv6 addr are available
 	// when replying to CmdTorResolve
@@ -56,6 +59,7 @@ type Server struct {
 	PacketDialer   PacketDialer
 	Listener       Listener
 	PacketListener PacketListener
+	AssocListener  func(ctx context.Context, ctrl net.Conn) (assoc PacketConn, err error)
 	Resolver       Resolver
 }
 
@@ -99,6 +103,23 @@ func (s *Server) CheckRaddr(raddr *protocol.Addr) error {
 	return nil
 }
 
+func (s *Server) CheckBothAddr(laddr, raddr *protocol.Addr) error {
+	if err := s.CheckLaddr(laddr); err != nil {
+		return err
+	}
+	if err := s.CheckRaddr(raddr); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) GetUDPBufferSize() int {
+	if s.UDPBufferSize == 0 {
+		return 8192
+	}
+	return s.UDPBufferSize
+}
+
 func (s *Server) GetDefaultListenHost() string {
 	if s == nil {
 		return ""
@@ -132,7 +153,8 @@ func (s *Server) GetListener() Listener {
 func (s *Server) GetPacketListener() PacketListener {
 	if s.PacketListener == nil {
 		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
-			udpAddr := protocol.AddrFromHostPort(laddr, network).ToUDP()
+			addr := protocol.AddrFromHostPort(laddr, network)
+			udpAddr := addr.ToUDP()
 			return net.ListenUDP(network, udpAddr)
 		}
 	}
@@ -166,6 +188,29 @@ func (s *Server) GetResolver() Resolver {
 		return net.DefaultResolver
 	}
 	return s.Resolver
+}
+
+func (s *Server) ListenForAssoc(ctx context.Context, ctrl net.Conn) (assoc PacketConn, err error) {
+	if s != nil && s.AssocListener != nil {
+		return s.AssocListener(ctx, ctrl)
+	}
+	la := ctrl.LocalAddr()
+	if la == nil {
+		err = fmt.Errorf("failed to guess default local addr for incoming UDP assoc connections")
+		return
+	}
+	host := la.String()
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	// if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	// 	oip, err := internal.GetOutboundIP()
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	host = oip.String()
+	// }
+	return s.GetPacketListener()(ctx, "udp", net.JoinHostPort(host, "0"))
 }
 
 func (s *Server) runPreCmd(

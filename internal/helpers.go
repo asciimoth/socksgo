@@ -115,27 +115,112 @@ func ClosedNetworkErrToNil(err error) error {
 	return err
 }
 
-func PipeConn(a, b net.Conn) (err error) {
-	done := make(chan error, 1)
-	go func() {
-		_, err := io.Copy(a, b)
-		a.Close()
-		b.Close()
-		done <- ClosedNetworkErrToNil(err)
-	}()
+// Try to read until read fails, close rc, returns
+func WaitForClose(rc io.ReadCloser) {
+	defer rc.Close()
+	b := []byte{0}
+	for {
+		_, err := rc.Read(b)
+		if err != nil {
+			return
+		}
+	}
+}
 
-	_, err1 := io.Copy(b, a)
-	a.Close()
-	b.Close()
-	err1 = ClosedNetworkErrToNil(err1)
-	err2 := <-done
-
-	if err1 != nil && err2 == nil {
-		err = err1
-	} else if err2 != nil && err1 == nil {
-		err = err2
-	} else if err1 != nil && err2 != nil {
-		err = errors.Join(err1, err2)
+func JoinNetErrors(a, b error) (err error) {
+	a = ClosedNetworkErrToNil(a)
+	b = ClosedNetworkErrToNil(b)
+	if a != nil && b == nil {
+		err = a
+	} else if b != nil && a == nil {
+		err = b
+	} else if a != nil && b != nil {
+		err = errors.Join(a, b)
 	}
 	return
+}
+
+func AddrsSameHost(a, b net.Addr) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+
+	switch aa := a.(type) {
+	case *net.TCPAddr:
+		if bb, ok := b.(*net.TCPAddr); ok {
+			return ipEqual(aa.IP, bb.IP)
+		}
+	case *net.UDPAddr:
+		if bb, ok := b.(*net.UDPAddr); ok {
+			return ipEqual(aa.IP, bb.IP)
+		}
+	}
+
+	ahost := a.String()
+	bhost := b.String()
+
+	if host, _, err := net.SplitHostPort(ahost); err == nil {
+		ahost = host
+	}
+	if host, _, err := net.SplitHostPort(bhost); err == nil {
+		bhost = host
+	}
+
+	return ahost == bhost
+}
+
+// Fast net.Addr comparison
+func AddrsEq(a, b net.Addr) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+
+	switch aa := a.(type) {
+	case *net.TCPAddr:
+		if bb, ok := b.(*net.TCPAddr); ok {
+			return tcpUDPAddrEqual(aa.IP, aa.Port, bb.IP, bb.Port)
+		}
+	case *net.UDPAddr:
+		if bb, ok := b.(*net.UDPAddr); ok {
+			return tcpUDPAddrEqual(aa.IP, aa.Port, bb.IP, bb.Port)
+		}
+	}
+
+	// Fallback: compare string representation
+	return a.String() == b.String()
+}
+
+func ipEqual(a, b net.IP) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(b)
+}
+
+// compare IP + port + zone
+func tcpUDPAddrEqual(aIP net.IP, aPort int, bIP net.IP, bPort int) bool {
+	if aPort != bPort {
+		return false
+	}
+	return ipEqual(aIP, bIP)
+}
+
+func GetOutboundIP() (net.IP, error) {
+	// does not send packets, just lets kernel pick a source IP
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP, nil
 }

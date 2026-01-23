@@ -17,5 +17,8 @@ func PutBuffer(pool BufferPool, buf []byte) {
 	if pool == nil {
 		return
 	}
+	if buf == nil {
+		return
+	}
 	pool.PutBuffer(buf)
 }

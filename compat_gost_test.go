@@ -143,10 +143,10 @@ func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
 
 	if !tls {
 		t.Run("ListenUDP", func(t *testing.T) {
-			testUDPListen(c5g, t, 10)
-			testUDPListen(c5gp, t, 10)
-			// testUDPListen(c5, t, 1)
-			// testUDPListen(c5p, t, 1)
+			testUDPListen(c5g, t, 10, false)
+			testUDPListen(c5gp, t, 10, false)
+			testUDPListen(c5, t, 1, true)
+			testUDPListen(c5p, t, 1, true)
 		})
 	}
 }

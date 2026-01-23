@@ -147,6 +147,18 @@ func (a Addr) IsUnspecified() bool {
 	return false
 }
 
+func (a Addr) Copy() Addr {
+	cp := Addr{
+		Type:   a.Type,
+		NetTyp: a.NetTyp,
+		Port:   a.Port,
+	}
+	if a.Host != nil {
+		cp.Host = append(cp.Host, a.Host...)
+	}
+	return cp
+}
+
 func (a Addr) Len() int {
 	switch a.Type {
 	case IP4Addr:
@@ -216,6 +228,21 @@ func (a Addr) ToTCP() *net.TCPAddr {
 		}
 	}
 	return nil
+}
+
+// New addr with same Type and NetTyp but unspecified Host and zero Port
+func (a Addr) ToUnspecified() Addr {
+	n := Addr{
+		Type:   a.Type,
+		NetTyp: a.NetTyp,
+	}
+	switch a.Type {
+	case IP6Addr:
+		n.Host = net.IPv6unspecified.To16()
+	case IP4Addr:
+		n.Host = net.IPv4zero.To4()
+	}
+	return n
 }
 
 func (a Addr) ToHostPort() string {

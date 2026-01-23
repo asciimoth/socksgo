@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -43,6 +42,6 @@ var DefaultConnectHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		return internal.PipeConn(conn, conn2)
+		return protocol.PipeConn(conn, conn2)
 	},
 }

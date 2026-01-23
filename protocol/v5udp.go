@@ -7,9 +7,28 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 
 	"github.com/asciimoth/socksgo/internal"
 )
+
+type Socks5UDPClient interface {
+	net.Conn
+	net.PacketConn
+
+	// TODO: WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error)
+	// TODO: ReadFromUDP, WrtiteToUDP with FQDN packets ignoring
+}
+
+var (
+	_ Socks5UDPClient = &Socks5UDPClientAssoc{}
+	_ Socks5UDPClient = &Socks5UDPClientTUN{}
+)
+
+type PacketConn interface {
+	net.Conn
+	net.PacketConn
+}
 
 // For standard socks UDP ASSOC leave rsv == 0.
 // For gost's UDP TUN extension
@@ -39,62 +58,76 @@ func AppendSocks5UDPHeader(
 	return buf
 }
 
-func WriteSocks5UDPPacket(
+func WriteSocksAssoc5UDPPacket(
+	pool BufferPool,
+	conn PacketConn,
+	peerAddr net.Addr,
+	addr Addr,
+	data []byte,
+) (n int, err error) {
+	// conn is a packet one (udp)
+	// standard UDP ASSOC should be used
+
+	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN+len(data))[:0]
+	defer internal.PutBuffer(pool, buf)
+
+	buf = AppendSocks5UDPHeader(buf, 0, addr)
+	hlen := len(buf) // header length
+	buf = append(buf, data...)
+
+	if peerAddr == nil {
+		n, err = conn.Write(buf)
+	} else {
+		n, err = conn.WriteTo(buf, peerAddr)
+	}
+	n = max(0, n-hlen)
+	return n, err
+}
+
+func WriteSocks5TUNUDPPacket(
 	pool BufferPool,
 	conn net.Conn,
 	addr Addr,
 	data []byte,
 ) (n int, err error) {
-	if _, ok := conn.(net.PacketConn); ok {
-		// conn is a packet one (udp)
-		// standard UDP ASSOC should be used
+	// conn is not a packet one (udp) conn
+	// gost's UDP TUN extension should be used
 
-		buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN+len(data))[:0]
-		defer internal.PutBuffer(pool, buf)
-
-		buf = AppendSocks5UDPHeader(buf, 0, addr)
-		hlen := len(buf) // header length
-		buf = append(buf, data...)
-
-		n64, err := io.Copy(conn, bytes.NewReader(data))
-		n = max(0, int(n64)-hlen)
-		return n, err
-	} else {
-		// conn is not a packet one (udp) conn
-		// gost's UDP TUN extension should be used
-
-		if len(data) > 65535 {
-			data = data[:65535]
-		}
-		rsv := uint16(len(data))
-
-		buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
-		defer internal.PutBuffer(pool, buf)
-
-		header := AppendSocks5UDPHeader(buf, rsv, addr)
-		_, err = io.Copy(conn, bytes.NewReader(header))
-		if err != nil {
-			return
-		}
-		n64, err := io.Copy(conn, bytes.NewReader(data))
-		n = int(n64)
-		return n, err
+	if len(data) > 65535 {
+		data = data[:65535]
 	}
+	rsv := uint16(len(data))
+
+	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+	defer internal.PutBuffer(pool, buf)
+
+	header := AppendSocks5UDPHeader(buf, rsv, addr)
+	_, err = io.Copy(conn, bytes.NewReader(header))
+	if err != nil {
+		return
+	}
+	n64, err := io.Copy(conn, bytes.NewReader(data))
+	n = int(n64)
+	return n, err
 }
 
-func readStandardSocks5UDPPacket(
+func ReadSocks5AssocUDPPacket(
 	pool BufferPool,
-	conn net.Conn,
+	conn net.PacketConn,
 	p []byte,
 	skipAddr bool,
-) (n int, addr Addr, err error) {
+	checkAddr net.Addr,
+) (n int, addr Addr, incAddr net.Addr, err error) {
 	buf := internal.GetBuffer(pool, len(p)+MAX_SOCKS_UDP_HEADER_LEN)
 	defer internal.PutBuffer(pool, buf)
 loop:
 	for {
-		n, err = conn.Read(buf)
+		n, incAddr, err = conn.ReadFrom(buf)
 		if err != nil {
 			return
+		}
+		if checkAddr != nil && !internal.AddrsSameHost(checkAddr, incAddr) {
+			continue
 		}
 		if n < 8 {
 			// Packet is too small to contain any meaningful socks5 header
@@ -156,11 +189,11 @@ loop:
 			continue loop
 		}
 		n = copy(p, buf[start:n])
-		return n, addr, nil
+		return n, addr, incAddr, nil
 	}
 }
 
-func readSocks5TunUDPPacket(
+func ReadSocks5TunUDPPacket(
 	pool BufferPool,
 	conn net.Conn,
 	p []byte,
@@ -254,19 +287,267 @@ func readSocks5TunUDPPacket(
 	}
 }
 
-func ReadSocks5UDPPacket(
-	pool BufferPool,
-	conn net.Conn,
-	p []byte,
-	skipAddr bool, // Optimisation option
-) (n int, addr Addr, err error) {
-	if _, ok := conn.(net.PacketConn); ok {
-		// conn is a packet one (udp)
-		// standard UDP ASSOC should be used
-		return readStandardSocks5UDPPacket(pool, conn, p, skipAddr)
+type Socks5UDPClientAssoc struct {
+	PacketConn
+	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
+	Pool          BufferPool
+	raddr         net.Addr
+	onClose       func()
+}
+
+func NewSocks5UDPClientAssoc(
+	conn PacketConn, addr *Addr, pool BufferPool, onc func(),
+) *Socks5UDPClientAssoc {
+	raddr := Addr{}
+	if addr != nil {
+		raddr = addr.Copy()
 	} else {
-		// conn is not a packet one (udp) conn
-		// gost's UDP TUN extension should be used
-		return readSocks5TunUDPPacket(pool, conn, p, skipAddr)
+		raddr = AddrFromHostPort("0.0.0.0:0", "udp")
 	}
+
+	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+
+	client := &Socks5UDPClientAssoc{
+		PacketConn:    conn,
+		Pool:          pool,
+		raddr:         raddr,
+		DefaultHeader: AppendSocks5UDPHeader(buf, 0, raddr),
+	}
+
+	client.onClose = sync.OnceFunc(func() {
+		dh := client.DefaultHeader
+		client.DefaultHeader = nil
+		internal.PutBuffer(pool, dh)
+		if onc != nil {
+			onc()
+		}
+	})
+	return client
+}
+
+func (uc *Socks5UDPClientAssoc) Close() error {
+	err := uc.PacketConn.Close()
+	uc.onClose()
+	return err
+}
+
+func (uc *Socks5UDPClientAssoc) RemoteAddr() net.Addr {
+	if uc.raddr != nil {
+		return uc.raddr
+	}
+	return uc.PacketConn.RemoteAddr()
+}
+
+func (uc *Socks5UDPClientAssoc) Read(b []byte) (n int, err error) {
+	n, _, _, err = ReadSocks5AssocUDPPacket(uc.Pool, uc.PacketConn, b, true, nil)
+	return
+}
+
+func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
+	buf := internal.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
+	defer internal.PutBuffer(uc.Pool, buf)
+	buf = append(buf, uc.DefaultHeader...)
+	buf = append(buf, b...)
+
+	n, err = uc.PacketConn.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	n = max(0, n-len(uc.DefaultHeader))
+	return n, nil
+}
+
+func (uc *Socks5UDPClientAssoc) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	n, addr, _, err = ReadSocks5AssocUDPPacket(uc.Pool, uc.PacketConn, p, false, nil)
+	return
+}
+
+func (uc *Socks5UDPClientAssoc) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	return WriteSocksAssoc5UDPPacket(
+		uc.Pool, uc.PacketConn, nil, AddrFromNetAddr(addr), p,
+	)
+}
+
+type Socks5UDPClientTUN struct {
+	net.Conn
+	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
+	Pool          BufferPool
+	laddr, raddr  net.Addr
+	onClose       func()
+}
+
+func NewSocks5UDPClientTUN(
+	conn net.Conn, laddr Addr, raddr *Addr, pool BufferPool,
+) *Socks5UDPClientTUN {
+	nraddr := Addr{}
+	if raddr != nil {
+		nraddr = raddr.Copy()
+	} else {
+		nraddr = AddrFromHostPort("0.0.0.0:0", "udp")
+	}
+
+	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+
+	client := &Socks5UDPClientTUN{
+		Conn:          conn,
+		Pool:          pool,
+		raddr:         raddr,
+		laddr:         laddr,
+		DefaultHeader: AppendSocks5UDPHeader(buf, 0, nraddr),
+	}
+
+	client.onClose = sync.OnceFunc(func() {
+		dh := client.DefaultHeader
+		client.DefaultHeader = nil
+		internal.PutBuffer(pool, dh)
+	})
+	return client
+}
+
+func (uc *Socks5UDPClientTUN) Close() error {
+	err := uc.Conn.Close()
+	uc.onClose()
+	return err
+}
+
+func (uc *Socks5UDPClientTUN) RemoteAddr() net.Addr {
+	if uc.raddr != nil {
+		return uc.raddr
+	}
+	return uc.Conn.RemoteAddr()
+}
+
+func (uc *Socks5UDPClientTUN) LocalAddr() net.Addr {
+	if uc.laddr != nil {
+		return uc.laddr
+	}
+	return uc.Conn.LocalAddr()
+}
+
+func (uc *Socks5UDPClientTUN) Read(b []byte) (n int, err error) {
+	n, _, err = ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, b, true)
+	return
+}
+
+func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
+	// Trim b cause we do not support fragmentation
+	if len(b) > 65535 {
+		b = b[:65535]
+	}
+
+	buf := internal.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
+	defer internal.PutBuffer(uc.Pool, buf)
+	buf = binary.BigEndian.AppendUint16(buf, uint16(len(b))) // RSV
+	buf = append(buf, uc.DefaultHeader[2:]...)               // Header without RSV
+	buf = append(buf, b...)
+
+	n, err = uc.Conn.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	n = max(0, n-len(uc.DefaultHeader))
+	return n, nil
+}
+
+func (uc *Socks5UDPClientTUN) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	return ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, p, false)
+}
+
+func (uc *Socks5UDPClientTUN) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	return WriteSocks5TUNUDPPacket(
+		uc.Pool, uc.Conn, AddrFromNetAddr(addr), p,
+	)
+}
+
+func ProxySocks5UDPAssoc(
+	assoc PacketConn, proxy net.PacketConn, ctrl net.Conn,
+	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
+	pool BufferPool, bufSize int,
+) (err error) {
+	proxy, err = net.ListenUDP("udp4", &net.UDPAddr{
+		IP: net.IPv4(0, 0, 0, 0).To4(),
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer proxy.Close()
+	_, err = proxy.WriteTo([]byte{0}, &net.UDPAddr{
+		IP: net.IPv4(192, 168, 2, 104).To4(),
+		// IP:   net.IPv4(8, 8, 8, 8).To4(),
+		Port: 59382,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	assoc2proxy := internal.GetBuffer(pool, bufSize)
+	proxy2assoc := internal.GetBuffer(pool, bufSize)
+	defer internal.PutBuffer(pool, assoc2proxy)
+	defer internal.PutBuffer(pool, proxy2assoc)
+
+	done := make(chan error, 2)
+
+	// Possibly the worst code I've ever written
+	go func() {
+		// assoc -> proxy
+		defer ctrl.Close()
+		var clientUDPAddr net.Addr
+		ctrlAddr := ctrl.RemoteAddr()
+		for {
+			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(pool, assoc, assoc2proxy, false, clientUDPAddr)
+			if err != nil {
+				done <- err
+				return
+			}
+			// First packet
+			if clientUDPAddr == nil {
+				if !internal.AddrsSameHost(incAddr, ctrlAddr) {
+					// Incoming packet from uncnown client
+					continue
+				}
+				clientUDPAddr = incAddr
+				go func() {
+					// assoc <- proxy
+					defer ctrl.Close()
+					for {
+						n, addr, err := proxy.ReadFrom(proxy2assoc)
+						if err != nil {
+							done <- err
+							return
+						}
+						n, err = WriteSocksAssoc5UDPPacket(
+							pool, assoc, clientUDPAddr, AddrFromNetAddr(addr), proxy2assoc[:n],
+						)
+						if err != nil {
+							done <- err
+							return
+						}
+					}
+				}()
+			}
+			// For some fucking reason net.UDPConn.WriteTo just crashing on any
+			// net.Addr that is not *net.UDPAddr so we handling it individually
+			if udpProxy, ok := proxy.(*net.UDPConn); ok {
+				udpAddr := addr.ToUDP()
+				if udpAddr == nil {
+					continue
+				}
+				_, err = udpProxy.WriteToUDP(assoc2proxy[:n], udpAddr)
+			} else {
+				_, err = proxy.WriteTo(assoc2proxy[:n], addr)
+			}
+			if err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+
+	internal.WaitForClose(ctrl)
+	assoc.Close()
+	proxy.Close()
+
+	return internal.JoinNetErrors(<-done, <-done)
 }

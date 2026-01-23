@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -27,7 +26,7 @@ var DefaultBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, protocol.DisallowReply, pool)
 			return err
 		}
-		listener, err := net.Listen("tcp", addr.ToHostPort())
+		listener, err := server.GetListener()(ctx, "tcp", addr.ToHostPort())
 		if err != nil {
 			// TODO: What ReplyCode should we return here?
 			protocol.Reject(ver, conn, protocol.FailReply, pool)
@@ -60,6 +59,6 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		return internal.PipeConn(conn, conn2)
+		return protocol.PipeConn(conn, conn2)
 	},
 }

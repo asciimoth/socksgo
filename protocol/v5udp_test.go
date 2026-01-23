@@ -77,19 +77,18 @@ func TestAppendSocks5UDPHeader(t *testing.T) {
 	}
 }
 
-func TestReadSocks5UDPPacket(t *testing.T) {
+func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 	tests := []struct {
 		name      string
-		setupConn func() net.Conn
+		setupConn func() protocol.PacketConn
 		skipAddr  bool
 		wantN     int
 		wantAddr  protocol.Addr
 		wantErr   bool
 	}{
-		// Standard UDP (PacketConn) tests
 		{
 			name: "packetconn-ipv4-standard",
-			setupConn: func() net.Conn {
+			setupConn: func() protocol.PacketConn {
 				// Create a standard SOCKS5 UDP packet with IPv4
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)    // RSV=0
@@ -116,7 +115,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 		},
 		{
 			name: "packetconn-ipv6-standard",
-			setupConn: func() net.Conn {
+			setupConn: func() protocol.PacketConn {
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0) // RSV=0
 				buf = append(buf, 0)                        // FRAG=0
@@ -142,7 +141,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 		},
 		{
 			name: "packetconn-fqdn-standard",
-			setupConn: func() net.Conn {
+			setupConn: func() protocol.PacketConn {
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)  // RSV=0
 				buf = append(buf, 0)                         // FRAG=0
@@ -168,7 +167,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 		},
 		{
 			name: "packetconn-skip-addr",
-			setupConn: func() net.Conn {
+			setupConn: func() protocol.PacketConn {
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)    // RSV=0
 				buf = append(buf, 0)                           // FRAG=0
@@ -192,7 +191,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 		},
 		{
 			name: "packetconn-fragmented-skip",
-			setupConn: func() net.Conn {
+			setupConn: func() protocol.PacketConn {
 				// First packet with FRAG != 0 (should be skipped)
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(buf1, 0)  // RSV=0
@@ -233,7 +232,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 		},
 		{
 			name: "packetconn-rsv-not-zero-skip",
-			setupConn: func() net.Conn {
+			setupConn: func() protocol.PacketConn {
 				// First packet with RSV != 0 (should be skipped)
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(buf1, 1)  // RSV=1 (not zero)
@@ -272,8 +271,43 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 			wantAddr: protocol.AddrFromString("10.0.0.3", 9090, "udp"),
 			wantErr:  false,
 		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := tt.setupConn()
+			buf := make([]byte, 500) // Buffer for reading
 
-		// TCP TUN extension tests (net.Conn but not net.PacketConn)
+			n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(nil, conn, buf, tt.skipAddr, nil)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReadSocks5UDPPacket() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if n != tt.wantN {
+					t.Errorf("ReadSocks5UDPPacket() n = %v, want %v", n, tt.wantN)
+				}
+
+				if !tt.skipAddr {
+					if tt.wantAddr.String() != addr.String() {
+						t.Errorf("expected addr %s but got %s", tt.wantAddr.String(), addr.String())
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestReadSocks5UDPPacketTUN(t *testing.T) {
+	tests := []struct {
+		name      string
+		setupConn func() net.Conn
+		skipAddr  bool
+		wantN     int
+		wantAddr  protocol.Addr
+		wantErr   bool
+	}{
 		{
 			name: "tcp-tun-ipv4",
 			setupConn: func() net.Conn {
@@ -473,7 +507,7 @@ func TestReadSocks5UDPPacket(t *testing.T) {
 			conn := tt.setupConn()
 			buf := make([]byte, 500) // Buffer for reading
 
-			n, addr, err := protocol.ReadSocks5UDPPacket(nil, conn, buf, tt.skipAddr)
+			n, addr, err := protocol.ReadSocks5TunUDPPacket(nil, conn, buf, tt.skipAddr)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadSocks5UDPPacket() error = %v, wantErr %v", err, tt.wantErr)
