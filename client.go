@@ -2,6 +2,7 @@ package socksgo
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/url"
@@ -15,9 +16,66 @@ import (
 // - assocprob
 // - secure
 func ClientFromURLObjSafe(u *url.URL) *Client {
-	config := clientConfigFromURLSafe(u, nil)
-	client := &Client{
-		ClientConfig: config,
+	client := &Client{}
+	if u == nil {
+		return client
+	}
+
+	version, isTLS, isWS := parseScheme(u.Scheme)
+	client.SocksVersion = version
+	client.TLS = isTLS
+
+	client.ProxyAddr = u.Host
+
+	wsUrl := ""
+	if isWS {
+		wsu := url.URL{
+			Scheme: "ws",
+			Host:   u.Host,
+			Path:   "/ws", // Default for gost compat
+		}
+		if u.Path != "" {
+			wsu.Path = u.Path
+		}
+		if isTLS {
+			wsu.Scheme = "wss"
+		}
+		wsUrl = wsu.String()
+	}
+	client.WebSocketURL = wsUrl
+
+	q := u.Query()
+
+	if f, s := checkURLBoolKey(q, "gost"); s {
+		client.GostMbind = f
+		client.GostUDPTun = f
+	}
+
+	if f, s := checkURLBoolKey(q, "tor"); s {
+		client.TorLookup = f
+	}
+
+	if u.User != nil {
+		var password string
+		if pass, ok := u.User.Password(); ok {
+			password = pass
+		}
+		client.Auth = client.Auth.Add(&protocol.PassAuthMethod{
+			User: u.User.Username(),
+			Pass: password,
+		})
+	}
+
+	if f, s := checkURLBoolKey(q, "pass"); s && f {
+		client.Filter = PassAllFilter
+	}
+
+	client.TLSConfig = &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	// In safe constructor we can enable it but not disable
+	if f, s := checkURLBoolKey(q, "secure"); s && f {
+		client.TLSConfig.InsecureSkipVerify = false
 	}
 	return client
 }
@@ -31,10 +89,20 @@ func ClientFromURLSafe(urlstr string) (*Client, error) {
 }
 
 func ClientFromURLObj(u *url.URL) *Client {
-	config := clientConfigFromURL(u, nil)
-	client := &Client{
-		ClientConfig: config,
+	client := ClientFromURLObjSafe(u)
+
+	q := u.Query()
+	if f, s := checkURLBoolKey(q, "insecureudp"); s {
+		client.InsecureUDP = f
 	}
+	if f, s := checkURLBoolKey(q, "assocprob"); s {
+		client.DoNotSpawnUDPAsocProbber = !f
+	}
+	if f, s := checkURLBoolKey(q, "secure"); s {
+		client.TLSConfig.InsecureSkipVerify = !f
+	}
+	// TODO: Add more TLS related args
+
 	return client
 }
 
@@ -47,7 +115,53 @@ func ClientFromURL(urlstr string) (*Client, error) {
 }
 
 type Client struct {
-	ClientConfig
+	// "4" | "4a" | "5" | ""
+	// "" means default means "5"
+	SocksVersion string
+
+	// For standard (not ws) proxies
+	// Default: "tcp"
+	ProxyNet string
+	// If port not provided ("<host>" instead of "<host>:<port>")
+	// 1080 will be used
+	ProxyAddr string
+
+	Auth *protocol.AuthMethods
+
+	// Allow plaintext UDP ASSOC for socks over tls proxies
+	InsecureUDP bool
+	// Goroutine that check if original tcp conn is closed
+	DoNotSpawnUDPAsocProbber bool
+
+	// Extensions
+	GostMbind  bool
+	GostUDPTun bool
+	TorLookup  bool
+
+	Filter Filter
+
+	// Will be used to connect to proxy server or for addrs marked by Filter
+	Dialer       Dialer
+	PacketDialer PacketDialer
+	// Will be used for addrs marked by Filter
+	DirectListener       Listener
+	DirectPacketListener PacketListener
+	// For socks4 (not socks4a) clients or Lookup* requests for addrs marked by Filter
+	Resolver Resolver
+
+	// For gost MBIND extension
+	Smux *smux.Config
+
+	// Enable socks over tls/ws
+	TLS       bool
+	TLSConfig *tls.Config
+
+	// If not "" socks over ws/wss will be enabled
+	// For ws/wss connections ProxyNet and ProxyAddr are ignored
+	WebSocketURL    string
+	WebSocketConfig *WebSocketConfig
+
+	Pool protocol.BufferPool
 }
 
 func (c *Client) Request(
