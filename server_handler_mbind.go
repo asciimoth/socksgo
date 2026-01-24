@@ -3,6 +3,7 @@ package socksgo
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
@@ -51,7 +52,7 @@ var DefaultGostMBindHandler = CommandHandler{
 		defer conn.Close()
 		defer session.Close()
 
-		// TODO: Use waitgroup
+		var wg sync.WaitGroup
 		for {
 			var inc net.Conn
 			inc, err = listener.Accept()
@@ -62,10 +63,11 @@ var DefaultGostMBindHandler = CommandHandler{
 			if err != nil {
 				break
 			}
-			go func() {
+			wg.Go(func() {
 				protocol.PipeConn(inc, stream)
-			}()
+			})
 		}
+		wg.Wait()
 
 		return internal.ClosedNetworkErrToNil(err)
 	},
