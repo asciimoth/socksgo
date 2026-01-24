@@ -47,7 +47,7 @@ var DefaultGostMBindHandler = CommandHandler{
 			return err
 		}
 
-		session, err := smux.Client(conn, nil) // TODO: Add smux config to server
+		session, err := smux.Client(conn, server.GetSmux())
 		defer conn.Close()
 		defer session.Close()
 
