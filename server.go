@@ -24,6 +24,8 @@ type Server struct {
 
 	UDPBufferSize int           // 8192 default
 	UDPTimeout    time.Duration // 2m default
+	// Socks 4/5 handshake (including socks5 auth / socks4 IDENT)
+	HandshakeTimeout time.Duration // 0 (no timeout) by default
 
 	// Should IPv4 addrs be preferred if both IPv4 and IPv6 addr are available
 	// when replying to CmdTorResolve
@@ -114,6 +116,12 @@ func (s *Server) Accept(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 	pool := s.GetPool()
+
+	timeout := s.GetHandshakeTimeout()
+	if timeout != 0 {
+		conn.SetDeadline(time.Now().Add(timeout))
+	}
+
 	cmd, addr, user, err := protocol.ReadSocks4TCPRequest(conn, pool)
 	if err != nil {
 		return errors.Join(
@@ -164,11 +172,21 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 		return err
 	}
 
+	if timeout != 0 {
+		conn.SetDeadline(time.Time{})
+	}
+
 	return handler.Run(ctx, s, conn, "4", info, cmd, addr)
 }
 
 func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 	pool := s.GetPool()
+
+	timeout := s.GetHandshakeTimeout()
+	if timeout != 0 {
+		conn.SetDeadline(time.Now().Add(timeout))
+	}
+
 	conn, info, err := protocol.HandleAuth(conn, pool, s.GetAuth())
 	if err != nil {
 		return errors.Join(
@@ -196,6 +214,11 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 		protocol.Reject("5", conn, stat, pool)
 		return err
 	}
+
+	if timeout != 0 {
+		conn.SetDeadline(time.Time{})
+	}
+
 	return handler.Run(ctx, s, conn, "5", info, cmd, addr)
 }
 

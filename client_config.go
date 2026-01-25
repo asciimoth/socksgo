@@ -18,15 +18,7 @@ type WebSocketConfig struct {
 	Subprotocols      []string
 	EnableCompression bool
 	Jar               http.CookieJar
-	HandshakeTimeout  time.Duration
 	RequestHeader     http.Header
-}
-
-func (w *WebSocketConfig) handshakeTimeout() time.Duration {
-	if w == nil || w.HandshakeTimeout == 0 {
-		return websocket.DefaultDialer.HandshakeTimeout
-	}
-	return w.HandshakeTimeout
 }
 
 func (w *WebSocketConfig) readBufferSize() int {
@@ -70,7 +62,6 @@ func (w *WebSocketConfig) Clone() *WebSocketConfig {
 		Subprotocols:      subprotocols,
 		EnableCompression: w.EnableCompression,
 		Jar:               w.Jar,
-		HandshakeTimeout:  w.HandshakeTimeout,
 		RequestHeader:     w.RequestHeader.Clone(),
 	}
 	return &cfg
@@ -194,6 +185,13 @@ func (c *Client) GetTLSConfig() (config *tls.Config) {
 	return config
 }
 
+func (c *Client) GetHandshakeTimeout() time.Duration {
+	if c == nil {
+		return 0
+	}
+	return c.HandshakeTimeout
+}
+
 // Build webSocket.Dialer from c.WebSocketConfig,
 // c.GetDialer() and c.GetTLSConfig.
 // if c.WebSocketURL == "" always return nil.
@@ -207,7 +205,7 @@ func (c *Client) GetWsDialer() *websocket.Dialer {
 		// TODO: Convert somehow BufferPool to websocket.BufferPool
 		WriteBufferPool: nil,
 
-		HandshakeTimeout:  c.WebSocketConfig.handshakeTimeout(),
+		HandshakeTimeout:  c.GetHandshakeTimeout(),
 		ReadBufferSize:    c.WebSocketConfig.readBufferSize(),
 		Subprotocols:      c.WebSocketConfig.subprotocols(),
 		EnableCompression: c.WebSocketConfig.enableCompression(),
@@ -240,16 +238,24 @@ func (c *Client) connectWebSocket(ctx context.Context) (conn net.Conn, err error
 // Connect to proxy server
 func (c *Client) Connect(ctx context.Context) (conn net.Conn, err error) {
 	if c.WebSocketURL != "" {
-		return c.connectWebSocket(ctx)
+		conn, err = c.connectWebSocket(ctx)
+	} else {
+		conn, err = c.GetDialer()(ctx, c.GetNet(), c.GetAddr())
 	}
 
-	conn, err = c.GetDialer()(ctx, c.GetNet(), c.GetAddr())
 	if err != nil {
 		return nil, err
 	}
 
-	if c.IsTLS() {
+	if c.WebSocketURL == "" && c.IsTLS() {
 		conn = tls.Client(conn, c.GetTLSConfig())
+	}
+
+	timeout := c.GetHandshakeTimeout()
+	if timeout == 0 {
+		conn.SetDeadline(time.Time{})
+	} else {
+		conn.SetDeadline(time.Now().Add(timeout))
 	}
 
 	return

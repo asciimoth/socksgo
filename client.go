@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"time"
 
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
@@ -149,6 +150,8 @@ type Client struct {
 	// For socks4 (not socks4a) clients or Lookup* requests for addrs marked by Filter
 	Resolver Resolver
 
+	HandshakeTimeout time.Duration
+
 	// For gost MBIND extension
 	Smux *smux.Config
 
@@ -164,7 +167,7 @@ type Client struct {
 	Pool protocol.BufferPool
 }
 
-func (c *Client) Request(
+func (c *Client) request(
 	ctx context.Context,
 	cmd protocol.Cmd,
 	address protocol.Addr,
@@ -196,6 +199,23 @@ func (c *Client) Request(
 		return c.request4(ctx, cmd, *ipaddr)
 	}
 	err = UnknownSocksVersionError{ver}
+	return
+}
+
+func (c *Client) Request(
+	ctx context.Context,
+	cmd protocol.Cmd,
+	address protocol.Addr,
+) (
+	proxy net.Conn,
+	addr protocol.Addr,
+	err error,
+) {
+	proxy, addr, err = c.request(ctx, cmd, address)
+	if err != nil {
+		// Unset timeout after successful socks handshake
+		proxy.SetDeadline(time.Time{})
+	}
 	return
 }
 

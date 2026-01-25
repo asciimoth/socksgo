@@ -75,10 +75,17 @@ func (s *Server) GetUDPBufferSize() int {
 }
 
 func (s *Server) GetUDPTimeout() time.Duration {
-	if s.UDPTimeout == 0 {
+	if s == nil || s.UDPTimeout == 0 {
 		return time.Second * 180
 	}
 	return s.UDPTimeout
+}
+
+func (s *Server) GetHandshakeTimeout() time.Duration {
+	if s == nil {
+		return 0
+	}
+	return s.HandshakeTimeout
 }
 
 func (s *Server) GetDefaultListenHost() string {
