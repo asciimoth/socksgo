@@ -1,15 +1,15 @@
 package socksgo
 
 import (
-	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"time"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/ident"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -31,6 +31,9 @@ type Server struct {
 	// as local addr instead of "0.0.0.0"/"::"/"" if provided
 	DefaultListenHost string
 
+	// false by default
+	UseIDENT func(user string, clientAddr net.Addr) bool
+
 	// Local addr filter. For listening commands (bind, mbind, etc)
 	// true means allow, false means reject
 	// If nil (default) any laddr is allowed
@@ -40,8 +43,6 @@ type Server struct {
 	// true means allow, false means reject
 	// If nil (default) any raddr is allowed
 	RaddrFilter func(raddr *protocol.Addr) bool
-
-	// TODO: Add option to use IDENT for socks4 instead of Auth
 
 	// If non nil error or non Ok status will be reutrned, request
 	// will be rejected.
@@ -115,13 +116,7 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 	if !s.GetAuth().CheckSocks4User(user) {
 		// Reject
-		reply := protocol.BuildSocks4TCPReply(
-			protocol.Rejected.To4(),
-			protocol.Addr{},
-			pool,
-		)
-		defer internal.PutBuffer(pool, reply)
-		io.Copy(conn, bytes.NewReader(reply))
+		protocol.Reject("4", conn, protocol.Rejected, pool)
 		return errors.Join(
 			ErrClientAuthFailed,
 			errors.New("provided socks4 user rejected"),
@@ -142,6 +137,14 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 			"user": user,
 			"pass": "",
 		},
+	}
+
+	if s.CheckUseIDENT(user, conn.RemoteAddr()) {
+		err = s.checkIDENT(ctx, user, conn, pool)
+		if err != nil {
+			return err
+		}
+		info.Info["ident"] = true
 	}
 
 	err, stat := s.runPreCmd(ctx, conn, "4", info, cmd, addr)
@@ -186,4 +189,40 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 		return err
 	}
 	return handler.Run(ctx, s, conn, "5", info, cmd, addr)
+}
+
+func (s *Server) checkIDENT(
+	ctx context.Context, user string, conn net.Conn, pool protocol.BufferPool,
+) error {
+	srcAddr := protocol.AddrFromNetAddr(conn.RemoteAddr())
+	dstAddr := protocol.AddrFromNetAddr(conn.LocalAddr())
+	identAddr := srcAddr.Copy()
+	identAddr.Port = 113 // Standard IDENT port (RFC 1413)
+	identConn, err := s.GetDialer()(ctx, identAddr.Network(), identAddr.ToHostPort())
+	if err != nil {
+		protocol.Reject("4", conn, protocol.IdentRequired, pool)
+		return errors.Join(
+			ErrClientAuthFailed,
+			errors.New("IDENT server connection"),
+			err,
+		)
+	}
+	iresp, err := ident.QueryWithConn(srcAddr.PortStr(), dstAddr.PortStr(), identConn)
+	if err != nil {
+		protocol.Reject("4", conn, protocol.IdentRequired, pool)
+		return errors.Join(
+			ErrClientAuthFailed,
+			errors.New("IDENT response"),
+			err,
+		)
+	}
+	if iresp.ID != user {
+		protocol.Reject("4", conn, protocol.IdentFailed, pool)
+		return errors.Join(
+			ErrClientAuthFailed,
+			errors.New("IDENT user mismatch"),
+			fmt.Errorf("IDENT user mismatch '%s' vs '%s'", user, iresp.ID),
+		)
+	}
+	return nil
 }

@@ -60,6 +60,13 @@ func (s *Server) CheckBothAddr(laddr, raddr *protocol.Addr) error {
 	return nil
 }
 
+func (s *Server) CheckUseIDENT(user string, clientAddr net.Addr) bool {
+	if s == nil || s.UseIDENT == nil {
+		return false
+	}
+	return s.UseIDENT(user, clientAddr)
+}
+
 func (s *Server) GetUDPBufferSize() int {
 	if s.UDPBufferSize == 0 {
 		return 8192

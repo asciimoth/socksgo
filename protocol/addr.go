@@ -51,7 +51,8 @@ func AddrFromNetAddr(addr net.Addr) Addr {
 	if udp, ok := addr.(*net.UDPAddr); ok {
 		return AddrFromUDPAddr(udp)
 	}
-	return AddrFromHostPort(addr.String(), addr.Network())
+	return AddrFromHostPort(
+		addr.String(), addr.Network()).WithNetTyp(addr.Network())
 }
 
 func AddrFromHostPort(hostport, network string) Addr {
@@ -169,6 +170,19 @@ func (a Addr) Len() int {
 	return len(a.Host)
 }
 
+func (a Addr) WithNetTyp(nt string) Addr {
+	n := a.Copy()
+	switch nt {
+	case "tcp4", "tcp6":
+		n.NetTyp = "tcp"
+	case "udp4", "udp6":
+		n.NetTyp = "udp"
+	default:
+		n.NetTyp = nt
+	}
+	return n
+}
+
 // If host is not "" and a.IsUnspecified, a.Host will
 // be replaced with host.
 // If a.IsUnspecified and host is "", a.Host will be replaced with "0.0.0.0"
@@ -208,6 +222,10 @@ func (a Addr) ToFQDN() string {
 	}
 
 	return string(a.Host)
+}
+
+func (a Addr) PortStr() string {
+	return strconv.Itoa(int(a.Port))
 }
 
 func (a Addr) ToUDP() *net.UDPAddr {
