@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/asciimoth/ident"
+	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
+	"github.com/gorilla/websocket"
 	"github.com/xtaci/smux"
 )
 
@@ -83,7 +85,13 @@ func (s *Server) runPreCmd(
 }
 
 // Thread-safe
-// TODO: AcceptWS
+func (s *Server) AcceptWS(ctx context.Context, conn *websocket.Conn, isTLS bool) error {
+	return s.Accept(ctx, &internal.WSConn{
+		Conn: conn,
+	}, isTLS)
+}
+
+// Thread-safe
 func (s *Server) Accept(ctx context.Context, conn net.Conn, isTLS bool) error {
 	defer conn.Close()
 
