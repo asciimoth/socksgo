@@ -4,7 +4,7 @@ package socksgo_test
 
 import "testing"
 
-func TestIntegrationWithTor(t *testing.T) {
+func TestTorCompat(t *testing.T) {
 	cfg := GetEnvConfig()
 
 	c5 := buildClient("socks5://"+cfg.Tor+"?tor", t)

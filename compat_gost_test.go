@@ -160,7 +160,7 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) func() {
 	return kill
 }
 
-func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
+func testGostCompat(t *testing.T, tls bool, ws bool) {
 	cfg := GetEnvConfig()
 
 	kill := runGostAll(t, cfg, tls, ws)
@@ -216,9 +216,9 @@ func testIntegrationWithGost(t *testing.T, tls bool, ws bool) {
 	}
 }
 
-func TestIntegrationWithGost(t *testing.T) {
-	testIntegrationWithGost(t, false, false)
-	// testIntegrationWithGost(t, true, false)
-	// testIntegrationWithGost(t, false, true)
-	// testIntegrationWithGost(t, true, true)
+func TestGostCompat(t *testing.T) {
+	testGostCompat(t, false, false)
+	testGostCompat(t, true, false)
+	testGostCompat(t, false, true)
+	testGostCompat(t, true, true)
 }
