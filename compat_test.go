@@ -39,17 +39,19 @@ func (na NetAddr) Network() string {
 }
 
 type EnvConfig struct {
-	Addr5, Addr5Pass, Addr4, Addr4Pass string
-	Tor                                string
-	Pairs                              []HostPort // example.com:http|google.com:http
+	Host string
+	// Addr5, Addr5Pass, Addr4, Addr4Pass string
+	Tor   string
+	Pairs []HostPort // example.com:http|google.com:http
 }
 
 func GetEnvConfig() EnvConfig {
 	ret := EnvConfig{
-		Addr5:     "127.0.0.1:1096",
-		Addr5Pass: "127.0.0.1:1097",
-		Addr4:     "127.0.0.1:1098",
-		Addr4Pass: "127.0.0.1:1099",
+		Host: "127.0.0.1",
+		// Addr5:     "127.0.0.1:1096",
+		// Addr5Pass: "127.0.0.1:1097",
+		// Addr4:     "127.0.0.1:1098",
+		// Addr4Pass: "127.0.0.1:1099",
 
 		Tor: "127.0.0.1:9050",
 
@@ -61,25 +63,30 @@ func GetEnvConfig() EnvConfig {
 		},
 	}
 
-	addr5 := os.Getenv("SOCKS_TEST_ADDR5")
-	if addr5 != "" {
-		ret.Addr5 = addr5
+	host := os.Getenv("SOCKS_TEST_HOST")
+	if host != "" {
+		ret.Host = host
 	}
 
-	addr5pass := os.Getenv("SOCKS_TEST_ADDR5PASS")
-	if addr5pass != "" {
-		ret.Addr5Pass = addr5pass
-	}
-
-	addr4 := os.Getenv("SOCKS_TEST_ADDR4")
-	if addr4 != "" {
-		ret.Addr4 = addr4
-	}
-
-	addr4pass := os.Getenv("SOCKS_TEST_ADDR4PASS")
-	if addr4pass != "" {
-		ret.Addr4Pass = addr4pass
-	}
+	// addr5 := os.Getenv("SOCKS_TEST_ADDR5")
+	// if addr5 != "" {
+	// 	ret.Addr5 = addr5
+	// }
+	//
+	// addr5pass := os.Getenv("SOCKS_TEST_ADDR5PASS")
+	// if addr5pass != "" {
+	// 	ret.Addr5Pass = addr5pass
+	// }
+	//
+	// addr4 := os.Getenv("SOCKS_TEST_ADDR4")
+	// if addr4 != "" {
+	// 	ret.Addr4 = addr4
+	// }
+	//
+	// addr4pass := os.Getenv("SOCKS_TEST_ADDR4PASS")
+	// if addr4pass != "" {
+	// 	ret.Addr4Pass = addr4pass
+	// }
 
 	tor := os.Getenv("SOCKS_TEST_TOR")
 	if tor != "" {

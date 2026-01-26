@@ -9,6 +9,7 @@ import (
 )
 
 func TestTorCompat(t *testing.T) {
+	t.Parallel()
 	pool := bufpool.NewTestDebugPool(t)
 	defer pool.Close()
 
