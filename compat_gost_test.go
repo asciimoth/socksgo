@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/asciimoth/bufpool"
 )
 
 // runGost("socks5://user:pass@:1080")
@@ -161,6 +163,9 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) func() {
 }
 
 func testGostCompat(t *testing.T, tls bool, ws bool) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
 	cfg := GetEnvConfig()
 
 	kill := runGostAll(t, cfg, tls, ws)
@@ -168,57 +173,96 @@ func testGostCompat(t *testing.T, tls bool, ws bool) {
 
 	socks5, socks4, socks4a := getSchemes(tls, ws)
 
-	c5g := buildClient(socks5+"://"+cfg.Addr5+"?gost", t)
-	c5gp := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass+"?gost", t)
-	c5 := buildClient(socks5+"://"+cfg.Addr5, t)
-	c5p := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass, t)
+	c5g := buildClient(socks5+"://"+cfg.Addr5+"?gost", t, pool)
+	c5gp := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass+"?gost", t, pool)
+	c5 := buildClient(socks5+"://"+cfg.Addr5, t, pool)
+	c5p := buildClient(socks5+"://user:pass@"+cfg.Addr5Pass, t, pool)
 
-	c4 := buildClient(socks4+"://"+cfg.Addr4, t)
-	c4p := buildClient(socks4+"://user@"+cfg.Addr4Pass, t)
-	c4a := buildClient(socks4a+"://"+cfg.Addr4, t)
-	c4ap := buildClient(socks4a+"://user@"+cfg.Addr4Pass, t)
+	c4 := buildClient(socks4+"://"+cfg.Addr4, t, pool)
+	c4p := buildClient(socks4+"://user@"+cfg.Addr4Pass, t, pool)
+	c4a := buildClient(socks4a+"://"+cfg.Addr4, t, pool)
+	c4ap := buildClient(socks4a+"://user@"+cfg.Addr4Pass, t, pool)
 
-	t.Run("HttpRequest", func(t *testing.T) {
+	t.Run("Http Request Socks5 gost", func(t *testing.T) {
 		testDial(c5g, t, cfg.Pairs...)
+	})
+	t.Run("Http Request Socks5 gost pass", func(t *testing.T) {
 		testDial(c5gp, t, cfg.Pairs...)
+	})
+	t.Run("Http Request Socks5", func(t *testing.T) {
 		testDial(c5, t, cfg.Pairs...)
+	})
+	t.Run("Http Request Socks5 pass", func(t *testing.T) {
 		testDial(c5p, t, cfg.Pairs...)
-
+	})
+	t.Run("Http Request Socks4", func(t *testing.T) {
 		testDial(c4, t, cfg.Pairs...)
+	})
+	t.Run("Http Request Socks4 pass", func(t *testing.T) {
 		testDial(c4p, t, cfg.Pairs...)
+	})
+	t.Run("Http Request Socks4a", func(t *testing.T) {
 		testDial(c4a, t, cfg.Pairs...)
+	})
+	t.Run("Http Request Socks4a pass", func(t *testing.T) {
 		testDial(c4ap, t, cfg.Pairs...)
 	})
 
 	if !tls {
-		t.Run("DNSRequest", func(t *testing.T) {
+		t.Run("DNS Request socks5 gost", func(t *testing.T) {
 			testUDPDial(c5g, t, cfg.Pairs...)
-			// testUDPDial(c5gp, t, cfg.Pairs...)
+		})
+		t.Run("DNS Request socks5 gost pass", func(t *testing.T) {
+			testUDPDial(c5gp, t, cfg.Pairs...)
+		})
+		t.Run("DNS Request socks5", func(t *testing.T) {
 			testUDPDial(c5, t, cfg.Pairs...)
-			// testUDPDial(c5p, t, cfg.Pairs...)
+		})
+		t.Run("DNS Request socks5 pass", func(t *testing.T) {
+			testUDPDial(c5p, t, cfg.Pairs...)
 		})
 	}
 
-	t.Run("Listen", func(t *testing.T) {
+	t.Run("Listen socks5 gost", func(t *testing.T) {
 		testListen(c5g, t, 10)
+	})
+	t.Run("Listen socks5 gost pass", func(t *testing.T) {
 		testListen(c5gp, t, 10)
+	})
+	t.Run("Listen socks5", func(t *testing.T) {
 		testListen(c5, t, 1)
+	})
+	t.Run("Listen socks5 pass", func(t *testing.T) {
 		testListen(c5p, t, 1)
 	})
 
 	if !tls {
-		t.Run("ListenUDP", func(t *testing.T) {
+		t.Run("Listen UDP socks5 gost", func(t *testing.T) {
 			testUDPListen(c5g, t, 10, false)
+		})
+		t.Run("Listen UDP socks5 gost pass", func(t *testing.T) {
 			testUDPListen(c5gp, t, 10, false)
-			testUDPListen(c5, t, 1, true)
-			testUDPListen(c5p, t, 1, true)
+		})
+		t.Run("Listen UDP socks5", func(t *testing.T) {
+			testUDPListen(c5, t, 10, true)
+		})
+		t.Run("Listen UDP socks5 pass", func(t *testing.T) {
+			testUDPListen(c5p, t, 10, true)
 		})
 	}
 }
 
 func TestGostCompat(t *testing.T) {
-	testGostCompat(t, false, false)
-	testGostCompat(t, true, false)
-	testGostCompat(t, false, true)
-	testGostCompat(t, true, true)
+	t.Run("notls+nows", func(t *testing.T) {
+		testGostCompat(t, false, false)
+	})
+	t.Run("tls+nows", func(t *testing.T) {
+		testGostCompat(t, true, false)
+	})
+	t.Run("notls+ws", func(t *testing.T) {
+		testGostCompat(t, false, true)
+	})
+	t.Run("tls+ws", func(t *testing.T) {
+		testGostCompat(t, true, true)
+	})
 }

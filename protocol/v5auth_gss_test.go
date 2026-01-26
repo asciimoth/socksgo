@@ -5,6 +5,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -67,6 +68,7 @@ func (m *MockGSSServer) DeleteSecContext() error { m.step = 0; return nil }
 
 func runGSSAuthTest(
 	method protocol.GSSAuthMethod, handler protocol.GSSAuthHandler,
+	pool bufpool.Pool,
 ) (
 	clientInfo, serverInfo protocol.AuthInfo,
 	clientErr, serverErr error,
@@ -79,13 +81,13 @@ func runGSSAuthTest(
 
 	// Server side
 	go func() {
-		_, serverInfo, serverErr = handler.HandleAuth(serverConn, nil)
+		_, serverInfo, serverErr = handler.HandleAuth(serverConn, pool)
 		readyCh <- nil
 	}()
 
 	// Client side
 	go func() {
-		_, clientInfo, clientErr = method.RunAuth(clientConn, nil)
+		_, clientInfo, clientErr = method.RunAuth(clientConn, pool)
 		readyCh <- nil
 	}()
 
@@ -96,6 +98,9 @@ func runGSSAuthTest(
 }
 
 func TestGSSAuth(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
 	for i := range 9 {
 		clientGSS := &MockGSSClient{Rounds: i + 1}
 		serverGSS := &MockGSSServer{Rounds: i + 1, Principal: "client@mock"}
@@ -103,6 +108,7 @@ func TestGSSAuth(t *testing.T) {
 		_, _, cE, sE := runGSSAuthTest(
 			protocol.GSSAuthMethod{Client: clientGSS, TargetName: "socks@server"},
 			protocol.GSSAuthHandler{Server: serverGSS},
+			pool,
 		)
 
 		if cE != nil {

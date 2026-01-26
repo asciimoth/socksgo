@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -81,7 +82,11 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := protocol.BuildSocsk4TCPRequest(tt.cmd, tt.addr, tt.user, nil)
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
+			got, err := protocol.BuildSocsk4TCPRequest(tt.cmd, tt.addr, tt.user, pool)
+			defer bufpool.PutBuffer(pool, got)
 
 			if err != nil {
 				t.Errorf("unexpected error %v", err)
@@ -168,8 +173,11 @@ func TestReadSocks4TCPRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			reader := bytes.NewReader(tt.data)
-			gotCmd, gotAddr, gotUser, err := protocol.ReadSocks4TCPRequest(reader, nil)
+			gotCmd, gotAddr, gotUser, err := protocol.ReadSocks4TCPRequest(reader, pool)
 
 			if tt.expectError {
 				if err == nil {
@@ -239,8 +247,12 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			// Build the request
-			request, err := protocol.BuildSocsk4TCPRequest(tc.cmd, tc.addr, tc.user, nil)
+			request, err := protocol.BuildSocsk4TCPRequest(tc.cmd, tc.addr, tc.user, pool)
+			defer bufpool.PutBuffer(pool, request)
 
 			if err != nil {
 				t.Errorf("unexpected error %v", err)
@@ -250,7 +262,7 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 			reader := bytes.NewReader(request[1:])
 
 			// Read the request
-			readCmd, readAddr, readUser, err := protocol.ReadSocks4TCPRequest(reader, nil)
+			readCmd, readAddr, readUser, err := protocol.ReadSocks4TCPRequest(reader, pool)
 			if err != nil {
 				t.Errorf("ReadSocks4TCPRequest() failed: %v", err)
 				return
@@ -305,8 +317,11 @@ func TestReadSocks4TCPRequest_ErrorCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			reader := bytes.NewReader(tt.data)
-			_, _, _, err := protocol.ReadSocks4TCPRequest(reader, nil)
+			_, _, _, err := protocol.ReadSocks4TCPRequest(reader, pool)
 
 			if err == nil {
 				t.Errorf("ReadSocks4TCPRequest() expected error, got nil")
@@ -359,7 +374,11 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := protocol.BuildSocks4TCPReply(tt.cmd, tt.addr, nil)
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
+			got := protocol.BuildSocks4TCPReply(tt.cmd, tt.addr, pool)
+			defer bufpool.PutBuffer(pool, got)
 
 			if !bytes.Equal(got, tt.expected) {
 				t.Errorf("BuildSocsk4TCPReply() = %v, want %v", got, tt.expected)
@@ -405,50 +424,6 @@ func TestReadSocks4TCPReply(t *testing.T) {
 			},
 			wantAddr: "0.0.0.0:443",
 		},
-		// {
-		// 	name: "Rejected reply returns error",
-		// 	data: []byte{
-		// 		4,                       // SOCKS version
-		// 		byte(protocol.Rejected), // Rejected (91)
-		// 		0, 80,                   // Port 80
-		// 		10, 0, 0, 1, // IP address
-		// 	},
-		// 	expectError: true,
-		// 	errorMsg:    "request failed: " + protocol.Rejected.String(),
-		// },
-		// {
-		// 	name: "Cannot connect to identd reply returns error",
-		// 	data: []byte{
-		// 		4,                            // SOCKS version
-		// 		byte(protocol.IdentRequired), // Cannot connect to identd (92)
-		// 		31, 144,                      // Port 8080
-		// 		127, 0, 0, 1, // IP address
-		// 	},
-		// 	expectError: true,
-		// 	errorMsg:    "request failed: " + protocol.IdentRequired.String(),
-		// },
-		// {
-		// 	name: "Different user ID reply returns error",
-		// 	data: []byte{
-		// 		4,                          // SOCKS version
-		// 		byte(protocol.IdentFailed), // Different user id (93)
-		// 		0, 22,                      // Port 22
-		// 		192, 168, 1, 1, // IP address
-		// 	},
-		// 	expectError: true,
-		// 	errorMsg:    "request failed: " + protocol.IdentFailed.String(),
-		// },
-		// {
-		// 	name: "Invalid status code",
-		// 	data: []byte{
-		// 		4,     // SOCKS version
-		// 		99,    // Invalid status code
-		// 		0, 80, // Port 80
-		// 		10, 0, 0, 1, // IP address
-		// 	},
-		// 	expectError: true,
-		// 	errorMsg:    "request failed: " + protocol.ReplyStatus(99).String(),
-		// },
 	}
 
 	for _, tt := range tests {
@@ -498,22 +473,16 @@ func TestBuildAndReadSocks4TCPReply_RoundTrip(t *testing.T) {
 			cmd:  protocol.Granted,
 			addr: protocol.AddrFromIP(net.IPv4(0, 0, 0, 0), 0, ""),
 		},
-		// {
-		// 	name: "Rejected with IP",
-		// 	cmd:  protocol.Rejected,
-		// 	addr: protocol.AddrFromIP(net.IPv4(10, 0, 0, 1), 8080, ""),
-		// },
-		// {
-		// 	name: "Identd failed with IP",
-		// 	cmd:  protocol.IdentFailed,
-		// 	addr: protocol.AddrFromIP(net.IPv4(127, 0, 0, 1), 9090, ""),
-		// },
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			// Build the reply
-			reply := protocol.BuildSocks4TCPReply(tc.cmd, tc.addr, nil)
+			reply := protocol.BuildSocks4TCPReply(tc.cmd, tc.addr, pool)
+			defer bufpool.PutBuffer(pool, reply)
 
 			// Read the reply (note: ReadSocks4TCPReply reads the entire reply, including version byte)
 			reader := bytes.NewReader(reply)

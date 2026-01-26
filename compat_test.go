@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo"
 )
 
@@ -41,7 +42,6 @@ type EnvConfig struct {
 	Addr5, Addr5Pass, Addr4, Addr4Pass string
 	Tor                                string
 	Pairs                              []HostPort // example.com:http|google.com:http
-	RCTimeout                          int
 }
 
 func GetEnvConfig() EnvConfig {
@@ -59,11 +59,7 @@ func GetEnvConfig() EnvConfig {
 			{"example.com", "http"},
 			{"google.com", "http"},
 		},
-
-		RCTimeout: 2000,
 	}
-
-	// TODO: Parse RCTimeout
 
 	addr5 := os.Getenv("SOCKS_TEST_ADDR5")
 	if addr5 != "" {
@@ -108,9 +104,9 @@ func GetEnvConfig() EnvConfig {
 	return ret
 }
 
-func buildClient(url string, t *testing.T) *socksgo.Client {
+func buildClient(url string, t *testing.T, pool bufpool.Pool) *socksgo.Client {
 	c, err := socksgo.ClientFromURL(url)
-	c.Pool = GlobalTestPool
+	c.Pool = pool
 	if err != nil {
 		t.Fatalf("failed to create gost socks client: %s %v", url, err)
 	}
@@ -146,8 +142,12 @@ func checkPacketConnLaddr(t *testing.T, conn net.PacketConn) (addr net.Addr) {
 	stun_srv, stun := runUDPSTunSrv(t)
 	defer stun_srv.Close()
 
+	ready := make(chan any)
+	defer func() { <-ready }()
+
 	const ATTEMPTS = 100
 	go func() {
+		defer func() { ready <- nil }()
 		for range ATTEMPTS {
 			_, err := conn.WriteTo([]byte{0}, stun)
 			if err != nil {
@@ -324,23 +324,25 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 	}()
 
 	for i := range times {
-		resp, err := http.Get("http://" + l.Addr().String())
-		if err != nil {
-			t.Fatalf("error while requesting: %v", err)
-		}
-		defer resp.Body.Close()
+		func() {
+			resp, err := http.Get("http://" + l.Addr().String())
+			if err != nil {
+				t.Fatalf("error while requesting: %v", err)
+			}
+			defer resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			t.Fatalf("fail to read response: %v", err)
-		}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("fail to read response: %v", err)
+			}
 
-		expect := fmt.Sprintf("response #%d", i)
-		got := strings.TrimSpace(string(body))
+			expect := fmt.Sprintf("response #%d", i)
+			got := strings.TrimSpace(string(body))
 
-		if got != expect {
-			t.Fatalf("got '%s' while expecting '%s'", got, expect)
-		}
+			if got != expect {
+				t.Fatalf("got '%s' while expecting '%s'", got, expect)
+			}
+		}()
 	}
 }
 

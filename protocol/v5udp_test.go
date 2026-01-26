@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -274,10 +275,13 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			conn := tt.setupConn()
 			buf := make([]byte, 500) // Buffer for reading
 
-			n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(nil, conn, buf, tt.skipAddr, nil)
+			n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(pool, conn, buf, tt.skipAddr, nil)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadSocks5UDPPacket() error = %v, wantErr %v", err, tt.wantErr)
@@ -504,10 +508,13 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			conn := tt.setupConn()
 			buf := make([]byte, 500) // Buffer for reading
 
-			n, addr, err := protocol.ReadSocks5TunUDPPacket(nil, conn, buf, tt.skipAddr)
+			n, addr, err := protocol.ReadSocks5TunUDPPacket(pool, conn, buf, tt.skipAddr)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReadSocks5UDPPacket() error = %v, wantErr %v", err, tt.wantErr)

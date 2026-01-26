@@ -8,4 +8,4 @@ require github.com/gorilla/websocket v1.5.3
 
 require github.com/asciimoth/ident v0.2.0
 
-require github.com/asciimoth/bufpool v0.2.1
+require github.com/asciimoth/bufpool v0.3.0

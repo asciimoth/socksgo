@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -101,7 +102,11 @@ func TestBuildSocks5TCPRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := protocol.BuildSocks5TCPRequest(tt.cmd, tt.addr, nil)
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
+			got, err := protocol.BuildSocks5TCPRequest(tt.cmd, tt.addr, pool)
+			defer bufpool.PutBuffer(pool, got)
 
 			if tt.wantErr {
 				if err == nil {
@@ -240,8 +245,11 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			reader := bytes.NewReader(tt.data)
-			cmd, addr, err := protocol.ReadSocks5TCPRequest(reader, nil)
+			cmd, addr, err := protocol.ReadSocks5TCPRequest(reader, pool)
 
 			if tt.wantErr {
 				if err == nil {
@@ -302,11 +310,15 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			// Build the request
-			request, err := protocol.BuildSocks5TCPRequest(tc.cmd, tc.addr, nil)
+			request, err := protocol.BuildSocks5TCPRequest(tc.cmd, tc.addr, pool)
 			if err != nil {
 				t.Fatalf("BuildSocks5TCPRequest failed: %v", err)
 			}
+			defer bufpool.PutBuffer(pool, request)
 
 			// Read it back
 			if len(request) < 1 {

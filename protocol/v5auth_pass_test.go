@@ -5,11 +5,13 @@ import (
 	"net"
 	"testing"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
 func runPassAuthTest(
 	method protocol.PassAuthMethod, handler protocol.PassAuthHandler,
+	pool bufpool.Pool,
 ) (
 	clientInfo, serverInfo protocol.AuthInfo,
 	clientErr, serverErr error,
@@ -22,13 +24,13 @@ func runPassAuthTest(
 
 	// Server side
 	go func() {
-		_, serverInfo, serverErr = handler.HandleAuth(serverConn, nil)
+		_, serverInfo, serverErr = handler.HandleAuth(serverConn, pool)
 		readyCh <- nil
 	}()
 
 	// Client side
 	go func() {
-		_, clientInfo, clientErr = method.RunAuth(clientConn, nil)
+		_, clientInfo, clientErr = method.RunAuth(clientConn, pool)
 		readyCh <- nil
 	}()
 
@@ -96,6 +98,9 @@ func TestPassAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			user = tt.user
 			pass = tt.pass
 
@@ -104,7 +109,7 @@ func TestPassAuth(t *testing.T) {
 				VerifyFn: tt.verifyFn,
 			}
 
-			clientInfo, serverInfo, clientErr, serverErr := runPassAuthTest(method, handler)
+			clientInfo, serverInfo, clientErr, serverErr := runPassAuthTest(method, handler, pool)
 
 			if fmt.Sprintf("%s", clientErr) != fmt.Sprintf("%s", tt.clientErr) {
 				t.Errorf("client err %s while expected %s", clientErr, tt.clientErr)

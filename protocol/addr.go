@@ -165,7 +165,7 @@ func (a Addr) Len() int {
 	case IP4Addr:
 		return 4
 	case IP6Addr:
-		return 6
+		return 16
 	}
 	return len(a.Host)
 }

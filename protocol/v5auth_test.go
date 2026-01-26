@@ -7,11 +7,13 @@ import (
 	"net"
 	"testing"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
 func runAuthHandshakeTest(
 	methods *protocol.AuthMethods, handlers *protocol.AuthHandlers,
+	pool bufpool.Pool,
 ) (
 	clientInfo, serverInfo protocol.AuthInfo,
 	clientErr, serverErr error,
@@ -30,13 +32,13 @@ func runAuthHandshakeTest(
 			return
 		}
 
-		_, serverInfo, serverErr = protocol.HandleAuth(serverConn, nil, handlers)
+		_, serverInfo, serverErr = protocol.HandleAuth(serverConn, pool, handlers)
 		readyCh <- nil
 	}()
 
 	// Client side
 	go func() {
-		_, clientInfo, clientErr = protocol.RunAuth(clientConn, nil, methods)
+		_, clientInfo, clientErr = protocol.RunAuth(clientConn, pool, methods)
 		readyCh <- nil
 	}()
 
@@ -104,6 +106,9 @@ func TestAuthHandshake(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
 			var (
 				methods  *protocol.AuthMethods
 				handlers *protocol.AuthHandlers
@@ -115,7 +120,7 @@ func TestAuthHandshake(t *testing.T) {
 				handlers = handlers.Add(handler)
 			}
 
-			clientInfo, serverInfo, clientErr, serverErr := runAuthHandshakeTest(methods, handlers)
+			clientInfo, serverInfo, clientErr, serverErr := runAuthHandshakeTest(methods, handlers, pool)
 
 			if fmt.Sprintf("%s", clientErr) != fmt.Sprintf("%s", tt.clientErr) {
 				t.Errorf("client err %s while expected %s", clientErr, tt.clientErr)
