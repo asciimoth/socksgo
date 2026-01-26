@@ -12,6 +12,17 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// Returns Client that pass all operations directly without using any proxy
+// TODO: Better comment
+func ClientNoProxy() *Client {
+	return &Client{
+		Filter:     MatchAllFilter,
+		GostMbind:  true,
+		GostUDPTun: true,
+		TorLookup:  true,
+	}
+}
+
 // Keys ignored:
 // - insecureudp
 // - assocprob
@@ -89,6 +100,14 @@ func ClientFromURLSafe(urlstr string) (*Client, error) {
 	return ClientFromURLObjSafe(u), nil
 }
 
+func ClientFromENVSafe(scheme string) (*Client, error) {
+	urlstring := getProxyFromEnvVar(scheme)
+	if urlstring == "" {
+		return ClientNoProxy(), nil
+	}
+	return ClientFromURLSafe(urlstring)
+}
+
 func ClientFromURLObj(u *url.URL) *Client {
 	client := ClientFromURLObjSafe(u)
 
@@ -113,6 +132,14 @@ func ClientFromURL(urlstr string) (*Client, error) {
 		return nil, err
 	}
 	return ClientFromURLObj(u), nil
+}
+
+func ClientFromENV(scheme string) (*Client, error) {
+	urlstring := getProxyFromEnvVar(scheme)
+	if urlstring == "" {
+		return ClientNoProxy(), nil
+	}
+	return ClientFromURL(urlstring)
 }
 
 type Client struct {
@@ -165,6 +192,10 @@ type Client struct {
 	WebSocketConfig *WebSocketConfig
 
 	Pool protocol.BufferPool
+}
+
+func (c *Client) IsNoProxy() bool {
+	return c == nil || (c.ProxyAddr == "" && c.WebSocketURL == "")
 }
 
 func (c *Client) request(

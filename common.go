@@ -3,6 +3,9 @@ package socksgo
 import (
 	"context"
 	"net"
+	"os"
+	"path"
+	"strings"
 
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -44,6 +47,11 @@ func PassAllFilter(_, _ string) bool {
 	return false
 }
 
+// Always returns true
+func MatchAllFilter(_, _ string) bool {
+	return true
+}
+
 // Return true for "localhost" and loopback ip addrs
 func LoopbackFilter(_, address string) bool {
 	if address == "localhost" {
@@ -60,6 +68,126 @@ func LoopbackFilter(_, address string) bool {
 		return true
 	}
 	return false
+}
+
+// Builds new filter from coma delimited entry list as
+// format widely used in no_proxy env var.
+// Each entry can be
+// - host:port
+// - host - for any port on this host
+// - ip
+// - ip/subnet - for any ip in this subnet
+//
+// In hosts wildcards can be used
+func BuildFilter(str string) Filter {
+	type hostEntry struct {
+		pattern string // wildcard pattern, lowercased, no trailing dot
+		hasPort bool
+		port    string
+	}
+	type ipEntry struct {
+		ip      net.IP
+		hasPort bool
+		port    string
+	}
+	var hosts []hostEntry
+	var ips []ipEntry
+	var cidrs []*net.IPNet
+
+	// parse entries
+	for _, raw := range strings.Split(str, ",") {
+		e := strings.TrimSpace(raw)
+		if e == "" {
+			continue
+		}
+
+		// Try CIDR
+		if strings.Contains(e, "/") {
+			if _, ipnet, err := net.ParseCIDR(e); err == nil {
+				cidrs = append(cidrs, ipnet)
+				continue
+			}
+			// fallthrough if not valid CIDR
+		}
+
+		// Try plain IP (v4 or v6) without port
+		if ip := net.ParseIP(e); ip != nil {
+			ips = append(ips, ipEntry{ip: ip, hasPort: false})
+			continue
+		}
+
+		// Try split host:port (handles bracketed IPv6)
+		if host, port, ok := splitHostPortEntry(e); ok {
+			// host part might be IP or pattern/hostname
+			host = trimDot(strings.ToLower(host))
+			if ip := net.ParseIP(host); ip != nil {
+				ips = append(ips, ipEntry{ip: ip, hasPort: true, port: port})
+			} else {
+				hosts = append(hosts, hostEntry{pattern: host, hasPort: true, port: port})
+			}
+			continue
+		}
+
+		// Finally treat as host pattern (may include wildcards)
+		patt := trimDot(strings.ToLower(e))
+		hosts = append(hosts, hostEntry{pattern: patt, hasPort: false})
+	}
+
+	// filter function
+	return func(network, address string) bool {
+		// normalize host and port from address input
+		var host string
+		var port string
+
+		// Try to split host:port using net.SplitHostPort (will handle [::1]:80)
+		if h, p, err := net.SplitHostPort(address); err == nil {
+			host, port = h, p
+		} else {
+			// If address contains >=2 ':' and not bracketed -> likely IPv6 literal without port
+			if strings.Count(address, ":") >= 2 && !strings.HasPrefix(address, "[") {
+				host = address
+				port = ""
+			} else {
+				// else treat whole address as host (no port)
+				host = address
+				port = ""
+			}
+		}
+
+		// normalize host for comparisons
+		normHost := trimDot(strings.ToLower(host))
+
+		// Try parse host as IP
+		if ip := net.ParseIP(strings.Trim(normHost, "[]")); ip != nil {
+			// match exact IP entries
+			for _, e := range ips {
+				if e.ip.Equal(ip) {
+					if !e.hasPort || e.port == port {
+						return true
+					}
+				}
+			}
+			// match CIDR entries
+			for _, n := range cidrs {
+				if n.Contains(ip) {
+					return true
+				}
+			}
+			// no host-pattern match for numeric IPs
+			return false
+		}
+
+		// host is a hostname - match host patterns (with wildcard support)
+		for _, h := range hosts {
+			// path.Match uses shell-style globs: '*' '?' '[]'
+			if ok, _ := path.Match(h.pattern, normHost); ok {
+				if !h.hasPort || h.port == port {
+					return true
+				}
+			}
+		}
+		return false
+	}
 }
 
 func resolveTcp4Addr(
@@ -79,4 +207,50 @@ func resolveTcp4Addr(
 		return &addr
 	}
 	return nil
+}
+
+func trimDot(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasSuffix(s, ".") {
+		s = strings.TrimRight(s, ".")
+	}
+	return s
+}
+
+// helper for BuildFilter to split host:port from strings like "*.example.com:443", "1.2.3.4:80", "[::1]:22"
+func splitHostPortEntry(e string) (host, port string, ok bool) {
+	// first try net.SplitHostPort (handles bracketed IPv6)
+	if h, p, err := net.SplitHostPort(e); err == nil {
+		return h, p, true
+	}
+	// If string contains >=2 ':' and not bracketed -> likely raw IPv6 without port.
+	if strings.Count(e, ":") >= 2 && !strings.HasPrefix(e, "[") {
+		// treat as host only (IPv6 literal)
+		return e, "", false
+	}
+	// no port found
+	return e, "", false
+}
+
+func getProxyFromEnvVar(scheme string) (val string) {
+	prior := []string{"ALL_PROXY", "all_proxy"}
+	if scheme == "" {
+		prior = append([]string{"SOCKS_PROXY", "socks_proxy"}, prior...)
+	} else {
+		scheme = strings.TrimSpace(scheme)
+		prior = append([]string{
+			strings.ToUpper(scheme) + "_PROXY",
+			strings.ToLower(scheme) + "_proxy",
+		}, prior...)
+	}
+	for _, key := range prior {
+		val = os.Getenv(key)
+		if val != "" {
+			break
+		}
+	}
+	if val != "" {
+		val = strings.TrimSpace(val)
+	}
+	return
 }

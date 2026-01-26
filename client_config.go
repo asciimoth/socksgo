@@ -106,6 +106,10 @@ func (c *Client) IsUDPAllowed() bool {
 
 // Run c.Filter or LoopbackFilter if c.Filter is nil.
 func (c *Client) DoFilter(network, address string) bool {
+	if c.IsNoProxy() {
+		// All connections goes directly
+		return true
+	}
 	filter := LoopbackFilter
 	if c.Filter != nil {
 		filter = c.Filter
