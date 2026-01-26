@@ -7,16 +7,17 @@ import (
 	"io"
 	"net"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/internal"
 )
 
 // request is a buffer retrieved from provided pool and should be putted back
 func BuildSocsk4TCPRequest(
-	cmd Cmd, addr Addr, user string, pool BufferPool,
+	cmd Cmd, addr Addr, user string, pool bufpool.Pool,
 ) (request []byte, err error) {
 	if addr.Type == IP4Addr {
 		// Socks4
-		request = internal.GetBuffer(pool, 9+len(user))[:0]
+		request = bufpool.GetBuffer(pool, 9+len(user))[:0]
 		request = append(request, 4) // Socks version
 		request = append(request, byte(cmd))
 		request = binary.BigEndian.AppendUint16(request, addr.Port)
@@ -30,7 +31,7 @@ func BuildSocsk4TCPRequest(
 		return nil, fmt.Errorf("too long host: %s", addr.ToFQDN())
 	}
 	host := addr.ToFQDN() // String representation
-	request = internal.GetBuffer(pool, 10+len(user)+len(host))[:0]
+	request = bufpool.GetBuffer(pool, 10+len(user)+len(host))[:0]
 	request = append(request, 4) // Socks version
 	request = append(request, byte(cmd))
 	request = binary.BigEndian.AppendUint16(request, addr.Port)
@@ -43,7 +44,7 @@ func BuildSocsk4TCPRequest(
 }
 
 // Reading request WITHOUT first byte.
-func ReadSocks4TCPRequest(reader io.Reader, pool BufferPool) (
+func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	cmd Cmd, addr Addr, user string, err error,
 ) {
 	var resp [7]byte
@@ -55,8 +56,8 @@ func ReadSocks4TCPRequest(reader io.Reader, pool BufferPool) (
 	cmd = Cmd(resp[0])
 	port := binary.BigEndian.Uint16(resp[1:3])
 
-	buf := internal.GetBuffer(pool, MAX_HEADER_STR_LENGTH)
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, MAX_HEADER_STR_LENGTH)
+	defer bufpool.PutBuffer(pool, buf)
 	user, err = internal.ReadNullTerminatedString(reader, buf)
 	if err != nil {
 		if errors.Is(err, internal.TooLongStringErr) {
@@ -88,13 +89,13 @@ func ReadSocks4TCPRequest(reader io.Reader, pool BufferPool) (
 
 // reply is a buffer retrieved from provided pool and should be putted back
 func BuildSocks4TCPReply(
-	stat ReplyStatus, addr Addr, pool BufferPool,
+	stat ReplyStatus, addr Addr, pool bufpool.Pool,
 ) (request []byte) {
 	ip := addr.ToIP().To4()
 	if ip == nil {
 		ip = net.IPv4(0, 0, 0, 0).To4()
 	}
-	request = internal.GetBuffer(pool, 9)[:0]
+	request = bufpool.GetBuffer(pool, 9)[:0]
 	request = append(request, 0) // Reply ver
 	request = append(request, byte(stat.To4()))
 	request = binary.BigEndian.AppendUint16(request, addr.Port)

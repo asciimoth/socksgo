@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -30,7 +30,7 @@ func (c *Client) request4(
 
 	var request []byte
 	request, err = protocol.BuildSocsk4TCPRequest(cmd, address, c.Auth.User(), c.Pool)
-	defer internal.PutBuffer(c.Pool, request)
+	defer bufpool.PutBuffer(c.Pool, request)
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
 	if err != nil {

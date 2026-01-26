@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/ident"
 	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
@@ -17,7 +18,7 @@ import (
 )
 
 type Server struct {
-	Pool protocol.BufferPool
+	Pool bufpool.Pool
 	Auth *protocol.AuthHandlers
 
 	Smux *smux.Config
@@ -223,7 +224,7 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 }
 
 func (s *Server) checkIDENT(
-	ctx context.Context, user string, conn net.Conn, pool protocol.BufferPool,
+	ctx context.Context, user string, conn net.Conn, pool bufpool.Pool,
 ) error {
 	srcAddr := protocol.AddrFromNetAddr(conn.RemoteAddr())
 	dstAddr := protocol.AddrFromNetAddr(conn.LocalAddr())

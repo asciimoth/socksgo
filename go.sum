@@ -1,3 +1,7 @@
+github.com/asciimoth/bufpool v0.1.0 h1:w9TPCV2I1LdreX4DEcFxga9PVJ/oKztk6X1gSxcfakM=
+github.com/asciimoth/bufpool v0.1.0/go.mod h1:JV6H4hpj2bCS5Svr0wNqR+XOZFOOkdXfNZxCjm/3QHw=
+github.com/asciimoth/bufpool v0.2.1 h1:IvUO4s+EW3CyThz5TL78JM4WYYZpVtYjVYCZfjwxKiA=
+github.com/asciimoth/bufpool v0.2.1/go.mod h1:JV6H4hpj2bCS5Svr0wNqR+XOZFOOkdXfNZxCjm/3QHw=
 github.com/asciimoth/ident v0.1.0 h1:Xc9mpDewG2Cx+Z727W18zJAvoNGUpw1kKh7KspprYG8=
 github.com/asciimoth/ident v0.1.0/go.mod h1:JNNFnfM7/hdcXVkFBBOAU/vpJM+0gucYaAYwB694bT0=
 github.com/asciimoth/ident v0.2.0 h1:G6qaTnkxTH+idV5YzJ7AvgC2nLQDE/aoV7rPCOtN07I=

@@ -5,7 +5,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/bufpool"
 )
 
 // Send socks4/socks5 reply
@@ -15,7 +15,7 @@ func Reply(
 	conn net.Conn,
 	stat ReplyStatus,
 	addr Addr,
-	pool BufferPool,
+	pool bufpool.Pool,
 ) (err error) {
 	var reply []byte
 	switch ver {
@@ -27,7 +27,7 @@ func Reply(
 	if err != nil {
 		return
 	}
-	defer internal.PutBuffer(pool, reply)
+	defer bufpool.PutBuffer(pool, reply)
 	_, err = io.Copy(conn, bytes.NewReader(reply))
 	return
 }
@@ -37,7 +37,7 @@ func Reject(
 	ver string, // "4" | "4a" | "5" | "5h"
 	conn net.Conn,
 	stat ReplyStatus,
-	pool BufferPool,
+	pool bufpool.Pool,
 ) {
 	defer conn.Close()
 	addr := AddrFromIP(net.IPv4(0, 0, 0, 0).To4(), 0, "")

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/internal"
 )
 
@@ -61,7 +62,7 @@ func AppendSocks5UDPHeader(
 }
 
 func WriteSocksAssoc5UDPPacket(
-	pool BufferPool,
+	pool bufpool.Pool,
 	conn PacketConn,
 	peerAddr net.Addr,
 	addr Addr,
@@ -70,8 +71,8 @@ func WriteSocksAssoc5UDPPacket(
 	// conn is a packet one (udp)
 	// standard UDP ASSOC should be used
 
-	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN+len(data))[:0]
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN+len(data))[:0]
+	defer bufpool.PutBuffer(pool, buf)
 
 	buf = AppendSocks5UDPHeader(buf, 0, addr)
 	hlen := len(buf) // header length
@@ -87,7 +88,7 @@ func WriteSocksAssoc5UDPPacket(
 }
 
 func WriteSocks5TUNUDPPacket(
-	pool BufferPool,
+	pool bufpool.Pool,
 	conn net.Conn,
 	addr Addr,
 	data []byte,
@@ -100,8 +101,8 @@ func WriteSocks5TUNUDPPacket(
 	}
 	rsv := uint16(len(data))
 
-	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+	defer bufpool.PutBuffer(pool, buf)
 
 	header := AppendSocks5UDPHeader(buf, rsv, addr)
 	_, err = io.Copy(conn, bytes.NewReader(header))
@@ -114,14 +115,14 @@ func WriteSocks5TUNUDPPacket(
 }
 
 func ReadSocks5AssocUDPPacket(
-	pool BufferPool,
+	pool bufpool.Pool,
 	conn net.PacketConn,
 	p []byte,
 	skipAddr bool,
 	checkAddr net.Addr,
 ) (n int, addr Addr, incAddr net.Addr, err error) {
-	buf := internal.GetBuffer(pool, len(p)+MAX_SOCKS_UDP_HEADER_LEN)
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, len(p)+MAX_SOCKS_UDP_HEADER_LEN)
+	defer bufpool.PutBuffer(pool, buf)
 loop:
 	for {
 		n, incAddr, err = conn.ReadFrom(buf)
@@ -196,7 +197,7 @@ loop:
 }
 
 func ReadSocks5TunUDPPacket(
-	pool BufferPool,
+	pool bufpool.Pool,
 	conn net.Conn,
 	p []byte,
 	skipAddr bool,
@@ -270,12 +271,12 @@ func ReadSocks5TunUDPPacket(
 		}
 		if len(p) < plen {
 			// Read with tmp buffer
-			tmpbuf := internal.GetBuffer(pool, plen)
+			tmpbuf := bufpool.GetBuffer(pool, plen)
 			_, err = io.ReadFull(conn, tmpbuf)
 			if err == nil {
 				n = copy(p, tmpbuf)
 			}
-			internal.PutBuffer(pool, tmpbuf)
+			bufpool.PutBuffer(pool, tmpbuf)
 		} else {
 			n, err = io.ReadFull(conn, p[:plen])
 		}
@@ -292,13 +293,13 @@ func ReadSocks5TunUDPPacket(
 type Socks5UDPClientAssoc struct {
 	PacketConn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
-	Pool          BufferPool
+	Pool          bufpool.Pool
 	raddr         net.Addr
 	onClose       func()
 }
 
 func NewSocks5UDPClientAssoc(
-	conn PacketConn, addr *Addr, pool BufferPool, onc func(),
+	conn PacketConn, addr *Addr, pool bufpool.Pool, onc func(),
 ) *Socks5UDPClientAssoc {
 	raddr := Addr{}
 	if addr != nil {
@@ -307,7 +308,7 @@ func NewSocks5UDPClientAssoc(
 		raddr = AddrFromHostPort("0.0.0.0:0", "udp")
 	}
 
-	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
 
 	client := &Socks5UDPClientAssoc{
 		PacketConn:    conn,
@@ -319,7 +320,7 @@ func NewSocks5UDPClientAssoc(
 	client.onClose = sync.OnceFunc(func() {
 		dh := client.DefaultHeader
 		client.DefaultHeader = nil
-		internal.PutBuffer(pool, dh)
+		bufpool.PutBuffer(pool, dh)
 		if onc != nil {
 			onc()
 		}
@@ -346,8 +347,8 @@ func (uc *Socks5UDPClientAssoc) Read(b []byte) (n int, err error) {
 }
 
 func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
-	buf := internal.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
-	defer internal.PutBuffer(uc.Pool, buf)
+	buf := bufpool.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
+	defer bufpool.PutBuffer(uc.Pool, buf)
 	buf = append(buf, uc.DefaultHeader...)
 	buf = append(buf, b...)
 
@@ -374,13 +375,13 @@ func (uc *Socks5UDPClientAssoc) WriteTo(p []byte, addr net.Addr) (n int, err err
 type Socks5UDPClientTUN struct {
 	net.Conn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
-	Pool          BufferPool
+	Pool          bufpool.Pool
 	laddr, raddr  net.Addr
 	onClose       func()
 }
 
 func NewSocks5UDPClientTUN(
-	conn net.Conn, laddr Addr, raddr *Addr, pool BufferPool,
+	conn net.Conn, laddr Addr, raddr *Addr, pool bufpool.Pool,
 ) *Socks5UDPClientTUN {
 	nraddr := Addr{}
 	if raddr != nil {
@@ -389,7 +390,7 @@ func NewSocks5UDPClientTUN(
 		nraddr = AddrFromHostPort("0.0.0.0:0", "udp")
 	}
 
-	buf := internal.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
 
 	client := &Socks5UDPClientTUN{
 		Conn:          conn,
@@ -402,7 +403,7 @@ func NewSocks5UDPClientTUN(
 	client.onClose = sync.OnceFunc(func() {
 		dh := client.DefaultHeader
 		client.DefaultHeader = nil
-		internal.PutBuffer(pool, dh)
+		bufpool.PutBuffer(pool, dh)
 	})
 	return client
 }
@@ -438,8 +439,8 @@ func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
 		b = b[:65535]
 	}
 
-	buf := internal.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
-	defer internal.PutBuffer(uc.Pool, buf)
+	buf := bufpool.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
+	defer bufpool.PutBuffer(uc.Pool, buf)
 	buf = binary.BigEndian.AppendUint16(buf, uint16(len(b))) // RSV
 	buf = append(buf, uc.DefaultHeader[2:]...)               // Header without RSV
 	buf = append(buf, b...)
@@ -467,13 +468,13 @@ func ProxySocks5UDPAssoc(
 	assoc, proxy PacketConn, ctrl net.Conn,
 	binded bool,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
-	pool BufferPool, bufSize int,
+	pool bufpool.Pool, bufSize int,
 	timeOut time.Duration,
 ) (err error) {
-	assoc2proxy := internal.GetBuffer(pool, bufSize)
-	proxy2assoc := internal.GetBuffer(pool, bufSize)
-	defer internal.PutBuffer(pool, assoc2proxy)
-	defer internal.PutBuffer(pool, proxy2assoc)
+	assoc2proxy := bufpool.GetBuffer(pool, bufSize)
+	proxy2assoc := bufpool.GetBuffer(pool, bufSize)
+	defer bufpool.PutBuffer(pool, assoc2proxy)
+	defer bufpool.PutBuffer(pool, proxy2assoc)
 
 	done := make(chan error, 2)
 
@@ -556,12 +557,12 @@ func ProxySocks5UDPTun(
 	tun net.Conn, proxy PacketConn,
 	binded bool,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
-	pool BufferPool, bufSize int,
+	pool bufpool.Pool, bufSize int,
 ) (err error) {
-	tun2proxy := internal.GetBuffer(pool, bufSize)
-	tun2assoc := internal.GetBuffer(pool, bufSize)
-	defer internal.PutBuffer(pool, tun2proxy)
-	defer internal.PutBuffer(pool, tun2assoc)
+	tun2proxy := bufpool.GetBuffer(pool, bufSize)
+	tun2assoc := bufpool.GetBuffer(pool, bufSize)
+	defer bufpool.PutBuffer(pool, tun2proxy)
+	defer bufpool.PutBuffer(pool, tun2assoc)
 
 	done := make(chan error, 1)
 

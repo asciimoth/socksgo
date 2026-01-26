@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/bufpool"
 )
 
 // Static type assertion
@@ -27,7 +27,7 @@ func (m *PassAuthMethod) Name() string {
 	return m.Code().String()
 }
 
-func (m *PassAuthMethod) RunAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error) {
+func (m *PassAuthMethod) RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{
 		Code: m.Code(),
 		Info: map[string]any{
@@ -45,8 +45,8 @@ func (m *PassAuthMethod) RunAuth(conn net.Conn, pool BufferPool) (net.Conn, Auth
 		return conn, info, fmt.Errorf("too long password: %d bytes", len(pass))
 	}
 
-	buf := internal.GetBuffer(pool, 3+len(user)+len(pass))
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, 3+len(user)+len(pass))
+	defer bufpool.PutBuffer(pool, buf)
 
 	pack := buf[:0]
 	pack = append(pack, 1)
@@ -96,13 +96,13 @@ func (m *PassAuthHandler) verify(user, pass string) bool {
 	return m.VerifyFn(user, pass)
 }
 
-func (m *PassAuthHandler) HandleAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error) {
+func (m *PassAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{
 		Code: m.Code(),
 	}
 
-	buf := internal.GetBuffer(pool, MAX_HEADER_STR_LENGTH+1)
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, MAX_HEADER_STR_LENGTH+1)
+	defer bufpool.PutBuffer(pool, buf)
 
 	_, err := io.ReadFull(conn, buf[:2])
 	if err != nil {

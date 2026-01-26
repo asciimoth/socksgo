@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -41,7 +41,7 @@ func (c *Client) request5(
 		proxy.Close()
 		return
 	}
-	defer internal.PutBuffer(c.Pool, request)
+	defer bufpool.PutBuffer(c.Pool, request)
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
 	if err != nil {
@@ -147,7 +147,7 @@ func (c *Client) setupUDPTun5(
 type clientListener5 struct {
 	addr net.Addr
 	conn net.Conn
-	pool protocol.BufferPool
+	pool bufpool.Pool
 }
 
 func (l *clientListener5) Addr() net.Addr {

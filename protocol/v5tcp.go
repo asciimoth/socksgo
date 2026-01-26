@@ -6,18 +6,19 @@ import (
 	"io"
 	"net"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/internal"
 )
 
 // request is a buffer retrieved from provided pool and should be putted back
 func BuildSocks5TCPRequest(
-	cmd Cmd, addr Addr, pool BufferPool,
+	cmd Cmd, addr Addr, pool bufpool.Pool,
 ) (request []byte, err error) {
 	if addr.Len() > MAX_HEADER_STR_LENGTH {
 		return nil, fmt.Errorf("too long host: %s", addr.ToFQDN())
 	}
 
-	request = internal.GetBuffer(pool, 6+addr.Len())[:0]
+	request = bufpool.GetBuffer(pool, 6+addr.Len())[:0]
 	request = append(request,
 		5, // socks version
 		byte(cmd),
@@ -34,11 +35,11 @@ func BuildSocks5TCPRequest(
 	return
 }
 
-func ReadSocks5TCPRequest(reader io.Reader, pool BufferPool) (
+func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	cmd Cmd, addr Addr, err error,
 ) {
-	buf := internal.GetBuffer(pool, MAX_SOCKS_TCP_HEADER_LEN)
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, MAX_SOCKS_TCP_HEADER_LEN)
+	defer bufpool.PutBuffer(pool, buf)
 
 	_, err = io.ReadFull(reader, buf[:4])
 	if err != nil {
@@ -92,7 +93,7 @@ func ReadSocks5TCPRequest(reader io.Reader, pool BufferPool) (
 
 // reply is a buffer retrieved from provided pool and should be putted back
 func BuildSocks5TCPReply(
-	stat ReplyStatus, addr Addr, pool BufferPool,
+	stat ReplyStatus, addr Addr, pool bufpool.Pool,
 ) (reply []byte, err error) {
 	// Socks5 request & reply have nearly same format
 	// except meaning of cmd/reply codes
@@ -100,7 +101,7 @@ func BuildSocks5TCPReply(
 	return BuildSocks5TCPRequest(cmd, addr, pool)
 }
 
-func ReadSocks5TCPReply(reader io.Reader, pool BufferPool) (
+func ReadSocks5TCPReply(reader io.Reader, pool bufpool.Pool) (
 	stat ReplyStatus, addr Addr, err error,
 ) {
 	// Socks5 request & reply have nearly same format

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+
+	"github.com/asciimoth/bufpool"
 )
 
 // Static type assertion
@@ -43,7 +45,7 @@ func (m *GSSAuthMethod) Code() AuthMethodCode { return GSSAuthCode }
 func (m *GSSAuthMethod) Name() string         { return m.Code().String() }
 
 // TODO: Implement per message protection
-func (m *GSSAuthMethod) RunAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error) {
+func (m *GSSAuthMethod) RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{Code: m.Code()}
 	defer m.Client.DeleteSecContext()
 
@@ -101,7 +103,7 @@ func (h *GSSAuthHandler) Code() AuthMethodCode { return GSSAuthCode }
 func (h *GSSAuthHandler) Name() string         { return h.Code().String() }
 
 // TODO: Implement per message protection
-func (h *GSSAuthHandler) HandleAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error) {
+func (h *GSSAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{Code: h.Code()}
 	defer h.Server.DeleteSecContext()
 

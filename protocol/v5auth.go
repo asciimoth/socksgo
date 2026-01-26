@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/bufpool"
 )
 
 const (
@@ -92,7 +92,7 @@ type AuthMethod interface {
 	// AuthMethods with Code() == 0x0 or Code() == 0xff are invalid
 	Code() AuthMethodCode
 
-	RunAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error)
+	RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
 }
 
 // Server side
@@ -102,7 +102,7 @@ type AuthHandler interface {
 	// AuthHandlers with Code() == 0x0 or Code() == 0xff are invalid
 	Code() AuthMethodCode
 
-	HandleAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error)
+	HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
 }
 
 type noAuthHandler struct{}
@@ -115,7 +115,7 @@ func (m *noAuthHandler) Name() string {
 	return m.Code().String()
 }
 
-func (m *noAuthHandler) HandleAuth(conn net.Conn, pool BufferPool) (net.Conn, AuthInfo, error) {
+func (m *noAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{
 		Code: m.Code(),
 	}
@@ -257,7 +257,7 @@ func (m *AuthHandlers) Add(handler AuthHandler) *AuthHandlers {
 }
 
 func RunAuth(
-	conn net.Conn, pool BufferPool, methods *AuthMethods,
+	conn net.Conn, pool bufpool.Pool, methods *AuthMethods,
 ) (c net.Conn, i AuthInfo, err error) {
 	c = conn
 
@@ -301,12 +301,12 @@ func RunAuth(
 }
 
 func HandleAuth(
-	conn net.Conn, pool BufferPool, handlers *AuthHandlers,
+	conn net.Conn, pool bufpool.Pool, handlers *AuthHandlers,
 ) (c net.Conn, i AuthInfo, err error) {
 	c = conn
 
-	buf := internal.GetBuffer(pool, MAX_AUTH_METHODS_COUNT+1)
-	defer internal.PutBuffer(pool, buf)
+	buf := bufpool.GetBuffer(pool, MAX_AUTH_METHODS_COUNT+1)
+	defer bufpool.PutBuffer(pool, buf)
 
 	_, err = io.ReadFull(conn, buf[:1])
 	if err != nil {

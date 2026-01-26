@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -102,7 +103,7 @@ func (s *Server) GetAuth() *protocol.AuthHandlers {
 	return s.Auth
 }
 
-func (s *Server) GetPool() protocol.BufferPool {
+func (s *Server) GetPool() bufpool.Pool {
 	if s == nil {
 		return nil
 	}

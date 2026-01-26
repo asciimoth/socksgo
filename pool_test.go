@@ -5,12 +5,12 @@ import (
 	"math/bits"
 	"sync"
 
-	"github.com/asciimoth/socksgo/protocol"
+	"github.com/asciimoth/bufpool"
 )
 
 var (
-	GlobalTestPool                     = &TestPool{}
-	_              protocol.BufferPool = &TestPool{}
+	GlobalTestPool              = &TestPool{}
+	_              bufpool.Pool = &TestPool{}
 )
 
 func next(v uint32) uint32 {
@@ -29,7 +29,7 @@ type TestPool struct {
 	pools [32]sync.Pool
 }
 
-func (p *TestPool) GetBuffer(length int) []byte {
+func (p *TestPool) Get(length int) []byte {
 	if length == 0 {
 		return nil
 	}
@@ -44,7 +44,7 @@ func (p *TestPool) GetBuffer(length int) []byte {
 	return make([]byte, 1<<idx)[:uint32(length)]
 }
 
-func (p *TestPool) PutBuffer(buf []byte) {
+func (p *TestPool) Put(buf []byte) {
 	capacity := cap(buf)
 	if capacity == 0 || capacity > math.MaxInt32 {
 		return

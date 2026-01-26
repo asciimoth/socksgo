@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -191,7 +192,7 @@ type Client struct {
 	WebSocketURL    string
 	WebSocketConfig *WebSocketConfig
 
-	Pool protocol.BufferPool
+	Pool bufpool.Pool
 }
 
 func (c *Client) IsNoProxy() bool {
