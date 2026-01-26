@@ -95,7 +95,7 @@ func BuildFilter(str string) Filter {
 	var cidrs []*net.IPNet
 
 	// parse entries
-	for _, raw := range strings.Split(str, ",") {
+	for raw := range strings.SplitSeq(str, ",") {
 		e := strings.TrimSpace(raw)
 		if e == "" {
 			continue

@@ -55,11 +55,3 @@ func (c *WSConn) SetReadDeadline(t time.Time) error {
 func (c *WSConn) SetWriteDeadline(t time.Time) error {
 	return c.Conn.SetWriteDeadline(t)
 }
-
-func (c *WSConn) Close() error {
-	_ = c.Conn.WriteMessage(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-	)
-	return c.Conn.Close()
-}

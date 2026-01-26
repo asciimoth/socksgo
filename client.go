@@ -244,7 +244,7 @@ func (c *Client) Request(
 	err error,
 ) {
 	proxy, addr, err = c.request(ctx, cmd, address)
-	if err != nil {
+	if err == nil {
 		// Unset timeout after successful socks handshake
 		proxy.SetDeadline(time.Time{})
 	}

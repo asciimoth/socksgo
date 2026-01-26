@@ -18,7 +18,7 @@ func BuildSocks5TCPRequest(
 		return nil, fmt.Errorf("too long host: %s", addr.ToFQDN())
 	}
 
-	request = bufpool.GetBuffer(pool, 6+addr.Len())[:0]
+	request = bufpool.GetBuffer(pool, 7+addr.Len())[:0]
 	request = append(request,
 		5, // socks version
 		byte(cmd),
