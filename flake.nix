@@ -60,6 +60,10 @@
           golangci-lint
           commitizen
 
+          gost
+          curl
+          tor
+
           typos
         ];
       };
