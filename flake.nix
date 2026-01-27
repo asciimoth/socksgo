@@ -64,6 +64,8 @@
           curl
           tor
 
+          coverage-reporter
+
           typos
         ];
       };

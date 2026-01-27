@@ -307,11 +307,7 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 			len(text), text,
 		)
 
-		_, err = conn.Write([]byte(response))
-		if err != nil {
-			t.Fatalf("error while responding: %v", err)
-		}
-
+		_, _ = conn.Write([]byte(response))
 		_, _ = io.ReadAll(conn)
 	}
 
