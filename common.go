@@ -23,7 +23,6 @@ var supportedNetworks = map[string]any{
 type PacketConn interface {
 	net.PacketConn
 	net.Conn
-	// TODO: Add all methods implemented by clientPacketConn5
 }
 
 type Dialer = func(ctx context.Context, network, address string) (net.Conn, error)

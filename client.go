@@ -270,7 +270,7 @@ func (c *Client) Dial(ctx context.Context, network, address string) (net.Conn, e
 }
 
 // To listen, address = "0.0.0.0:0"
-func (c *Client) DialPacket(ctx context.Context, network, address string) (protocol.Socks5UDPClient, error) {
+func (c *Client) DialPacket(ctx context.Context, network, address string) (PacketConn, error) {
 	err := c.CheckNetworkSupport(network)
 	if err != nil {
 		return nil, err
@@ -288,7 +288,7 @@ func (c *Client) DialPacket(ctx context.Context, network, address string) (proto
 // If GostUDPTun extension is disabled, server will act like NAT and
 // will not return binded udp addr,
 // so user should find it out using somesing like STUN.
-func (c *Client) ListenPacket(ctx context.Context, network, address string) (protocol.Socks5UDPClient, error) {
+func (c *Client) ListenPacket(ctx context.Context, network, address string) (PacketConn, error) {
 	err := c.CheckNetworkSupport(network)
 	if err != nil {
 		return nil, err

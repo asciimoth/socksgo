@@ -12,11 +12,11 @@ var (
 	ErrUDPAssocTimeout         = errors.New("socks udp assoc timeout")
 )
 
-type UnknwonAuthVerError struct {
+type UnknownAuthVerError struct {
 	Version int
 }
 
-func (e UnknwonAuthVerError) Error() string {
+func (e UnknownAuthVerError) Error() string {
 	return fmt.Sprintf("unknown socks auth version %d", e.Version)
 }
 

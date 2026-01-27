@@ -18,8 +18,10 @@ type Socks5UDPClient interface {
 	net.Conn
 	net.PacketConn
 
-	// TODO: WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error)
-	// TODO: ReadFromUDP, WrtiteToUDP with FQDN packets ignoring
+	WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error)
+
+	ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error)
+	WriteToUDP(b []byte, addr *net.UDPAddr) (int, error)
 }
 
 var (
@@ -365,9 +367,35 @@ func (uc *Socks5UDPClientAssoc) ReadFrom(p []byte) (n int, addr net.Addr, err er
 	return
 }
 
+func (uc *Socks5UDPClientAssoc) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
+	for {
+		var ad Addr
+		n, ad, _, err = ReadSocks5AssocUDPPacket(uc.Pool, uc.PacketConn, b, false, nil)
+		if err != nil {
+			return
+		}
+		addr = ad.ToUDP()
+		if addr != nil {
+			return
+		}
+	}
+}
+
 func (uc *Socks5UDPClientAssoc) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	return WriteSocksAssoc5UDPPacket(
 		uc.Pool, uc.PacketConn, nil, AddrFromNetAddr(addr), p,
+	)
+}
+
+func (uc *Socks5UDPClientAssoc) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+	return WriteSocksAssoc5UDPPacket(
+		uc.Pool, uc.PacketConn, nil, AddrFromUDPAddr(addr), b,
+	)
+}
+
+func (uc *Socks5UDPClientAssoc) WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error) {
+	return WriteSocksAssoc5UDPPacket(
+		uc.Pool, uc.PacketConn, nil, AddrFromIP(ip, port, "udp"), p,
 	)
 }
 
@@ -457,9 +485,35 @@ func (uc *Socks5UDPClientTUN) ReadFrom(p []byte) (n int, addr net.Addr, err erro
 	return ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, p, false)
 }
 
+func (uc *Socks5UDPClientTUN) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
+	for {
+		var ad Addr
+		n, ad, err = ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, b, false)
+		if err != nil {
+			return
+		}
+		addr = ad.ToUDP()
+		if addr != nil {
+			return
+		}
+	}
+}
+
 func (uc *Socks5UDPClientTUN) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	return WriteSocks5TUNUDPPacket(
 		uc.Pool, uc.Conn, AddrFromNetAddr(addr), p,
+	)
+}
+
+func (uc *Socks5UDPClientTUN) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+	return WriteSocks5TUNUDPPacket(
+		uc.Pool, uc.Conn, AddrFromUDPAddr(addr), b,
+	)
+}
+
+func (uc *Socks5UDPClientTUN) WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error) {
+	return WriteSocks5TUNUDPPacket(
+		uc.Pool, uc.Conn, AddrFromIP(ip, port, "udp"), p,
 	)
 }
 

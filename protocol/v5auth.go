@@ -273,7 +273,7 @@ func RunAuth(
 	}
 
 	if resp[0] != 5 {
-		err = UnknwonAuthVerError{int(resp[0])}
+		err = UnknownAuthVerError{int(resp[0])}
 		return
 	}
 
