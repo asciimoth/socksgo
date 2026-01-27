@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 
@@ -28,7 +27,7 @@ func BuildSocsk4TCPRequest(
 	}
 	// Socks4a
 	if addr.Len() > MAX_HEADER_STR_LENGTH {
-		return nil, fmt.Errorf("too long host: %s", addr.ToFQDN())
+		return nil, ErrTooLongHost
 	}
 	host := addr.ToFQDN() // String representation
 	request = bufpool.GetBuffer(pool, 10+len(user)+len(host))[:0]
@@ -61,8 +60,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	user, err = internal.ReadNullTerminatedString(reader, buf)
 	if err != nil {
 		if errors.Is(err, internal.TooLongStringErr) {
-			// TODO: Use sentinel err var
-			err = errors.New("user name is too long")
+			err = ErrTooLongUser
 		}
 		return
 	}
@@ -73,8 +71,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 		fqdn, err = internal.ReadNullTerminatedString(reader, buf)
 		if err != nil {
 			if errors.Is(err, internal.TooLongStringErr) {
-				// TODO: Use sentinel err var
-				err = errors.New("user name is too long")
+				err = ErrTooLongUser
 			}
 			return
 		}
@@ -115,7 +112,8 @@ func ReadSocks4TCPReply(reader io.Reader) (
 	}
 
 	if resp[0] != 0 {
-		err = fmt.Errorf("wrong socks4 reply version %d, should be 0", int(resp[0]))
+		err = Wrong4ReplyVerError{int(resp[0])}
+		return
 	}
 
 	stat = ReplyStatus(resp[1]).To4()

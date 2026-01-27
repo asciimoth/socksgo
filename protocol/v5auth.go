@@ -273,7 +273,7 @@ func RunAuth(
 	}
 
 	if resp[0] != 5 {
-		err = fmt.Errorf("unknown auth version %d", resp[0])
+		err = UnknwonAuthVerError{int(resp[0])}
 		return
 	}
 
@@ -285,14 +285,13 @@ func RunAuth(
 		return
 	}
 	if code == NoAccAuthCode {
-		// TODO: Move to sentinel err var
-		err = fmt.Errorf("no acceptable methods")
+		err = ErrNoAcceptableAuthMethods
 		return
 	}
 
 	method := methods.Get(code)
 	if method == nil {
-		err = fmt.Errorf("server select unsupported auth method %d", code)
+		err = UnsupportedAuthMethod{code}
 		return
 	}
 
@@ -312,11 +311,6 @@ func HandleAuth(
 	if err != nil {
 		return
 	}
-
-	// if buf[0] != 5 {
-	// 	err = fmt.Errorf("unknown auth version %d", buf[0])
-	// 	return
-	// }
 
 	count := int(buf[0])
 	_, err = io.ReadFull(conn, buf[:count])
@@ -338,8 +332,7 @@ func HandleAuth(
 		buf[1] = byte(NoAccAuthCode)
 		_, err = io.Copy(conn, bytes.NewReader(buf[:2]))
 		if err == nil {
-			// TODO: Move to sentinel err var
-			err = fmt.Errorf("no acceptable methods")
+			err = ErrNoAcceptableAuthMethods
 		}
 		return
 	}

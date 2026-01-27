@@ -83,7 +83,7 @@ func TestBuildSocks5TCPRequest(t *testing.T) {
 			cmd:     protocol.CmdConnect,
 			addr:    protocol.AddrFromFQDN(string(make([]byte, 256)), 80, ""),
 			wantErr: true,
-			errMsg:  "too long host",
+			errMsg:  "host name is too long",
 		},
 		{
 			name: "Localhost IPv4",

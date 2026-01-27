@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -266,7 +265,7 @@ func ReadSocks5TunUDPPacket(
 				addr = AddrFromFQDN(host, port, conn.LocalAddr().Network())
 			}
 		default:
-			err = fmt.Errorf("unknown atyp: %s", atyp)
+			err = UnknownAddrTypeError{atyp}
 			return
 		}
 		if len(p) < plen {
@@ -490,7 +489,7 @@ func ProxySocks5UDPAssoc(
 			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(pool, assoc, assoc2proxy, false, clientUDPAddr)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					err = errors.Join(errors.New("udp assoc timeout"), err)
+					err = errors.Join(ErrUDPAssocTimeout, err)
 				}
 				done <- err
 				return

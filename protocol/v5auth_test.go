@@ -99,8 +99,8 @@ func TestAuthHandshake(t *testing.T) {
 					},
 				},
 			},
-			clientErr: errors.New("no acceptable methods"),
-			serverErr: errors.New("no acceptable methods"),
+			clientErr: errors.New("no acceptable socks auth methods"),
+			serverErr: errors.New("no acceptable socks auth methods"),
 		},
 	}
 

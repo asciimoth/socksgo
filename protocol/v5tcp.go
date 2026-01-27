@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 
@@ -15,7 +14,7 @@ func BuildSocks5TCPRequest(
 	cmd Cmd, addr Addr, pool bufpool.Pool,
 ) (request []byte, err error) {
 	if addr.Len() > MAX_HEADER_STR_LENGTH {
-		return nil, fmt.Errorf("too long host: %s", addr.ToFQDN())
+		return nil, ErrTooLongHost
 	}
 
 	request = bufpool.GetBuffer(pool, 7+addr.Len())[:0]
@@ -47,9 +46,7 @@ func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	}
 
 	if buf[0] != 5 {
-		err = fmt.Errorf(
-			"wrong protocol version %d in socks5 request", int(buf[0]),
-		)
+		err = WrongProtocolVerError{int(buf[0])}
 		return
 	}
 
@@ -87,7 +84,7 @@ func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 		addr = AddrFromFQDN(string(buf[:ln]), port, "")
 		return
 	}
-	err = fmt.Errorf("unknown address type: %s", atyp.String())
+	err = UnknownAddrTypeError{atyp}
 	return
 }
 
