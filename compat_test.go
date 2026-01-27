@@ -39,27 +39,31 @@ func (na NetAddr) Network() string {
 }
 
 type EnvConfig struct {
-	Host string
-	// Addr5, Addr5Pass, Addr4, Addr4Pass string
-	Tor   string
-	Pairs []HostPort // example.com:http|google.com:http
+	Host     string
+	Tor      string
+	Pairs    []HostPort // example.com:http|google.com:http
+	CurlURLs []string
 }
 
 func GetEnvConfig() EnvConfig {
 	ret := EnvConfig{
 		Host: "127.0.0.1",
-		// Addr5:     "127.0.0.1:1096",
-		// Addr5Pass: "127.0.0.1:1097",
-		// Addr4:     "127.0.0.1:1098",
-		// Addr4Pass: "127.0.0.1:1099",
-
-		Tor: "127.0.0.1:9050",
-
+		Tor:  "127.0.0.1:9050",
 		Pairs: []HostPort{
 			{"iana.org", "http"},
 			{"ietf.org", "http"},
 			{"example.com", "http"},
 			{"google.com", "http"},
+		},
+		CurlURLs: []string{
+			"https://iana.org",
+			"https://ietf.org",
+			"https://example.com",
+			"https://google.com",
+			"http://iana.org",
+			"http://ietf.org",
+			"http://example.com",
+			"http://google.com",
 		},
 	}
 
@@ -67,26 +71,6 @@ func GetEnvConfig() EnvConfig {
 	if host != "" {
 		ret.Host = host
 	}
-
-	// addr5 := os.Getenv("SOCKS_TEST_ADDR5")
-	// if addr5 != "" {
-	// 	ret.Addr5 = addr5
-	// }
-	//
-	// addr5pass := os.Getenv("SOCKS_TEST_ADDR5PASS")
-	// if addr5pass != "" {
-	// 	ret.Addr5Pass = addr5pass
-	// }
-	//
-	// addr4 := os.Getenv("SOCKS_TEST_ADDR4")
-	// if addr4 != "" {
-	// 	ret.Addr4 = addr4
-	// }
-	//
-	// addr4pass := os.Getenv("SOCKS_TEST_ADDR4PASS")
-	// if addr4pass != "" {
-	// 	ret.Addr4Pass = addr4pass
-	// }
 
 	tor := os.Getenv("SOCKS_TEST_TOR")
 	if tor != "" {
@@ -106,6 +90,12 @@ func GetEnvConfig() EnvConfig {
 				Port: port,
 			})
 		}
+		ret.Pairs = append(ret.Pairs, pairs...)
+	}
+
+	curlURLsStr := os.Getenv("SOCKS_TEST_CURL_URLS")
+	if curlURLsStr != "" {
+		ret.CurlURLs = append(ret.CurlURLs, strings.Split(curlURLsStr, "|")...)
 	}
 
 	return ret

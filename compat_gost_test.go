@@ -17,10 +17,14 @@ import (
 )
 
 // runGost("socks5://user:pass@:1080")
-func runGost(url string, t *testing.T) (func(), string, error) {
+func runGost(url, chain string, t *testing.T) (func(), string, error) {
 	t.Log("Launching gost for", url)
 	ctx := t.Context()
-	cmd := exec.CommandContext(ctx, "gost", "-L", url)
+	args := []string{"-L", url}
+	if chain != "" {
+		args = append(args, "-F", chain)
+	}
+	cmd := exec.CommandContext(ctx, "gost", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, "", fmt.Errorf("stdout pipe: %w", err)
@@ -127,15 +131,6 @@ func runGost(url string, t *testing.T) (func(), string, error) {
 			wg.Wait()
 			return nil, "", e
 		case l := <-lines:
-			// // check for "listening on" (case-insensitive). This covers both JSON logs with msg and plain logs.
-			// if strings.Contains(strings.ToLower(l), "listening on") {
-			// 	cleanup := func() {
-			// 		// best-effort kill; ignore kill error here and wait for goroutines to finish
-			// 		_ = cmd.Process.Kill()
-			// 		wg.Wait()
-			// 	}
-			// 	return cleanup, nil
-			// }
 			if addr, ok := tryExtract(l); ok {
 				cleanup := func() {
 					// best-effort kill and wait
@@ -181,7 +176,7 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAdd
 	killfuncs := []func(){}
 
 	k, addr5, err := runGost(
-		socks5+"://"+cfg.Host+":?udp=true&udpBufferSize=4096&bind=true", t,
+		socks5+"://"+cfg.Host+":?udp=true&udpBufferSize=4096&bind=true", "", t,
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -190,7 +185,7 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAdd
 	killfuncs = append(killfuncs, k)
 
 	k, addr5pass, err := runGost(
-		socks5+"://user:pass@"+cfg.Host+":?udp=true&udpBufferSize=4096&bind=true", t,
+		socks5+"://user:pass@"+cfg.Host+":?udp=true&udpBufferSize=4096&bind=true", "", t,
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -199,7 +194,7 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAdd
 	killfuncs = append(killfuncs, k)
 
 	k, addr4, err := runGost(
-		socks4+"://"+cfg.Host+":?bind=true", t,
+		socks4+"://"+cfg.Host+":?bind=true", "", t,
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -208,7 +203,7 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAdd
 	killfuncs = append(killfuncs, k)
 
 	k, addr4pass, err := runGost(
-		socks4+"://user@"+cfg.Host+":?bind=true", t,
+		socks4+"://user@"+cfg.Host+":?bind=true", "", t,
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)
@@ -233,8 +228,6 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAdd
 func testGostCompat(t *testing.T, tls bool, ws bool) {
 	pool := bufpool.NewTestDebugPool(t)
 	pool.OnLog = nil // Too verbose
-	pool.OnError = nil
-	pool.OnFatal = nil
 	defer pool.Close()
 
 	cfg := GetEnvConfig()
