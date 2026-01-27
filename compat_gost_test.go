@@ -1,4 +1,4 @@
-//// go:build gost
+//go:build compattest
 
 package socksgo_test
 
