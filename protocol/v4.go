@@ -71,7 +71,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 		fqdn, err = internal.ReadNullTerminatedString(reader, buf)
 		if err != nil {
 			if errors.Is(err, internal.ErrTooLongString) {
-				err = ErrTooLongUser
+				err = ErrTooLongHost
 			}
 			return
 		}
@@ -90,13 +90,13 @@ func BuildSocks4TCPReply(
 ) (request []byte) {
 	ip := addr.ToIP().To4()
 	if ip == nil {
-		_ = net.IPv4(0, 0, 0, 0).To4()
+		ip = net.IPv4(0, 0, 0, 0).To4()
 	}
 	request = bufpool.GetBuffer(pool, 9)[:0] //nolint mnd
 	request = append(request, 0)             // Reply ver
 	request = append(request, byte(stat.To4()))
 	request = binary.BigEndian.AppendUint16(request, addr.Port)
-	request = append(request, addr.ToIP().To4()...)
+	request = append(request, ip...)
 	return
 }
 

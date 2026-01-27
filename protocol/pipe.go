@@ -7,6 +7,7 @@ import (
 	"github.com/asciimoth/socksgo/internal"
 )
 
+// Pipe copy data between two connections.
 func PipeConn(inc, out net.Conn) (err error) {
 	done := make(chan error, 1)
 	go func() {

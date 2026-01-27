@@ -12,11 +12,12 @@ import (
 
 func TestBuildSocks4TCPRequest(t *testing.T) {
 	tests := []struct {
-		name     string
-		cmd      protocol.Cmd
-		addr     protocol.Addr
-		user     string
-		expected []byte
+		name        string
+		cmd         protocol.Cmd
+		addr        protocol.Addr
+		user        string
+		expected    []byte
+		expectedErr string
 	}{
 		{
 			name: "SOCKS4 IPv4 connect",
@@ -78,6 +79,16 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 				0, // Null terminator for hostname
 			},
 		},
+		{
+			name: "Too long FQDN addr",
+			cmd:  protocol.CmdConnect,
+			addr: protocol.AddrFromFQDN(
+				string(make([]byte, 300)),
+				80,
+				"",
+			),
+			expectedErr: "socks host name is too long",
+		},
 	}
 
 	for _, tt := range tests {
@@ -93,8 +104,16 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 			)
 			defer bufpool.PutBuffer(pool, got)
 
-			if err != nil {
+			if err != nil && tt.expectedErr == "" {
 				t.Errorf("unexpected error %v", err)
+			}
+
+			if tt.expectedErr != "" {
+				if tt.expectedErr == err.Error() {
+					return
+				} else {
+					t.Errorf("wrong error %v", err)
+				}
 			}
 
 			if !bytes.Equal(got, tt.expected) {
@@ -181,6 +200,84 @@ func TestReadSocks4TCPRequest(t *testing.T) {
 			wantCmd:  protocol.CmdBind,
 			wantAddr: "sub.domain.co.uk:80",
 			wantUser: "user-_123",
+		},
+		{
+			name: "SOCKS4a Too long user",
+			data: func() []byte {
+				ret := []byte{ //nolint
+					2,     // CmdBind
+					0, 80, // Port 80
+					0, 0, 0, 1, // SOCKS4a identifier
+				}
+
+				for range 512 {
+					ret = append(ret, []byte("a")...)
+				}
+
+				ret = append(
+					ret,
+					0, // Null terminator for username
+					's',
+					'u',
+					'b',
+					'.',
+					'd',
+					'o',
+					'm',
+					'a',
+					'i',
+					'n',
+					'.',
+					'c',
+					'o',
+					'.',
+					'u',
+					'k',
+					0, // Null terminator for hostname
+				)
+
+				return ret
+			}(),
+			expectError: true,
+		},
+		{
+			name: "SOCKS4 Too long user",
+			data: func() []byte {
+				ret := []byte{ //nolint
+					2,     // CmdBind
+					0, 80, // Port 80
+					127, 0, 0, 1,
+				}
+
+				for range 512 {
+					ret = append(ret, []byte("a")...)
+				}
+
+				ret = append(ret,
+					0, // Null terminator for username
+				)
+
+				return ret
+			}(),
+			expectError: true,
+		},
+		{
+			name: "SOCKS4a Too long host",
+			data: func() []byte {
+				ret := []byte{ //nolint
+					2,     // CmdBind
+					0, 80, // Port 80
+					0, 0, 0, 1, // SOCKS4a identifier
+					'a', 0, // Username
+				}
+
+				for range 512 {
+					ret = append(ret, []byte("a")...)
+				}
+
+				return ret
+			}(),
+			expectError: true,
 		},
 	}
 
@@ -414,6 +511,21 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 				127, 0, 0, 1, // Loopback IP
 			},
 		},
+		{
+			name: "Reply with non IP address",
+			cmd:  protocol.Granted,
+			addr: protocol.Addr{
+				Type: protocol.FQDNAddr,
+				Host: []byte("example.com"),
+				Port: 3000,
+			},
+			expected: []byte{
+				0,                      // Reply version
+				byte(protocol.Granted), // Command
+				11, 184,                // Port 3000 (0x0BB8)
+				0, 0, 0, 0,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -450,11 +562,10 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 
 func TestReadSocks4TCPReply(t *testing.T) {
 	tests := []struct {
-		name        string
-		data        []byte
-		wantAddr    string
-		expectError bool
-		errorMsg    string
+		name     string
+		data     []byte
+		wantAddr string
+		errorMsg string
 	}{
 		{
 			name: "Successful Granted reply",
@@ -476,6 +587,21 @@ func TestReadSocks4TCPReply(t *testing.T) {
 			},
 			wantAddr: "0.0.0.0:443",
 		},
+		{
+			name:     "Read error",
+			data:     []byte{},
+			errorMsg: "EOF",
+		},
+		{
+			name: "Wrontg reply ver",
+			data: []byte{
+				42,                     // Reply version
+				byte(protocol.Granted), // Granted (90)
+				1, 187,                 // Port 443
+				0, 0, 0, 0, // 0.0.0.0
+			},
+			errorMsg: "wrong socks4 reply version 42, should be 0",
+		},
 	}
 
 	for _, tt := range tests {
@@ -483,7 +609,7 @@ func TestReadSocks4TCPReply(t *testing.T) {
 			reader := bytes.NewReader(tt.data)
 			_, addr, err := protocol.ReadSocks4TCPReply(reader)
 
-			if tt.expectError {
+			if tt.errorMsg != "" {
 				if err == nil {
 					t.Errorf("ReadSocks4TCPReply() expected error, got nil")
 				} else if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {

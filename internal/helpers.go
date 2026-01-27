@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+func DialBlock(ctx context.Context, _, _ string) (net.Conn, error) {
+	return nil, errors.New("BLOCKED")
+}
+
 // tcp | tcp4 | tcp6 -> tcp
 // udp | udp4 | udp6 -> udp
 func NormalNet(network string) string {
@@ -29,9 +33,7 @@ func LookupPortOffline(network, service string) (port int, err error) {
 	// and force only local lookup
 	r := &net.Resolver{
 		PreferGo: true,
-		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return nil, errors.New("BLOCKED")
-		},
+		Dial:     DialBlock,
 	}
 	port, err = r.LookupPort(context.Background(), network, service)
 	if err != nil {
@@ -79,17 +81,16 @@ func ReadNullTerminatedString(r io.Reader, buf []byte) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if n < 1 {
-			continue
+		if n > 0 {
+			if buf[len(buf)-1] == 0 {
+				buf = buf[:len(buf)-1]
+				break
+			}
+			if len(buf) == cap(buf) {
+				return "", ErrTooLongString
+			}
+			buf = buf[:len(buf)+1] // grow
 		}
-		if buf[len(buf)-1] == 0 {
-			buf = buf[:len(buf)-1]
-			break
-		}
-		if len(buf) == cap(buf) {
-			return "", ErrTooLongString
-		}
-		buf = buf[:len(buf)+1] // grow
 	}
 	return string(buf), nil
 }
@@ -117,6 +118,9 @@ func ClosedNetworkErrToNil(err error) error {
 			return nil
 		}
 		if unwrapped.Error() == "EOF" {
+			return nil
+		}
+		if unwrapped.Error() == "io: read/write on closed pipe" {
 			return nil
 		}
 	}
@@ -160,11 +164,11 @@ func AddrsSameHost(a, b net.Addr) bool {
 	switch aa := a.(type) {
 	case *net.TCPAddr:
 		if bb, ok := b.(*net.TCPAddr); ok {
-			return ipEqual(aa.IP, bb.IP)
+			return IpEqual(aa.IP, bb.IP)
 		}
 	case *net.UDPAddr:
 		if bb, ok := b.(*net.UDPAddr); ok {
-			return ipEqual(aa.IP, bb.IP)
+			return IpEqual(aa.IP, bb.IP)
 		}
 	}
 
@@ -205,7 +209,7 @@ func AddrsEq(a, b net.Addr) bool {
 	return a.String() == b.String()
 }
 
-func ipEqual(a, b net.IP) bool {
+func IpEqual(a, b net.IP) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -220,5 +224,5 @@ func tcpUDPAddrEqual(aIP net.IP, aPort int, bIP net.IP, bPort int) bool {
 	if aPort != bPort {
 		return false
 	}
-	return ipEqual(aIP, bIP)
+	return IpEqual(aIP, bIP)
 }
