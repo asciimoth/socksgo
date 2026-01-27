@@ -45,7 +45,10 @@ func LookupPortOffline(network, service string) (port int, err error) {
 }
 
 // defport will be used as port if there is no port in hostport or it is invalid.
-func SplitHostPort(network, hostport string, defport uint16) (host string, port uint16) {
+func SplitHostPort(
+	network, hostport string,
+	defport uint16,
+) (host string, port uint16) {
 	const MAX_UINT16 = 65535
 
 	host, strPort, err := net.SplitHostPort(hostport)
@@ -59,14 +62,14 @@ func SplitHostPort(network, hostport string, defport uint16) (host string, port 
 	if err != nil {
 		intPort, err = LookupPortOffline(network, strPort)
 	}
-	if err == nil && intPort <= MAX_UINT16 {
-		port = uint16(intPort)
+	if err == nil && intPort <= MAX_UINT16 && intPort >= 0 {
+		port = uint16(intPort) //nolint
 	}
 
 	return host, port
 }
 
-var TooLongStringErr = errors.New("string is too long")
+var ErrTooLongString = errors.New("string is too long")
 
 // Should be cap(buf) >= 1
 func ReadNullTerminatedString(r io.Reader, buf []byte) (string, error) {
@@ -84,9 +87,9 @@ func ReadNullTerminatedString(r io.Reader, buf []byte) (string, error) {
 			break
 		}
 		if len(buf) == cap(buf) {
-			return "", TooLongStringErr
+			return "", ErrTooLongString
 		}
-		buf = buf[:len(buf)+1] //grow
+		buf = buf[:len(buf)+1] // grow
 	}
 	return string(buf), nil
 }
@@ -122,7 +125,7 @@ func ClosedNetworkErrToNil(err error) error {
 
 // Try to read until read fails, close rc, returns
 func WaitForClose(rc io.ReadCloser) {
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	b := []byte{0}
 	for {
 		_, err := rc.Read(b)
@@ -135,11 +138,12 @@ func WaitForClose(rc io.ReadCloser) {
 func JoinNetErrors(a, b error) (err error) {
 	a = ClosedNetworkErrToNil(a)
 	b = ClosedNetworkErrToNil(b)
-	if a != nil && b == nil {
+	switch {
+	case a != nil && b == nil:
 		err = a
-	} else if b != nil && a == nil {
+	case b != nil && a == nil:
 		err = b
-	} else if a != nil && b != nil {
+	case a != nil && b != nil:
 		err = errors.Join(a, b)
 	}
 	return

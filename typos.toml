@@ -1,4 +1,5 @@
 [default.extend-words]
 gost = "gost"
 GOST = "GOST"
+importas = "importas"
 

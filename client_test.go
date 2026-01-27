@@ -133,19 +133,39 @@ func TestClientFromURL(t *testing.T) {
 			}
 
 			if client.Version() != tc.Version {
-				t.Errorf("Version() == %s while expected %s", client.Version(), tc.Version)
+				t.Errorf(
+					"Version() == %s while expected %s",
+					client.Version(),
+					tc.Version,
+				)
 			}
 			if client.GetAddr() != tc.GetAddr {
-				t.Errorf("GetAddr() == %s while expected %s", client.GetAddr(), tc.GetAddr)
+				t.Errorf(
+					"GetAddr() == %s while expected %s",
+					client.GetAddr(),
+					tc.GetAddr,
+				)
 			}
 			if client.WebSocketURL != tc.WebSocketURL {
-				t.Errorf("WebSocketURL() == %s while expected %s", client.WebSocketURL, tc.WebSocketURL)
+				t.Errorf(
+					"WebSocketURL() == %s while expected %s",
+					client.WebSocketURL,
+					tc.WebSocketURL,
+				)
 			}
 			if client.IsTLS() != tc.IsTLS {
-				t.Errorf("IsTLS() == %t while expected %t", client.IsTLS(), tc.IsTLS)
+				t.Errorf(
+					"IsTLS() == %t while expected %t",
+					client.IsTLS(),
+					tc.IsTLS,
+				)
 			}
 			if client.IsUDPAllowed() != tc.IsUDPAllowed {
-				t.Errorf("IsUDPAllowed() == %t while expected %t", client.IsUDPAllowed(), tc.IsUDPAllowed)
+				t.Errorf(
+					"IsUDPAllowed() == %t while expected %t",
+					client.IsUDPAllowed(),
+					tc.IsUDPAllowed,
+				)
 			}
 
 			if tc.IsTLS {

@@ -60,7 +60,7 @@ type Server struct {
 		info protocol.AuthInfo,
 		cmd protocol.Cmd,
 		addr protocol.Addr,
-	) (error, protocol.ReplyStatus)
+	) (protocol.ReplyStatus, error)
 
 	// If nil, DefaultCommandHandlers will be used
 	Handlers map[protocol.Cmd]CommandHandler
@@ -73,22 +73,12 @@ type Server struct {
 	Resolver       Resolver
 }
 
-func (s *Server) runPreCmd(
-	ctx context.Context,
-	conn net.Conn,
-	ver string,
-	info protocol.AuthInfo,
-	cmd protocol.Cmd,
-	addr protocol.Addr,
-) (error, protocol.ReplyStatus) {
-	if s == nil || s.PreCmd == nil {
-		return nil, 0
-	}
-	return s.PreCmd(ctx, conn, ver, info, cmd, addr)
-}
-
 // Thread-safe
-func (s *Server) AcceptWS(ctx context.Context, conn *websocket.Conn, isTLS bool) error {
+func (s *Server) AcceptWS(
+	ctx context.Context,
+	conn *websocket.Conn,
+	isTLS bool,
+) error {
 	return s.Accept(ctx, &internal.WSConn{
 		Conn: conn,
 	}, isTLS)
@@ -96,7 +86,7 @@ func (s *Server) AcceptWS(ctx context.Context, conn *websocket.Conn, isTLS bool)
 
 // Thread-safe
 func (s *Server) Accept(ctx context.Context, conn net.Conn, isTLS bool) error {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Read version
 	var ver [1]byte
@@ -104,14 +94,14 @@ func (s *Server) Accept(ctx context.Context, conn net.Conn, isTLS bool) error {
 	if err != nil {
 		return err
 	}
-	if ver[0] == 4 {
+	if ver[0] == 4 { //nolint
 		return s.accept4(ctx, conn, isTLS)
 	}
-	if ver[0] == 5 {
+	if ver[0] == 5 { //nolint
 		return s.accept5(ctx, conn, isTLS)
 	}
 	return UnknownSocksVersionError{
-		Version: strconv.Itoa(int(ver[0])),
+		Version: strconv.Itoa(int(ver[0])), //nolint
 	}
 }
 
@@ -120,7 +110,10 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 	timeout := s.GetHandshakeTimeout()
 	if timeout != 0 {
-		conn.SetDeadline(time.Now().Add(timeout))
+		err := conn.SetDeadline(time.Now().Add(timeout))
+		if err != nil {
+			return err
+		}
 	}
 
 	cmd, addr, user, err := protocol.ReadSocks4TCPRequest(conn, pool)
@@ -164,7 +157,7 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 		info.Info["ident"] = true
 	}
 
-	err, stat := s.runPreCmd(ctx, conn, "4", info, cmd, addr)
+	stat, err := s.runPreCmd(ctx, conn, "4", info, cmd, addr)
 	if err != nil || !stat.Ok() {
 		if stat.Ok() {
 			stat = protocol.Rejected
@@ -174,7 +167,10 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 	}
 
 	if timeout != 0 {
-		conn.SetDeadline(time.Time{})
+		err = conn.SetDeadline(time.Time{})
+		if err != nil {
+			return err
+		}
 	}
 
 	return handler.Run(ctx, s, conn, "4", info, cmd, addr)
@@ -185,7 +181,10 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 	timeout := s.GetHandshakeTimeout()
 	if timeout != 0 {
-		conn.SetDeadline(time.Now().Add(timeout))
+		err := conn.SetDeadline(time.Now().Add(timeout))
+		if err != nil {
+			return err
+		}
 	}
 
 	conn, info, err := protocol.HandleAuth(conn, pool, s.GetAuth())
@@ -210,14 +209,17 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 		}
 	}
 
-	err, stat := s.runPreCmd(ctx, conn, "5", info, cmd, addr)
+	stat, err := s.runPreCmd(ctx, conn, "5", info, cmd, addr)
 	if err != nil || !stat.Ok() {
 		protocol.Reject("5", conn, stat, pool)
 		return err
 	}
 
 	if timeout != 0 {
-		conn.SetDeadline(time.Time{})
+		err = conn.SetDeadline(time.Time{})
+		if err != nil {
+			return err
+		}
 	}
 
 	return handler.Run(ctx, s, conn, "5", info, cmd, addr)
@@ -230,7 +232,11 @@ func (s *Server) checkIDENT(
 	dstAddr := protocol.AddrFromNetAddr(conn.LocalAddr())
 	identAddr := srcAddr.Copy()
 	identAddr.Port = 113 // Standard IDENT port (RFC 1413)
-	identConn, err := s.GetDialer()(ctx, identAddr.Network(), identAddr.ToHostPort())
+	identConn, err := s.GetDialer()(
+		ctx,
+		identAddr.Network(),
+		identAddr.ToHostPort(),
+	)
 	if err != nil {
 		protocol.Reject("4", conn, protocol.IdentRequired, pool)
 		return errors.Join(
@@ -239,7 +245,11 @@ func (s *Server) checkIDENT(
 			err,
 		)
 	}
-	iresp, err := ident.QueryWithConn(srcAddr.PortStr(), dstAddr.PortStr(), identConn)
+	iresp, err := ident.QueryWithConn(
+		srcAddr.PortStr(),
+		dstAddr.PortStr(),
+		identConn,
+	)
 	if err != nil {
 		protocol.Reject("4", conn, protocol.IdentRequired, pool)
 		return errors.Join(
@@ -257,4 +267,18 @@ func (s *Server) checkIDENT(
 		)
 	}
 	return nil
+}
+
+func (s *Server) runPreCmd(
+	ctx context.Context,
+	conn net.Conn,
+	ver string,
+	info protocol.AuthInfo,
+	cmd protocol.Cmd,
+	addr protocol.Addr,
+) (protocol.ReplyStatus, error) {
+	if s == nil || s.PreCmd == nil {
+		return 0, nil
+	}
+	return s.PreCmd(ctx, conn, ver, info, cmd, addr)
 }

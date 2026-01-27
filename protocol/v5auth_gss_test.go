@@ -14,7 +14,10 @@ type MockGSSClient struct {
 	step   int // internal state
 }
 
-func (m *MockGSSClient) InitSecContext(targetName string, token []byte) ([]byte, bool, error) {
+func (m *MockGSSClient) InitSecContext(
+	targetName string,
+	token []byte,
+) ([]byte, bool, error) {
 	if m.Rounds <= 0 {
 		// immediate completion (no tokens)
 		return nil, false, nil
@@ -46,7 +49,9 @@ type MockGSSServer struct {
 	step      int
 }
 
-func (m *MockGSSServer) AcceptSecContext(token []byte) ([]byte, string, bool, error) {
+func (m *MockGSSServer) AcceptSecContext(
+	token []byte,
+) ([]byte, string, bool, error) {
 	// token should be "c:N"
 	// On first call, token corresponds to c:1, etc.
 	m.step++
@@ -74,8 +79,10 @@ func runGSSAuthTest(
 	clientErr, serverErr error,
 ) {
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	}()
 
 	readyCh := make(chan any, 2)
 
@@ -106,7 +113,10 @@ func TestGSSAuth(t *testing.T) {
 		serverGSS := &MockGSSServer{Rounds: i + 1, Principal: "client@mock"}
 
 		_, _, cE, sE := runGSSAuthTest(
-			protocol.GSSAuthMethod{Client: clientGSS, TargetName: "socks@server"},
+			protocol.GSSAuthMethod{
+				Client:     clientGSS,
+				TargetName: "socks@server",
+			},
 			protocol.GSSAuthHandler{Server: serverGSS},
 			pool,
 		)

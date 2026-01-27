@@ -26,11 +26,11 @@ func BuildSocks5TCPRequest(
 	)
 	if addr.Type == FQDNAddr {
 		request = append(request, byte(len(addr.Host)))
-		request = append(request, []byte(addr.Host)...)
+		request = append(request, addr.Host...)
 	} else {
 		request = append(request, addr.ToIP()...)
 	}
-	request = binary.BigEndian.AppendUint16(request, uint16(addr.Port))
+	request = binary.BigEndian.AppendUint16(request, addr.Port)
 	return
 }
 

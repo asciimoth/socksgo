@@ -34,7 +34,11 @@ var DefaultGostUDPTUNHandler = CommandHandler{
 			)
 		} else {
 			binded = true
-			proxy, err = server.GetPacketDialer()(ctx, addr.Network(), addr.ToHostPort())
+			proxy, err = server.GetPacketDialer()(
+				ctx,
+				addr.Network(),
+				addr.ToHostPort(),
+			)
 		}
 		if err != nil {
 			// TODO: What ReplyCode should we return here?

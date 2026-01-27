@@ -21,6 +21,30 @@ type WebSocketConfig struct {
 	RequestHeader     http.Header
 }
 
+func (w *WebSocketConfig) Clone() *WebSocketConfig {
+	if w == nil {
+		return nil
+	}
+	subprotocols := make([]string, 0, len(w.Subprotocols))
+
+	subprotocols = append(subprotocols, w.Subprotocols...)
+	cfg := WebSocketConfig{
+		ReadBufferSize:    w.ReadBufferSize,
+		Subprotocols:      subprotocols,
+		EnableCompression: w.EnableCompression,
+		Jar:               w.Jar,
+		RequestHeader:     w.RequestHeader.Clone(),
+	}
+	return &cfg
+}
+
+func (w *WebSocketConfig) jar() http.CookieJar {
+	if w == nil {
+		return websocket.DefaultDialer.Jar
+	}
+	return w.Jar
+}
+
 func (w *WebSocketConfig) readBufferSize() int {
 	if w == nil {
 		return websocket.DefaultDialer.ReadBufferSize
@@ -40,31 +64,6 @@ func (w *WebSocketConfig) enableCompression() bool {
 		return websocket.DefaultDialer.EnableCompression
 	}
 	return w.EnableCompression
-}
-
-func (w *WebSocketConfig) jar() http.CookieJar {
-	if w == nil {
-		return websocket.DefaultDialer.Jar
-	}
-	return w.Jar
-}
-
-func (w *WebSocketConfig) Clone() *WebSocketConfig {
-	if w == nil {
-		return nil
-	}
-	var subprotocols []string
-	for _, p := range w.Subprotocols {
-		subprotocols = append(subprotocols, p)
-	}
-	cfg := WebSocketConfig{
-		ReadBufferSize:    w.ReadBufferSize,
-		Subprotocols:      subprotocols,
-		EnableCompression: w.EnableCompression,
-		Jar:               w.Jar,
-		RequestHeader:     w.RequestHeader.Clone(),
-	}
-	return &cfg
 }
 
 func (c *Client) Version() string {
@@ -178,7 +177,7 @@ func (c *Client) GetTLSConfig() (config *tls.Config) {
 		sname = h
 	}
 
-	config = &tls.Config{}
+	config = &tls.Config{} //nolint
 	if c.TLSConfig != nil {
 		config = c.TLSConfig.Clone()
 	}
@@ -219,7 +218,9 @@ func (c *Client) GetWsDialer() *websocket.Dialer {
 }
 
 // Connect to socks over ws proxy
-func (c *Client) connectWebSocket(ctx context.Context) (conn net.Conn, err error) {
+func (c *Client) connectWebSocket(
+	ctx context.Context,
+) (conn net.Conn, err error) {
 	var header http.Header
 	if c.WebSocketConfig != nil {
 		header = c.WebSocketConfig.RequestHeader
@@ -257,9 +258,14 @@ func (c *Client) Connect(ctx context.Context) (conn net.Conn, err error) {
 
 	timeout := c.GetHandshakeTimeout()
 	if timeout == 0 {
-		conn.SetDeadline(time.Time{})
+		err = conn.SetDeadline(time.Time{})
 	} else {
-		conn.SetDeadline(time.Now().Add(timeout))
+		err = conn.SetDeadline(time.Now().Add(timeout))
+	}
+
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
 
 	return
@@ -274,7 +280,7 @@ func (c *Client) CheckNetworkSupport(net string) error {
 			Network:      net,
 		}
 	}
-	if (ver == "4" || ver == "4a") && !(net == "tcp" || net == "tcp4") {
+	if (ver == "4" || ver == "4a") && net != "tcp" && net != "tcp4" {
 		return WrongNetworkError{
 			SocksVersion: ver,
 			Network:      net,

@@ -25,7 +25,8 @@ var DefaultResolveHandler = CommandHandler{
 			protocol.Reject(ver, conn, protocol.DisallowReply, pool)
 			return err
 		}
-		ips, err := server.GetResolver().LookupIP(ctx, addr.IpNetwork(), addr.ToFQDN())
+		ips, err := server.GetResolver().
+			LookupIP(ctx, addr.IpNetwork(), addr.ToFQDN())
 		if err != nil {
 			protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
 			return err

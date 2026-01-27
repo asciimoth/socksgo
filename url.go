@@ -12,7 +12,8 @@ func checkURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
 			return true, true
 		}
 		v := val[0]
-		return v == "true" || v == "yes" || v == "ok" || v == "1" || v == "", true
+		return v == "true" || v == "yes" || v == "ok" || v == "1" ||
+			v == "", true
 	}
 	return false, false
 }

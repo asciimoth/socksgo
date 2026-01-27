@@ -35,7 +35,7 @@ var DefaultGostMBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, protocol.FailReply, pool)
 			return err
 		}
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		// Send first reply with laddr
 		err = protocol.Reply(
 			ver,
@@ -49,8 +49,14 @@ var DefaultGostMBindHandler = CommandHandler{
 		}
 
 		session, err := smux.Client(conn, server.GetSmux())
-		defer conn.Close()
-		defer session.Close()
+		if err != nil {
+			_ = conn.Close()
+			return err
+		}
+		defer func() {
+			_ = conn.Close()
+			_ = session.Close()
+		}()
 
 		var wg sync.WaitGroup
 		for {
@@ -64,7 +70,7 @@ var DefaultGostMBindHandler = CommandHandler{
 				break
 			}
 			wg.Go(func() {
-				protocol.PipeConn(inc, stream)
+				_ = protocol.PipeConn(inc, stream)
 			})
 		}
 		wg.Wait()

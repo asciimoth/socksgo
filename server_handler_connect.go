@@ -31,7 +31,7 @@ var DefaultConnectHandler = CommandHandler{
 			protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
 			return err
 		}
-		defer conn2.Close()
+		defer func() { _ = conn2.Close() }()
 		err = protocol.Reply(
 			ver,
 			conn,

@@ -27,7 +27,10 @@ func (m *PassAuthMethod) Name() string {
 	return m.Code().String()
 }
 
-func (m *PassAuthMethod) RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
+func (m *PassAuthMethod) RunAuth(
+	conn net.Conn,
+	pool bufpool.Pool,
+) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{
 		Code: m.Code(),
 		Info: map[string]any{
@@ -66,7 +69,10 @@ func (m *PassAuthMethod) RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, Au
 	}
 
 	if buf[0] != 1 {
-		return conn, info, fmt.Errorf("unknown user+pass auth version %d", buf[0])
+		return conn, info, fmt.Errorf(
+			"unknown user+pass auth version %d",
+			buf[0],
+		)
 	}
 
 	if buf[1] != 0 {
@@ -89,14 +95,10 @@ func (m *PassAuthHandler) Name() string {
 	return m.Code().String()
 }
 
-func (m *PassAuthHandler) verify(user, pass string) bool {
-	if m.VerifyFn == nil {
-		return true
-	}
-	return m.VerifyFn(user, pass)
-}
-
-func (m *PassAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
+func (m *PassAuthHandler) HandleAuth(
+	conn net.Conn,
+	pool bufpool.Pool,
+) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{
 		Code: m.Code(),
 	}
@@ -110,7 +112,10 @@ func (m *PassAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn
 	}
 
 	if buf[0] != 1 {
-		return conn, info, fmt.Errorf("unknown user+pass auth version %d", buf[0])
+		return conn, info, fmt.Errorf(
+			"unknown user+pass auth version %d",
+			buf[0],
+		)
 	}
 
 	ulen := int(buf[1])
@@ -148,4 +153,11 @@ func (m *PassAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn
 		err = fmt.Errorf("provided user+pass rejected")
 	}
 	return conn, info, err
+}
+
+func (m *PassAuthHandler) verify(user, pass string) bool {
+	if m.VerifyFn == nil {
+		return true
+	}
+	return m.VerifyFn(user, pass)
 }

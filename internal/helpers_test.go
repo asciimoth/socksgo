@@ -39,13 +39,13 @@ func TestReadNullTerminatedString(t *testing.T) {
 			name:    "string longer than buffer",
 			input:   "abcdefghijklmnop",
 			bufSize: 5,
-			wantErr: internal.TooLongStringErr,
+			wantErr: internal.ErrTooLongString,
 		},
 		{
 			name:    "exact buffer size without null",
 			input:   "abcd",
 			bufSize: 4,
-			wantErr: internal.TooLongStringErr,
+			wantErr: internal.ErrTooLongString,
 		},
 		{
 			name:    "exact buffer size with null at end",
@@ -75,19 +75,30 @@ func TestReadNullTerminatedString(t *testing.T) {
 			got, err := internal.ReadNullTerminatedString(r, buf)
 
 			if tt.wantErr != nil {
-				if err != tt.wantErr {
-					t.Errorf("ReadNullTerminatedString() error = %v, wantErr %v", err, tt.wantErr)
+				if err.Error() != tt.wantErr.Error() {
+					t.Errorf(
+						"ReadNullTerminatedString()\ngot:  %v\nwant: %v",
+						err,
+						tt.wantErr,
+					)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("ReadNullTerminatedString() unexpected error = %v", err)
+				t.Errorf(
+					"ReadNullTerminatedString() unexpected error = %v",
+					err,
+				)
 				return
 			}
 
-			if string(got) != tt.want {
-				t.Errorf("ReadNullTerminatedString() = %q, want %q", got, tt.want)
+			if got != tt.want {
+				t.Errorf(
+					"ReadNullTerminatedString() = %q, want %q",
+					got,
+					tt.want,
+				)
 			}
 		})
 	}
@@ -113,7 +124,7 @@ func TestReadNullTerminatedString_EdgeCases(t *testing.T) {
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
-		if string(got) != "a" {
+		if got != "a" {
 			t.Errorf("expected 'a', got %q", got)
 		}
 	})
@@ -158,13 +169,17 @@ func TestReadNullTerminatedString_IncrementalReads(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 
-		if string(got) != "hello" {
+		if got != "hello" {
 			t.Errorf("expected 'hello', got %q", got)
 		}
 
 		// Verify all bytes were read
 		if slowReader.pos != len(data) {
-			t.Errorf("expected to read all %d bytes, read %d", len(data), slowReader.pos)
+			t.Errorf(
+				"expected to read all %d bytes, read %d",
+				len(data),
+				slowReader.pos,
+			)
 		}
 	})
 }

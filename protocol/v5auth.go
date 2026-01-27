@@ -115,7 +115,10 @@ func (m *noAuthHandler) Name() string {
 	return m.Code().String()
 }
 
-func (m *noAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error) {
+func (m *noAuthHandler) HandleAuth(
+	conn net.Conn,
+	pool bufpool.Pool,
+) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{
 		Code: m.Code(),
 	}
@@ -125,34 +128,6 @@ func (m *noAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, 
 type AuthMethods struct {
 	methodsMap map[AuthMethodCode]AuthMethod
 	msg        []byte
-}
-
-func (m *AuthMethods) getMsg() []byte {
-	if m == nil || m.msg == nil {
-		return defaultMethodSelectionMsg
-	}
-	return m.msg
-}
-
-func (m *AuthMethods) rebuild() {
-	count := min(len(m.methodsMap), MAX_AUTH_METHODS_COUNT-1)
-	if count == 0 {
-		// defaultMethodSelectionMsg will be used
-		return
-	}
-	msg := []byte{
-		5,               // VER
-		byte(count) + 1, // NMETHODS
-		byte(NoAuthCode),
-	}
-	for code := range m.methodsMap {
-		if count <= 0 {
-			break
-		}
-		count -= 1
-		msg = append(msg, byte(code))
-	}
-	m.msg = msg
 }
 
 func (m *AuthMethods) Get(code AuthMethodCode) AuthMethod {
@@ -203,6 +178,34 @@ func (m *AuthMethods) Clone() *AuthMethods {
 		clone.Add(v)
 	}
 	return clone
+}
+
+func (m *AuthMethods) getMsg() []byte {
+	if m == nil || m.msg == nil {
+		return defaultMethodSelectionMsg
+	}
+	return m.msg
+}
+
+func (m *AuthMethods) rebuild() {
+	count := min(len(m.methodsMap), MAX_AUTH_METHODS_COUNT-1)
+	if count == 0 {
+		// defaultMethodSelectionMsg will be used
+		return
+	}
+	msg := []byte{
+		5,               // VER
+		byte(count) + 1, // NMETHODS
+		byte(NoAuthCode),
+	}
+	for code := range m.methodsMap {
+		if count <= 0 {
+			break
+		}
+		count -= 1
+		msg = append(msg, byte(code))
+	}
+	m.msg = msg
 }
 
 type AuthHandlers struct {
@@ -272,12 +275,12 @@ func RunAuth(
 		return
 	}
 
-	if resp[0] != 5 {
-		err = UnknownAuthVerError{int(resp[0])}
+	if resp[0] != 5 { //nolint mnd
+		err = UnknownAuthVerError{int(resp[0])} //nolint
 		return
 	}
 
-	code := AuthMethodCode(resp[1])
+	code := AuthMethodCode(resp[1]) //nolint
 	i = AuthInfo{
 		Code: code,
 	}
@@ -291,7 +294,7 @@ func RunAuth(
 
 	method := methods.Get(code)
 	if method == nil {
-		err = UnsupportedAuthMethod{code}
+		err = UnsupportedAuthMethodError{code}
 		return
 	}
 

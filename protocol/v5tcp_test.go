@@ -113,7 +113,11 @@ func TestBuildSocks5TCPRequest(t *testing.T) {
 					t.Errorf("BuildSocks5TCPRequest() expected error, got nil")
 				}
 				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
-					t.Errorf("BuildSocks5TCPRequest() error = %v, want containing %v", err, tt.errMsg)
+					t.Errorf(
+						"BuildSocks5TCPRequest() error = %v, want containing %v",
+						err,
+						tt.errMsg,
+					)
 				}
 				return
 			}
@@ -124,7 +128,11 @@ func TestBuildSocks5TCPRequest(t *testing.T) {
 			}
 
 			if !bytes.Equal(got, tt.expected) {
-				t.Errorf("BuildSocks5TCPRequest() = %v, want %v", got, tt.expected)
+				t.Errorf(
+					"BuildSocks5TCPRequest() = %v, want %v",
+					got,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -264,11 +272,19 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 			}
 
 			if cmd != tt.wantCmd {
-				t.Errorf("ReadSocks5TCPRequest() cmd = %v, want %v", cmd, tt.wantCmd)
+				t.Errorf(
+					"ReadSocks5TCPRequest() cmd = %v, want %v",
+					cmd,
+					tt.wantCmd,
+				)
 			}
 
 			if addr.String() != tt.wantAddr {
-				t.Errorf("ReadSocks5TCPRequest() addr = %v, want %v", addr.String(), tt.wantAddr)
+				t.Errorf(
+					"ReadSocks5TCPRequest() addr = %v, want %v",
+					addr.String(),
+					tt.wantAddr,
+				)
 			}
 		})
 	}
@@ -288,7 +304,11 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 		{
 			name: "IPv6 round trip",
 			cmd:  protocol.CmdUDPAssoc,
-			addr: protocol.AddrFromIP(net.ParseIP("2001:4860:4860::8888"), 53, ""),
+			addr: protocol.AddrFromIP(
+				net.ParseIP("2001:4860:4860::8888"),
+				53,
+				"",
+			),
 		},
 		{
 			name: "FQDN round trip",
@@ -314,7 +334,11 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 			defer pool.Close()
 
 			// Build the request
-			request, err := protocol.BuildSocks5TCPRequest(tc.cmd, tc.addr, pool)
+			request, err := protocol.BuildSocks5TCPRequest(
+				tc.cmd,
+				tc.addr,
+				pool,
+			)
 			if err != nil {
 				t.Fatalf("BuildSocks5TCPRequest failed: %v", err)
 			}
@@ -337,7 +361,11 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 
 			// Compare addresses using String() method as requested
 			if addr.String() != tc.addr.String() {
-				t.Errorf("Address mismatch: got %v, want %v", addr.String(), tc.addr.String())
+				t.Errorf(
+					"Address mismatch: got %v, want %v",
+					addr.String(),
+					tc.addr.String(),
+				)
 			}
 		})
 	}
@@ -345,7 +373,10 @@ func TestBuildAndReadRoundTrip(t *testing.T) {
 
 func TestReadWithPartialData(t *testing.T) {
 	// Create a broken reader that returns EOF early
-	brokenReader := &io.LimitedReader{R: bytes.NewReader([]byte{0x01, 0x00, 0x01}), N: 2}
+	brokenReader := &io.LimitedReader{
+		R: bytes.NewReader([]byte{0x01, 0x00, 0x01}),
+		N: 2,
+	}
 
 	_, _, err := protocol.ReadSocks5TCPRequest(brokenReader, nil)
 	if err == nil {

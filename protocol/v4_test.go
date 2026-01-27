@@ -85,7 +85,12 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 			pool := bufpool.NewTestDebugPool(t)
 			defer pool.Close()
 
-			got, err := protocol.BuildSocsk4TCPRequest(tt.cmd, tt.addr, tt.user, pool)
+			got, err := protocol.BuildSocsk4TCPRequest(
+				tt.cmd,
+				tt.addr,
+				tt.user,
+				pool,
+			)
 			defer bufpool.PutBuffer(pool, got)
 
 			if err != nil {
@@ -93,12 +98,20 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 			}
 
 			if !bytes.Equal(got, tt.expected) {
-				t.Errorf("BuildSocsk4TCPRequest() = %v, want %v", got, tt.expected)
+				t.Errorf(
+					"BuildSocsk4TCPRequest() = %v, want %v",
+					got,
+					tt.expected,
+				)
 			}
 
 			// Verify buffer is properly sized
 			if len(got) != len(tt.expected) {
-				t.Errorf("BuildSocsk4TCPRequest() length = %d, want %d", len(got), len(tt.expected))
+				t.Errorf(
+					"BuildSocsk4TCPRequest() length = %d, want %d",
+					len(got),
+					len(tt.expected),
+				)
 			}
 		})
 	}
@@ -177,7 +190,10 @@ func TestReadSocks4TCPRequest(t *testing.T) {
 			defer pool.Close()
 
 			reader := bytes.NewReader(tt.data)
-			gotCmd, gotAddr, gotUser, err := protocol.ReadSocks4TCPRequest(reader, pool)
+			gotCmd, gotAddr, gotUser, err := protocol.ReadSocks4TCPRequest(
+				reader,
+				pool,
+			)
 
 			if tt.expectError {
 				if err == nil {
@@ -192,15 +208,27 @@ func TestReadSocks4TCPRequest(t *testing.T) {
 			}
 
 			if gotCmd != tt.wantCmd {
-				t.Errorf("ReadSocks4TCPRequest() cmd = %v, want %v", gotCmd, tt.wantCmd)
+				t.Errorf(
+					"ReadSocks4TCPRequest() cmd = %v, want %v",
+					gotCmd,
+					tt.wantCmd,
+				)
 			}
 
 			if gotAddr.String() != tt.wantAddr {
-				t.Errorf("ReadSocks4TCPRequest() addr = %v, want %v", gotAddr.String(), tt.wantAddr)
+				t.Errorf(
+					"ReadSocks4TCPRequest() addr = %v, want %v",
+					gotAddr.String(),
+					tt.wantAddr,
+				)
 			}
 
 			if gotUser != tt.wantUser {
-				t.Errorf("ReadSocks4TCPRequest() user = %v, want %v", gotUser, tt.wantUser)
+				t.Errorf(
+					"ReadSocks4TCPRequest() user = %v, want %v",
+					gotUser,
+					tt.wantUser,
+				)
 			}
 		})
 	}
@@ -240,7 +268,11 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 		{
 			name: "Long username and hostname",
 			cmd:  protocol.CmdConnect,
-			addr: protocol.AddrFromFQDN("very-long-subdomain.example-domain.co.uk", 8443, ""),
+			addr: protocol.AddrFromFQDN(
+				"very-long-subdomain.example-domain.co.uk",
+				8443,
+				"",
+			),
 			user: "user_with_underscores_and.dots",
 		},
 	}
@@ -251,7 +283,12 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 			defer pool.Close()
 
 			// Build the request
-			request, err := protocol.BuildSocsk4TCPRequest(tc.cmd, tc.addr, tc.user, pool)
+			request, err := protocol.BuildSocsk4TCPRequest(
+				tc.cmd,
+				tc.addr,
+				tc.user,
+				pool,
+			)
 			defer bufpool.PutBuffer(pool, request)
 
 			if err != nil {
@@ -262,7 +299,10 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 			reader := bytes.NewReader(request[1:])
 
 			// Read the request
-			readCmd, readAddr, readUser, err := protocol.ReadSocks4TCPRequest(reader, pool)
+			readCmd, readAddr, readUser, err := protocol.ReadSocks4TCPRequest(
+				reader,
+				pool,
+			)
 			if err != nil {
 				t.Errorf("ReadSocks4TCPRequest() failed: %v", err)
 				return
@@ -274,7 +314,11 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 			}
 
 			if readAddr.String() != tc.addr.String() {
-				t.Errorf("Addr mismatch: got %v, want %v", readAddr.String(), tc.addr.String())
+				t.Errorf(
+					"Addr mismatch: got %v, want %v",
+					readAddr.String(),
+					tc.addr.String(),
+				)
 			}
 
 			if readUser != tc.user {
@@ -381,11 +425,19 @@ func TestBuildSocks4TCPReply(t *testing.T) {
 			defer bufpool.PutBuffer(pool, got)
 
 			if !bytes.Equal(got, tt.expected) {
-				t.Errorf("BuildSocsk4TCPReply() = %v, want %v", got, tt.expected)
+				t.Errorf(
+					"BuildSocsk4TCPReply() = %v, want %v",
+					got,
+					tt.expected,
+				)
 			}
 
 			if len(got) != len(tt.expected) {
-				t.Errorf("BuildSocsk4TCPReply() length = %d, want %d", len(got), len(tt.expected))
+				t.Errorf(
+					"BuildSocsk4TCPReply() length = %d, want %d",
+					len(got),
+					len(tt.expected),
+				)
 			}
 
 			// Verify first byte is version 0
@@ -435,7 +487,11 @@ func TestReadSocks4TCPReply(t *testing.T) {
 				if err == nil {
 					t.Errorf("ReadSocks4TCPReply() expected error, got nil")
 				} else if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
-					t.Errorf("ReadSocks4TCPReply() error = %v, want error containing %q", err, tt.errorMsg)
+					t.Errorf(
+						"ReadSocks4TCPReply() error = %v, want error containing %q",
+						err,
+						tt.errorMsg,
+					)
 				}
 				return
 			}
@@ -446,7 +502,11 @@ func TestReadSocks4TCPReply(t *testing.T) {
 			}
 
 			if addr.String() != tt.wantAddr {
-				t.Errorf("ReadSocks4TCPReply() addr = %v, want %v", addr.String(), tt.wantAddr)
+				t.Errorf(
+					"ReadSocks4TCPReply() addr = %v, want %v",
+					addr.String(),
+					tt.wantAddr,
+				)
 			}
 		})
 	}
@@ -489,13 +549,21 @@ func TestBuildAndReadSocks4TCPReply_RoundTrip(t *testing.T) {
 			_, addr, err := protocol.ReadSocks4TCPReply(reader)
 
 			// For non-Granted status codes, we expect an error
-			if tc.cmd != protocol.Granted {
+			if tc.cmd != protocol.Granted { //nolint netif
 				if err == nil {
-					t.Errorf("ReadSocks4TCPReply() expected error for cmd %v, got nil", tc.cmd)
+					t.Errorf(
+						"ReadSocks4TCPReply() expected error for cmd %v, got nil",
+						tc.cmd,
+					)
 				}
 				// Verify the error message contains the expected status string
-				if err != nil && !strings.Contains(err.Error(), tc.cmd.String()) {
-					t.Errorf("ReadSocks4TCPReply() error = %v, want error containing %q", err, tc.cmd.String())
+				if err != nil &&
+					!strings.Contains(err.Error(), tc.cmd.String()) {
+					t.Errorf(
+						"ReadSocks4TCPReply() error = %v, want error containing %q",
+						err,
+						tc.cmd.String(),
+					)
 				}
 			} else {
 				// For Granted, verify the address matches
@@ -510,10 +578,15 @@ func TestBuildAndReadSocks4TCPReply_RoundTrip(t *testing.T) {
 				if expectedIP == nil {
 					expectedIP = net.IPv4(0, 0, 0, 0).To4()
 				}
-				expectedAddr := protocol.AddrFromIP(expectedIP, tc.addr.Port, "").String()
+				expectedAddr := protocol.AddrFromIP(expectedIP, tc.addr.Port, "").
+					String()
 
 				if addr.String() != expectedAddr {
-					t.Errorf("Addr mismatch: got %v, want %v", addr.String(), expectedAddr)
+					t.Errorf(
+						"Addr mismatch: got %v, want %v",
+						addr.String(),
+						expectedAddr,
+					)
 				}
 			}
 		})

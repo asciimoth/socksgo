@@ -39,7 +39,7 @@ func Reject(
 	stat ReplyStatus,
 	pool bufpool.Pool,
 ) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	addr := AddrFromIP(net.IPv4(0, 0, 0, 0).To4(), 0, "")
 	_ = Reply(ver, conn, stat, addr, pool)
 }

@@ -102,6 +102,40 @@ func (r ReplyStatus) To5() ReplyStatus {
 		return FailReply
 	case IdentRequired:
 		return FailReply
+	case SuccReply:
+		return r
+	case FailReply:
+		return r
+	case DisallowReply:
+		return r
+	case NetUnreachReply:
+		return r
+	case HostUnreachReply:
+		return r
+	case ConnRefusedReply:
+		return r
+	case TTLExpiredReply:
+		return r
+	case CmdNotSuppReply:
+		return r
+	case AddrNotSuppReply:
+		return r
+	case TorDescNotFound:
+		return r
+	case TorDescInvalid:
+		return r
+	case TorIntroFail:
+		return r
+	case TorRendFailed:
+		return r
+	case TorMissAuth:
+		return r
+	case TorWrongAuth:
+		return r
+	case TorInvalidAddr:
+		return r
+	case TorIntroTimeOut:
+		return r
 	}
 	return r
 }
@@ -143,6 +177,14 @@ func (r ReplyStatus) To4() ReplyStatus {
 		return Rejected
 	case TorIntroTimeOut:
 		return Rejected
+	case Granted:
+		return r
+	case Rejected:
+		return r
+	case IdentRequired:
+		return r
+	case IdentFailed:
+		return r
 	}
 	return r
 }

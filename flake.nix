@@ -2,8 +2,14 @@
   description = "Most complete and featured socks library for go";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    pre-commit-hooks = {
+      url = "github:cachix/pre-commit-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
   outputs = {
     self,
@@ -34,18 +40,12 @@
             };
             govet.enable = true;
             gofmt.enable = true;
-            # golangci-lint.enable = true;
+            golangci-lint.enable = true;
             gotidy = {
               enable = true;
               description = "Makes sure go.mod matches the source code";
               entry = let script = pkgs.writeShellScript "gotidyhook" ''
                 go mod tidy -v
-                if [ -f "go.mod" ]; then
-                  git add go.mod
-                fi
-                if [ -f "go.sum" ]; then
-                  git add go.sum
-                fi
               ''; in builtins.toString script;
               stages = [ "pre-commit" ];
             };

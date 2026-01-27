@@ -32,7 +32,7 @@ var DefaultBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, protocol.FailReply, pool)
 			return err
 		}
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		// Send first reply with laddr
 		err = protocol.Reply(
 			ver,

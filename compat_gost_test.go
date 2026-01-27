@@ -38,8 +38,11 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 		return nil, "", fmt.Errorf("start gost: %w", err)
 	}
 
-	lines := make(chan string, 256) // buffered so scanners won't block the process quickly
-	errc := make(chan error, 2)     // buffer to avoid goroutine leak on send
+	lines := make(
+		chan string,
+		256,
+	) // buffered so scanners won't block the process quickly
+	errc := make(chan error, 2) // buffer to avoid goroutine leak on send
 	var wg sync.WaitGroup
 
 	// scanner goroutine for a reader
@@ -75,7 +78,9 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 	}()
 
 	// regex to find host:port (handles bracketed IPv6 like [::1]:8080)
-	reAddr := regexp.MustCompile(`(\[[0-9a-fA-F:]+\]:\d+)|([0-9A-Za-z\.\-]+:\d+)`)
+	reAddr := regexp.MustCompile(
+		`(\[[0-9a-fA-F:]+\]:\d+)|([0-9A-Za-z\.\-]+:\d+)`,
+	)
 	cleanAddr := func(s string) string {
 		// strip trailing /tcp or /udp if present
 		s = strings.TrimSpace(s)
@@ -93,7 +98,8 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 				return cleanAddr(v), true
 			}
 			// 2) "msg" field that may contain "listening on ..."
-			if v, ok := m["msg"].(string); ok && strings.Contains(strings.ToLower(v), "listening on") {
+			if v, ok := m["msg"].(string); ok &&
+				strings.Contains(strings.ToLower(v), "listening on") {
 				if found := reAddr.FindString(v); found != "" {
 					return cleanAddr(found), true
 				}
@@ -101,7 +107,8 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 		}
 
 		// plain text search: look for "listening on" then regex
-		if strings.Contains(strings.ToLower(line), "listening on") || strings.Contains(strings.ToLower(line), "listening") {
+		if strings.Contains(strings.ToLower(line), "listening on") ||
+			strings.Contains(strings.ToLower(line), "listening") {
 			if found := reAddr.FindString(line); found != "" {
 				return cleanAddr(found), true
 			}
@@ -111,7 +118,9 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 		if found := reAddr.FindString(line); found != "" {
 			// be conservative: accept this only if the line seems to indicate a listener
 			lower := strings.ToLower(line)
-			if strings.Contains(lower, "listen") || strings.Contains(lower, "listening") || strings.Contains(lower, "listening on") {
+			if strings.Contains(lower, "listen") ||
+				strings.Contains(lower, "listening") ||
+				strings.Contains(lower, "listening on") {
 				return cleanAddr(found), true
 			}
 		}
@@ -170,7 +179,12 @@ type GostAddrs struct {
 	Addr5, Addr5Pass, Addr4, Addr4Pass string
 }
 
-func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAddrs) {
+func runGostAll(
+	t *testing.T,
+	cfg EnvConfig,
+	tls bool,
+	ws bool,
+) (func(), GostAddrs) {
 	socks5, socks4, _ := getSchemes(tls, ws)
 
 	killfuncs := []func(){}
@@ -185,7 +199,9 @@ func runGostAll(t *testing.T, cfg EnvConfig, tls bool, ws bool) (func(), GostAdd
 	killfuncs = append(killfuncs, k)
 
 	k, addr5pass, err := runGost(
-		socks5+"://user:pass@"+cfg.Host+":?udp=true&udpBufferSize=4096&bind=true", "", t,
+		socks5+"://user:pass@"+cfg.Host+":?udp=true&udpBufferSize=4096&bind=true",
+		"",
+		t,
 	)
 	if err != nil {
 		t.Fatalf("failed to spawn gost proc: %v", err)

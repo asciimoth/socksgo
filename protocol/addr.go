@@ -125,7 +125,11 @@ func AddrFromUDPAddr(u *net.UDPAddr) Addr {
 	if u == nil {
 		return a
 	}
-	a = AddrFromIP(u.IP, uint16(u.Port), "udp")
+	var port uint16 = 0
+	if u.Port <= 65535 && u.Port >= 0 {
+		port = uint16(u.Port)
+	}
+	a = AddrFromIP(u.IP, port, "udp")
 	return a
 }
 
@@ -134,7 +138,11 @@ func AddrFromTCPAddr(t *net.TCPAddr) Addr {
 	if t == nil {
 		return a
 	}
-	a = AddrFromIP(t.IP, uint16(t.Port), "tcp")
+	var port uint16 = 0
+	if t.Port <= 65535 && t.Port >= 0 {
+		port = uint16(t.Port)
+	}
+	a = AddrFromIP(t.IP, port, "tcp")
 	return a
 }
 
@@ -163,11 +171,14 @@ func (a Addr) Copy() Addr {
 func (a Addr) Len() int {
 	switch a.Type {
 	case IP4Addr:
-		return 4
+		return 4 //nolint mnd
 	case IP6Addr:
-		return 16
+		return 16 //nolint mnd
+	case FQDNAddr:
+		return len(a.Host)
+	default:
+		return len(a.Host)
 	}
-	return len(a.Host)
 }
 
 func (a Addr) WithNetTyp(nt string) Addr {
@@ -212,8 +223,11 @@ func (a Addr) ToIP() net.IP {
 		return net.IP(a.Host).To4()
 	case IP6Addr:
 		return net.IP(a.Host).To16()
+	case FQDNAddr:
+		return nil
+	default:
+		return nil
 	}
-	return nil
 }
 
 func (a Addr) ToFQDN() string {
@@ -259,6 +273,8 @@ func (a Addr) ToUnspecified() Addr {
 		n.Host = net.IPv6unspecified.To16()
 	case IP4Addr:
 		n.Host = net.IPv4zero.To4()
+	case FQDNAddr:
+		return n
 	}
 	return n
 }
@@ -280,6 +296,8 @@ func (a Addr) Network() string {
 		return net + "4"
 	case IP6Addr:
 		return net + "6"
+	case FQDNAddr:
+		return net
 	}
 	return net
 }

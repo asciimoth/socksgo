@@ -3,6 +3,7 @@ package socksgo_test
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -35,7 +36,7 @@ func (na NetAddr) String() string {
 }
 
 func (na NetAddr) Network() string {
-	return na.Network()
+	return na.Net
 }
 
 type EnvConfig struct {
@@ -137,7 +138,7 @@ func runUDPSTunSrv(t *testing.T) (io.Closer, net.Addr) {
 
 func checkPacketConnLaddr(t *testing.T, conn net.PacketConn) (addr net.Addr) {
 	stun_srv, stun := runUDPSTunSrv(t)
-	defer stun_srv.Close()
+	defer func() { _ = stun_srv.Close() }()
 
 	ready := make(chan any)
 	defer func() { <-ready }()
@@ -162,7 +163,10 @@ func checkPacketConnLaddr(t *testing.T, conn net.PacketConn) (addr net.Addr) {
 		}
 		reply := string(buf[:n])
 		t.Logf("maybe stun reply %s", reply)
-		if after, ok := strings.CutPrefix(string(buf[:n]), "YOUR ADDR IS: "); ok {
+		if after, ok := strings.CutPrefix(
+			string(buf[:n]),
+			"YOUR ADDR IS: ",
+		); ok {
 			addr = NetAddr{
 				Addr: after,
 				Net:  conn.LocalAddr().Network(),
@@ -179,7 +183,7 @@ func testUDPListen(c *socksgo.Client, t *testing.T, times int, needStun bool) {
 	if err != nil {
 		t.Fatalf("failed to start udp server with client %T: %v", c, err)
 	}
-	defer serverConn.Close()
+	defer func() { _ = serverConn.Close() }()
 
 	serverAddr := serverConn.LocalAddr()
 
@@ -189,11 +193,11 @@ func testUDPListen(c *socksgo.Client, t *testing.T, times int, needStun bool) {
 
 	t.Log(serverAddr)
 
-	clientConn, err := net.Dial("udp4", serverAddr.String())
+	clientConn, err := net.Dial("udp4", serverAddr.String()) //nolint noctx
 	if err != nil {
 		t.Fatalf("failed to start udp client with client %T: %v", c, err)
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// server goroutine: reply "pong N" for "ping N"
 	done := make(chan struct{})
@@ -238,7 +242,9 @@ func testUDPListen(c *socksgo.Client, t *testing.T, times int, needStun bool) {
 				t.Fatalf("client WriteTo (attempt %d) failed: %v", attempt, err)
 			}
 
-			if err := clientConn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+			if err := clientConn.SetReadDeadline(
+				time.Now().Add(timeout),
+			); err != nil {
 				_ = serverConn.Close()
 				t.Fatalf("SetReadDeadline failed: %v", err)
 			}
@@ -246,7 +252,8 @@ func testUDPListen(c *socksgo.Client, t *testing.T, times int, needStun bool) {
 			n, err := clientConn.Read(buf)
 			if err != nil {
 				// timeout -> retry; other errors are fatal
-				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				var ne net.Error
+				if errors.As(err, &ne) && ne.Timeout() {
 					// retry
 					continue
 				}
@@ -279,10 +286,10 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 	if err != nil {
 		t.Fatalf("failed to start listener with client %T: %v", c, err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	handler := func(conn net.Conn, i int) {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		_, err := bufio.NewReader(conn).ReadString('\n')
 		if err != nil {
@@ -322,11 +329,11 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 
 	for i := range times {
 		func() {
-			resp, err := http.Get("http://" + l.Addr().String())
+			resp, err := http.Get("http://" + l.Addr().String()) //nolint noctx
 			if err != nil {
 				t.Fatalf("error while requesting: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -362,10 +369,15 @@ func testUDPDial(c *socksgo.Client, t *testing.T, pairs ...HostPort) {
 	}
 }
 
-func testLookup(c *socksgo.Client, t *testing.T, lookupAddr bool, pairs ...HostPort) {
+func testLookup(
+	c *socksgo.Client,
+	t *testing.T,
+	lookupAddr bool,
+	pairs ...HostPort,
+) {
 	var (
 		err error
-		ips []string = []string{
+		ips = []string{
 			"8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9",
 		}
 	)

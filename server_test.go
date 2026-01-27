@@ -35,7 +35,11 @@ func connID(conn net.Conn) string {
 	return id
 }
 
-func runWSServer(server *socksgo.Server, host string, isTLS bool) (func(), net.Addr, error) {
+func runWSServer(
+	server *socksgo.Server,
+	host string,
+	isTLS bool,
+) (func(), net.Addr, error) {
 	ctx, ctx_cancel := context.WithCancel(context.Background())
 
 	upgrader := websocket.Upgrader{}
@@ -45,8 +49,8 @@ func runWSServer(server *socksgo.Server, host string, isTLS bool) (func(), net.A
 		if err != nil {
 			return
 		}
-		defer c.Close()
-		server.AcceptWS(ctx, c, isTLS)
+		defer func() { _ = c.Close() }()
+		_ = server.AcceptWS(ctx, c, isTLS)
 	})
 
 	stop, addr, err := runHTTPServer(handler, host, isTLS)
@@ -61,7 +65,10 @@ func runWSServer(server *socksgo.Server, host string, isTLS bool) (func(), net.A
 	}, addr, nil
 }
 
-func runTLSServer(server *socksgo.Server, host string) (func(), net.Addr, error) {
+func runTLSServer(
+	server *socksgo.Server,
+	host string,
+) (func(), net.Addr, error) {
 	// Generate ephemeral self-signed cert
 	cert, err := generateSelfSignedCert(host)
 	if err != nil {
@@ -77,26 +84,27 @@ func runTLSServer(server *socksgo.Server, host string) (func(), net.Addr, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	cancel, err := runServer(server, srv, true)
-	if err != nil {
-		return nil, nil, err
-	}
+	cancel := runServer(server, srv, true)
 	return cancel, srv.Addr(), nil
 }
 
-func runTCPServer(server *socksgo.Server, host string) (func(), net.Addr, error) {
-	srv, err := net.Listen("tcp", net.JoinHostPort(host, ""))
+func runTCPServer(
+	server *socksgo.Server,
+	host string,
+) (func(), net.Addr, error) {
+	srv, err := net.Listen("tcp", net.JoinHostPort(host, "")) //nolint noctx
 	if err != nil {
 		return nil, nil, err
 	}
-	cancel, err := runServer(server, srv, false)
-	if err != nil {
-		return nil, nil, err
-	}
+	cancel := runServer(server, srv, false)
 	return cancel, srv.Addr(), nil
 }
 
-func runServer(server *socksgo.Server, listener net.Listener, isTLS bool) (func(), error) {
+func runServer(
+	server *socksgo.Server,
+	listener net.Listener,
+	isTLS bool,
+) func() {
 	ctx, ctx_cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
@@ -117,9 +125,9 @@ func runServer(server *socksgo.Server, listener net.Listener, isTLS bool) (func(
 		defer mu.Unlock()
 		stopped = true
 		ctx_cancel()
-		listener.Close()
+		_ = listener.Close()
 		for _, v := range sessions {
-			v.Close()
+			_ = v.Close()
 		}
 		sessions = map[string]net.Conn{}
 	}
@@ -140,14 +148,14 @@ func runServer(server *socksgo.Server, listener net.Listener, isTLS bool) (func(
 				addSession(conn)
 				mu.Unlock()
 				defer rmSession(conn)
-				server.Accept(ctx, conn, isTLS)
+				_ = server.Accept(ctx, conn, isTLS)
 			})
 		}
 	})
 	return func() {
 		cancel()
 		wg.Wait()
-	}, nil
+	}
 }
 
 // generateSelfSignedCert creates an in-memory RSA key + self-signed cert valid for 1 hour.
@@ -172,13 +180,26 @@ func generateSelfSignedCert(host string) (tls.Certificate, error) {
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
+	derBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&tmpl,
+		&tmpl,
+		&priv.PublicKey,
+		priv,
+	)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("create cert: %w", err)
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	certPEM := pem.EncodeToMemory(
+		&pem.Block{Type: "CERTIFICATE", Bytes: derBytes},
+	)
+	keyPEM := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(priv),
+		},
+	)
 
 	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
@@ -187,8 +208,12 @@ func generateSelfSignedCert(host string) (tls.Certificate, error) {
 	return tlsCert, nil
 }
 
-func runHTTPServer(handler http.Handler, host string, isTLS bool) (stop func(), addr net.Addr, err error) {
-	ln, err := net.Listen("tcp", net.JoinHostPort(host, ""))
+func runHTTPServer(
+	handler http.Handler,
+	host string,
+	isTLS bool,
+) (stop func(), addr net.Addr, err error) {
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, "")) //nolint noctx
 	if err != nil {
 		return nil, nil, err
 	}
@@ -197,20 +222,18 @@ func runHTTPServer(handler http.Handler, host string, isTLS bool) (stop func(), 
 	if isTLS {
 		cert, err := generateSelfSignedCert(host)
 		if err != nil {
-			ln.Close()
+			_ = ln.Close()
 			return nil, nil, err
 		}
 
-		tlsCfg := tls.Config{
+		tlsCfg := tls.Config{ //nolint
 			Certificates: []tls.Certificate{cert},
-			// For localhost tests it's OK; for real servers consider setting
-			// MinVersion, CipherSuites, etc.
 		}
 
 		ln = tls.NewListener(ln, &tlsCfg)
 	}
 
-	srv := &http.Server{
+	srv := &http.Server{ //nolint
 		Handler:   handler,
 		TLSConfig: tlsCfg,
 	}

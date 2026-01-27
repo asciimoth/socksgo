@@ -47,7 +47,13 @@ func curlViaSocks(t *testing.T, targetURL, proxyURL string) error {
 	if err != nil {
 		// If the context deadline was exceeded, the error may be context.DeadlineExceeded
 		// or an ExitError from curl; include both error and output for debugging.
-		return fmt.Errorf("curl -> proxy=%q url=%q: err=%v\noutput:\n%s", proxyURL, targetURL, err, string(out))
+		return fmt.Errorf(
+			"curl -> proxy=%q url=%q: err=%v\noutput:\n%s",
+			proxyURL,
+			targetURL,
+			err,
+			string(out),
+		)
 	}
 	// success (optionally log something)
 	return nil

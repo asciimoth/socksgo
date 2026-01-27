@@ -17,8 +17,10 @@ func runPassAuthTest(
 	clientErr, serverErr error,
 ) {
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	}()
 
 	readyCh := make(chan any, 2)
 
@@ -109,38 +111,69 @@ func TestPassAuth(t *testing.T) {
 				VerifyFn: tt.verifyFn,
 			}
 
-			clientInfo, serverInfo, clientErr, serverErr := runPassAuthTest(method, handler, pool)
+			clientInfo, serverInfo, clientErr, serverErr := runPassAuthTest(
+				method,
+				handler,
+				pool,
+			)
 
 			if fmt.Sprintf("%s", clientErr) != fmt.Sprintf("%s", tt.clientErr) {
-				t.Errorf("client err %s while expected %s", clientErr, tt.clientErr)
+				t.Errorf(
+					"client err %s while expected %s",
+					clientErr,
+					tt.clientErr,
+				)
 			}
 			if fmt.Sprintf("%s", serverErr) != fmt.Sprintf("%s", tt.serverErr) {
-				t.Errorf("server err %s while expected %s", serverErr, tt.serverErr)
+				t.Errorf(
+					"server err %s while expected %s",
+					serverErr,
+					tt.serverErr,
+				)
 			}
 
 			if clientErr == nil {
 				if clientInfo.Code != protocol.PassAuthCode {
-					t.Errorf("expected client auth code %v, got %v", protocol.PassAuthCode, clientInfo.Code)
+					t.Errorf(
+						"expected client auth code %v, got %v",
+						protocol.PassAuthCode,
+						clientInfo.Code,
+					)
 				}
-				if _, v := protocol.GetAuthParam[string](clientInfo, "user"); v != user {
+				if _, v := protocol.GetAuthParam[string](
+					clientInfo,
+					"user",
+				); v != user {
 					t.Errorf("expected client user %v, got %v", user, v)
 				}
-				if _, v := protocol.GetAuthParam[string](clientInfo, "pass"); v != pass {
+				if _, v := protocol.GetAuthParam[string](
+					clientInfo,
+					"pass",
+				); v != pass {
 					t.Errorf("expected client pass %v, got %v", user, v)
 				}
 			}
 			if serverErr == nil {
 				if serverInfo.Code != protocol.PassAuthCode {
-					t.Errorf("expected server auth code %v, got %v", protocol.PassAuthCode, serverInfo.Code)
+					t.Errorf(
+						"expected server auth code %v, got %v",
+						protocol.PassAuthCode,
+						serverInfo.Code,
+					)
 				}
-				if _, v := protocol.GetAuthParam[string](serverInfo, "user"); v != user {
+				if _, v := protocol.GetAuthParam[string](
+					serverInfo,
+					"user",
+				); v != user {
 					t.Errorf("expected server user %v, got %v", user, v)
 				}
-				if _, v := protocol.GetAuthParam[string](serverInfo, "pass"); v != pass {
+				if _, v := protocol.GetAuthParam[string](
+					serverInfo,
+					"pass",
+				); v != pass {
 					t.Errorf("expected server pass %v, got %v", user, v)
 				}
 			}
-
 		})
 	}
 }

@@ -18,7 +18,10 @@ func TestBuildFilter_HostsAndWildcards(t *testing.T) {
 		{"foo.example.org", true},      // wildcard match
 		{"bar.example.org:1234", true}, // wildcard match with port
 		{"example.net", true},          // case + trailing dot handled
-		{"example.org", false},         // "*.example.org" does NOT match bare example.org
+		{
+			"example.org",
+			false,
+		}, // "*.example.org" does NOT match bare example.org
 		{"notexample.com", false},
 	}
 
@@ -42,7 +45,10 @@ func TestBuildFilter_HostsWithPortsAndIPPorts(t *testing.T) {
 		{"1.2.3.4:8080", true},
 		{"1.2.3.4", false}, // ip entry had port so must match port
 		{"[::1]:22", true},
-		{"::1", false}, // ipv6 literal without port shouldn't match bracketed-with-port entry
+		{
+			"::1",
+			false,
+		}, // ipv6 literal without port shouldn't match bracketed-with-port entry
 	}
 
 	for _, tt := range cases {
@@ -85,7 +91,10 @@ func TestBuildFilter_HostnameVsIP_NoDNS(t *testing.T) {
 		want    bool
 	}{
 		{"localhost", true},
-		{"127.0.0.1", false}, // should not match just because localhost resolves to 127.0.0.1
+		{
+			"127.0.0.1",
+			false,
+		}, // should not match just because localhost resolves to 127.0.0.1
 	}
 
 	for _, tt := range cases {

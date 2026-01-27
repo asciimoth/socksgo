@@ -31,31 +31,31 @@ func (c *Client) request5(
 
 	proxy, _, err = protocol.RunAuth(proxy, c.Pool, c.Auth)
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return
 	}
 
 	var request []byte
 	request, err = protocol.BuildSocks5TCPRequest(cmd, address, c.Pool)
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return
 	}
 	defer bufpool.PutBuffer(c.Pool, request)
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return
 	}
 
 	stat, addr, err = protocol.ReadSocks5TCPReply(proxy, c.Pool)
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return
 	}
 	if !stat.Ok() {
-		proxy.Close()
+		_ = proxy.Close()
 		err = RejectdError{stat}
 		return
 	}
@@ -90,7 +90,7 @@ func (c *Client) dialPacket5(
 
 	udpconn, err := c.GetPacketDialer()(ctx, addr.Network(), naddr.String())
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return nil, err
 	}
 	pc := protocol.NewSocks5UDPClientAssoc(udpconn, &addr, c.Pool, onclose)
@@ -135,10 +135,14 @@ func (c *Client) setupUDPTun5(
 	if naddr.IsUnspecified() && proxy.RemoteAddr() != nil {
 		h, _, err := net.SplitHostPort(proxy.RemoteAddr().String())
 		if err != nil {
-			proxy.Close()
+			_ = proxy.Close()
 			return nil, err
 		}
-		naddr = protocol.AddrFromString(h, naddr.Port, proxy.RemoteAddr().Network())
+		naddr = protocol.AddrFromString(
+			h,
+			naddr.Port,
+			proxy.RemoteAddr().Network(),
+		)
 	}
 
 	return protocol.NewSocks5UDPClientTUN(proxy, naddr, raddr, c.Pool), nil
@@ -162,7 +166,7 @@ func (l *clientListener5) Accept() (net.Conn, error) {
 	stat, _, err := protocol.ReadSocks5TCPReply(l.conn, l.pool)
 	// TODO: Use addr & port as conn.RemoteAddr
 	if err != nil {
-		l.conn.Close()
+		_ = l.conn.Close()
 	}
 	if !stat.Ok() {
 		return nil, RejectdError{stat}

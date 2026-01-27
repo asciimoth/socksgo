@@ -26,7 +26,18 @@ func TestAppendSocks5UDPHeader(t *testing.T) {
 			addrType: protocol.IP4Addr,
 			host:     "192.168.1.1",
 			port:     8080,
-			expected: []byte{0x00, 0x00, 0x00, 0x01, 192, 168, 1, 1, 0x1F, 0x90},
+			expected: []byte{
+				0x00,
+				0x00,
+				0x00,
+				0x01,
+				192,
+				168,
+				1,
+				1,
+				0x1F,
+				0x90,
+			},
 		},
 		{
 			name:     "IPv4 with RSV=1234",
@@ -72,7 +83,11 @@ func TestAppendSocks5UDPHeader(t *testing.T) {
 			result := protocol.AppendSocks5UDPHeader(buf, tt.rsv, addr)
 
 			if !bytes.Equal(result, tt.expected) {
-				t.Errorf("AppendSocks5UDPHeader() = %v, want %v", result, tt.expected)
+				t.Errorf(
+					"AppendSocks5UDPHeader() = %v, want %v",
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -122,7 +137,26 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 				buf = append(buf, 0)                        // FRAG=0
 				buf = append(buf, byte(protocol.IP6Addr))   // ATYP=IPv6
 				// IPv6: 2001:db8::1
-				buf = append(buf, []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}...)
+				buf = append(
+					buf,
+					[]byte{
+						0x20,
+						0x01,
+						0x0d,
+						0xb8,
+						0,
+						0,
+						0,
+						0,
+						0,
+						0,
+						0,
+						0,
+						0,
+						0,
+						0,
+						1,
+					}...)
 				buf = binary.BigEndian.AppendUint16(buf, 443) // PORT
 				buf = append(buf, []byte("https data")...)    // payload
 
@@ -195,8 +229,11 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 			setupConn: func() protocol.PacketConn {
 				// First packet with FRAG != 0 (should be skipped)
 				buf1 := make([]byte, 0, 1024)
-				buf1 = binary.BigEndian.AppendUint16(buf1, 0)  // RSV=0
-				buf1 = append(buf1, 1)                         // FRAG=1 (fragmented)
+				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
+				buf1 = append(
+					buf1,
+					1,
+				) // FRAG=1 (fragmented)
 				buf1 = append(buf1, byte(protocol.IP4Addr))    // ATYP=IPv4
 				buf1 = append(buf1, []byte{192, 168, 1, 1}...) // IPv4
 				buf1 = binary.BigEndian.AppendUint16(buf1, 80) // PORT
@@ -214,7 +251,10 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 				conn := &MockPacketConn{
 					Packets: []Packet{
 						{
-							Addr:    NetAddr{Addr: "192.168.1.1:80", Net: "udp"},
+							Addr: NetAddr{
+								Addr: "192.168.1.1:80",
+								Net:  "udp",
+							},
 							Payload: buf1,
 						},
 						{
@@ -236,7 +276,10 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 			setupConn: func() protocol.PacketConn {
 				// First packet with RSV != 0 (should be skipped)
 				buf1 := make([]byte, 0, 1024)
-				buf1 = binary.BigEndian.AppendUint16(buf1, 1)  // RSV=1 (not zero)
+				buf1 = binary.BigEndian.AppendUint16(
+					buf1,
+					1,
+				) // RSV=1 (not zero)
 				buf1 = append(buf1, 0)                         // FRAG=0
 				buf1 = append(buf1, byte(protocol.IP4Addr))    // ATYP=IPv4
 				buf1 = append(buf1, []byte{192, 168, 1, 1}...) // IPv4
@@ -255,7 +298,10 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 				conn := &MockPacketConn{
 					Packets: []Packet{
 						{
-							Addr:    NetAddr{Addr: "192.168.1.1:80", Net: "udp"},
+							Addr: NetAddr{
+								Addr: "192.168.1.1:80",
+								Net:  "udp",
+							},
 							Payload: buf1,
 						},
 						{
@@ -281,21 +327,39 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 			conn := tt.setupConn()
 			buf := make([]byte, 500) // Buffer for reading
 
-			n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(pool, conn, buf, tt.skipAddr, nil)
+			n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(
+				pool,
+				conn,
+				buf,
+				tt.skipAddr,
+				nil,
+			)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ReadSocks5UDPPacket() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf(
+					"ReadSocks5UDPPacket() error = %v, wantErr %v",
+					err,
+					tt.wantErr,
+				)
 				return
 			}
 
 			if !tt.wantErr {
 				if n != tt.wantN {
-					t.Errorf("ReadSocks5UDPPacket() n = %v, want %v", n, tt.wantN)
+					t.Errorf(
+						"ReadSocks5UDPPacket() n = %v, want %v",
+						n,
+						tt.wantN,
+					)
 				}
 
 				if !tt.skipAddr {
 					if tt.wantAddr.String() != addr.String() {
-						t.Errorf("expected addr %s but got %s", tt.wantAddr.String(), addr.String())
+						t.Errorf(
+							"expected addr %s but got %s",
+							tt.wantAddr.String(),
+							addr.String(),
+						)
 					}
 				}
 			}
@@ -318,12 +382,28 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 				payload := []byte("tcp tun payload")
 				// Create TUN packet: RSV = payload length, FRAG = GOST flag
 				buf := make([]byte, 0, 1024)
-				buf = binary.BigEndian.AppendUint16(buf, uint16(len(payload))) // RSV = payload length
-				buf = append(buf, protocol.GOST_UDP_FRAG_FLAG)                 // FRAG flag for TUN
-				buf = append(buf, byte(protocol.IP4Addr))                      // ATYP=IPv4
-				buf = append(buf, []byte{172, 16, 0, 1}...)                    // IPv4
-				buf = binary.BigEndian.AppendUint16(buf, 3306)                 // PORT (MySQL)
-				buf = append(buf, payload...)                                  // payload
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV = payload length
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag for TUN
+				buf = append(
+					buf,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf = append(
+					buf,
+					[]byte{172, 16, 0, 1}...) // IPv4
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					3306,
+				) // PORT (MySQL)
+				buf = append(
+					buf,
+					payload...) // payload
 
 				conn := &MockConn{
 					Buffer: *bytes.NewBuffer(buf),
@@ -342,13 +422,27 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			setupConn: func() net.Conn {
 				payload := []byte("ipv6 tcp data")
 				buf := make([]byte, 0, 1024)
-				buf = binary.BigEndian.AppendUint16(buf, uint16(len(payload))) // RSV
-				buf = append(buf, protocol.GOST_UDP_FRAG_FLAG)                 // FRAG flag
-				buf = append(buf, byte(protocol.IP6Addr))                      // ATYP=IPv6
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf = append(
+					buf,
+					byte(protocol.IP6Addr),
+				) // ATYP=IPv6
 				// IPv6: ::1
-				buf = append(buf, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}...)
-				buf = binary.BigEndian.AppendUint16(buf, 5432) // PORT (PostgreSQL)
-				buf = append(buf, payload...)                  // payload
+				buf = append(
+					buf,
+					[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}...)
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					5432,
+				) // PORT (PostgreSQL)
+				buf = append(buf, payload...) // payload
 
 				conn := &MockConn{
 					Buffer: *bytes.NewBuffer(buf),
@@ -367,13 +461,32 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			setupConn: func() net.Conn {
 				payload := []byte("domain payload")
 				buf := make([]byte, 0, 1024)
-				buf = binary.BigEndian.AppendUint16(buf, uint16(len(payload))) // RSV
-				buf = append(buf, protocol.GOST_UDP_FRAG_FLAG)                 // FRAG flag
-				buf = append(buf, byte(protocol.FQDNAddr))                     // ATYP=FQDN
-				buf = append(buf, byte(9))                                     // Domain length
-				buf = append(buf, []byte("localhost")...)                      // Domain
-				buf = binary.BigEndian.AppendUint16(buf, 6379)                 // PORT (Redis)
-				buf = append(buf, payload...)                                  // payload
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf = append(
+					buf,
+					byte(protocol.FQDNAddr),
+				) // ATYP=FQDN
+				buf = append(
+					buf,
+					byte(9),
+				) // Domain length
+				buf = append(
+					buf,
+					[]byte("localhost")...) // Domain
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					6379,
+				) // PORT (Redis)
+				buf = append(
+					buf,
+					payload...) // payload
 
 				conn := &MockConn{
 					Buffer: *bytes.NewBuffer(buf),
@@ -392,12 +505,28 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			setupConn: func() net.Conn {
 				payload := []byte("skip addr test")
 				buf := make([]byte, 0, 1024)
-				buf = binary.BigEndian.AppendUint16(buf, uint16(len(payload))) // RSV
-				buf = append(buf, protocol.GOST_UDP_FRAG_FLAG)                 // FRAG flag
-				buf = append(buf, byte(protocol.IP4Addr))                      // ATYP=IPv4
-				buf = append(buf, []byte{192, 168, 0, 100}...)                 // IPv4
-				buf = binary.BigEndian.AppendUint16(buf, 22)                   // PORT (SSH)
-				buf = append(buf, payload...)                                  // payload
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf = append(
+					buf,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf = append(
+					buf,
+					[]byte{192, 168, 0, 100}...) // IPv4
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					22,
+				) // PORT (SSH)
+				buf = append(
+					buf,
+					payload...) // payload
 
 				conn := &MockConn{
 					Buffer: *bytes.NewBuffer(buf),
@@ -415,22 +544,54 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 				// First packet with fragmentation (should be skipped)
 				payload1 := []byte("fragmented data")
 				buf1 := make([]byte, 0, 1024)
-				buf1 = binary.BigEndian.AppendUint16(buf1, uint16(len(payload1))) // RSV
-				buf1 = append(buf1, 0x01)                                         // FRAG=1 (fragmented, not GOST flag)
-				buf1 = append(buf1, byte(protocol.IP4Addr))                       // ATYP=IPv4
-				buf1 = append(buf1, []byte{10, 0, 0, 1}...)                       // IPv4
-				buf1 = binary.BigEndian.AppendUint16(buf1, 80)                    // PORT
-				buf1 = append(buf1, payload1...)                                  // payload
+				buf1 = binary.BigEndian.AppendUint16(
+					buf1,
+					uint16(len(payload1)), //nolint
+				) // RSV
+				buf1 = append(
+					buf1,
+					0x01,
+				) // FRAG=1 (fragmented, not GOST flag)
+				buf1 = append(
+					buf1,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf1 = append(
+					buf1,
+					[]byte{10, 0, 0, 1}...) // IPv4
+				buf1 = binary.BigEndian.AppendUint16(
+					buf1,
+					80,
+				) // PORT
+				buf1 = append(
+					buf1,
+					payload1...) // payload
 
 				// Second valid packet
 				payload2 := []byte("valid tcp data")
 				buf2 := make([]byte, 0, 1024)
-				buf2 = binary.BigEndian.AppendUint16(buf2, uint16(len(payload2))) // RSV
-				buf2 = append(buf2, protocol.GOST_UDP_FRAG_FLAG)                  // FRAG flag
-				buf2 = append(buf2, byte(protocol.IP4Addr))                       // ATYP=IPv4
-				buf2 = append(buf2, []byte{192, 168, 1, 10}...)                   // IPv4
-				buf2 = binary.BigEndian.AppendUint16(buf2, 8080)                  // PORT
-				buf2 = append(buf2, payload2...)                                  // payload
+				buf2 = binary.BigEndian.AppendUint16(
+					buf2,
+					uint16(len(payload2)), //nolint
+				) // RSV
+				buf2 = append(
+					buf2,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf2 = append(
+					buf2,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf2 = append(
+					buf2,
+					[]byte{192, 168, 1, 10}...) // IPv4
+				buf2 = binary.BigEndian.AppendUint16(
+					buf2,
+					8080,
+				) // PORT
+				buf2 = append(
+					buf2,
+					payload2...) // payload
 
 				// Combine both packets
 				conn := &MockConn{
@@ -450,12 +611,28 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 				// Create a payload larger than read buffer
 				largePayload := bytes.Repeat([]byte("a"), 1000)
 				buf := make([]byte, 0, 1024)
-				buf = binary.BigEndian.AppendUint16(buf, uint16(len(largePayload))) // RSV
-				buf = append(buf, protocol.GOST_UDP_FRAG_FLAG)                      // FRAG flag
-				buf = append(buf, byte(protocol.IP4Addr))                           // ATYP=IPv4
-				buf = append(buf, []byte{8, 8, 8, 8}...)                            // IPv4 (8.8.8.8)
-				buf = binary.BigEndian.AppendUint16(buf, 53)                        // PORT (DNS)
-				buf = append(buf, largePayload...)                                  // payload
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(largePayload)), //nolint
+				) // RSV
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf = append(
+					buf,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf = append(
+					buf,
+					[]byte{8, 8, 8, 8}...) // IPv4 (8.8.8.8)
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					53,
+				) // PORT (DNS)
+				buf = append(
+					buf,
+					largePayload...) // payload
 
 				conn := &MockConn{
 					Buffer: *bytes.NewBuffer(buf),
@@ -514,21 +691,38 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			conn := tt.setupConn()
 			buf := make([]byte, 500) // Buffer for reading
 
-			n, addr, err := protocol.ReadSocks5TunUDPPacket(pool, conn, buf, tt.skipAddr)
+			n, addr, err := protocol.ReadSocks5TunUDPPacket(
+				pool,
+				conn,
+				buf,
+				tt.skipAddr,
+			)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ReadSocks5UDPPacket() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf(
+					"ReadSocks5UDPPacket() error = %v, wantErr %v",
+					err,
+					tt.wantErr,
+				)
 				return
 			}
 
 			if !tt.wantErr {
 				if n != tt.wantN {
-					t.Errorf("ReadSocks5UDPPacket() n = %v, want %v", n, tt.wantN)
+					t.Errorf(
+						"ReadSocks5UDPPacket() n = %v, want %v",
+						n,
+						tt.wantN,
+					)
 				}
 
 				if !tt.skipAddr {
 					if tt.wantAddr.String() != addr.String() {
-						t.Errorf("expected addr %s but got %s", tt.wantAddr.String(), addr.String())
+						t.Errorf(
+							"expected addr %s but got %s",
+							tt.wantAddr.String(),
+							addr.String(),
+						)
 					}
 				}
 			}

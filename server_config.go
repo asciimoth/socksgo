@@ -166,13 +166,18 @@ func (s *Server) GetResolver() Resolver {
 	return s.Resolver
 }
 
-func (s *Server) ListenForAssoc(ctx context.Context, ctrl net.Conn) (assoc PacketConn, err error) {
+func (s *Server) ListenForAssoc(
+	ctx context.Context,
+	ctrl net.Conn,
+) (assoc PacketConn, err error) {
 	if s != nil && s.AssocListener != nil {
 		return s.AssocListener(ctx, ctrl)
 	}
 	la := ctrl.LocalAddr()
 	if la == nil {
-		err = fmt.Errorf("failed to guess default local addr for incoming UDP assoc connections")
+		err = fmt.Errorf(
+			"failed to guess default local addr for incoming UDP assoc connections",
+		)
 		return
 	}
 	host := la.String()

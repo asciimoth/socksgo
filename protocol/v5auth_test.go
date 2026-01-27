@@ -19,8 +19,10 @@ func runAuthHandshakeTest(
 	clientErr, serverErr error,
 ) {
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	}()
 	readyCh := make(chan any, 2)
 
 	// Server side
@@ -32,7 +34,11 @@ func runAuthHandshakeTest(
 			return
 		}
 
-		_, serverInfo, serverErr = protocol.HandleAuth(serverConn, pool, handlers)
+		_, serverInfo, serverErr = protocol.HandleAuth(
+			serverConn,
+			pool,
+			handlers,
+		)
 		readyCh <- nil
 	}()
 
@@ -120,20 +126,40 @@ func TestAuthHandshake(t *testing.T) {
 				handlers = handlers.Add(handler)
 			}
 
-			clientInfo, serverInfo, clientErr, serverErr := runAuthHandshakeTest(methods, handlers, pool)
+			clientInfo, serverInfo, clientErr, serverErr := runAuthHandshakeTest(
+				methods,
+				handlers,
+				pool,
+			)
 
 			if fmt.Sprintf("%s", clientErr) != fmt.Sprintf("%s", tt.clientErr) {
-				t.Errorf("client err %s while expected %s", clientErr, tt.clientErr)
+				t.Errorf(
+					"client err %s while expected %s",
+					clientErr,
+					tt.clientErr,
+				)
 			}
 			if fmt.Sprintf("%s", serverErr) != fmt.Sprintf("%s", tt.serverErr) {
-				t.Errorf("server err %s while expected %s", serverErr, tt.serverErr)
+				t.Errorf(
+					"server err %s while expected %s",
+					serverErr,
+					tt.serverErr,
+				)
 			}
 
 			if clientErr == nil && clientInfo.Code != tt.code {
-				t.Errorf("expected client auth code %v, got %v", tt.code, clientInfo.Code)
+				t.Errorf(
+					"expected client auth code %v, got %v",
+					tt.code,
+					clientInfo.Code,
+				)
 			}
 			if serverErr == nil && serverInfo.Code != tt.code {
-				t.Errorf("expected server auth code %v, got %v", tt.code, serverInfo.Code)
+				t.Errorf(
+					"expected server auth code %v, got %v",
+					tt.code,
+					serverInfo.Code,
+				)
 			}
 		})
 	}

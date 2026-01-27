@@ -29,22 +29,31 @@ func (c *Client) request4(
 	}
 
 	var request []byte
-	request, err = protocol.BuildSocsk4TCPRequest(cmd, address, c.Auth.User(), c.Pool)
+	request, err = protocol.BuildSocsk4TCPRequest(
+		cmd,
+		address,
+		c.Auth.User(),
+		c.Pool,
+	)
+	if err != nil {
+		_ = proxy.Close()
+		return
+	}
 	defer bufpool.PutBuffer(c.Pool, request)
 
 	_, err = io.Copy(proxy, bytes.NewReader(request))
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return
 	}
 
 	stat, addr, err = protocol.ReadSocks4TCPReply(proxy)
 	if err != nil {
-		proxy.Close()
+		_ = proxy.Close()
 		return
 	}
 	if !stat.Ok() {
-		proxy.Close()
+		_ = proxy.Close()
 		err = RejectdError{stat}
 		return
 	}
@@ -74,7 +83,7 @@ func (l *clientListener4) Close() error {
 func (l *clientListener4) Accept() (net.Conn, error) {
 	stat, _, err := protocol.ReadSocks4TCPReply(l.conn)
 	if err != nil {
-		l.conn.Close()
+		_ = l.conn.Close()
 	}
 	if !stat.Ok() {
 		return nil, RejectdError{stat}

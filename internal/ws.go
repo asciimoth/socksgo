@@ -19,7 +19,7 @@ func (c *WSConn) Read(b []byte) (n int, err error) {
 	if len(c.buf) == 0 {
 		var typ int
 		for {
-			typ, c.buf, err = c.Conn.ReadMessage()
+			typ, c.buf, err = c.ReadMessage()
 			if err != nil {
 				err = io.EOF
 				_ = c.Close()

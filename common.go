@@ -26,8 +26,11 @@ type PacketConn interface {
 }
 
 type Dialer = func(ctx context.Context, network, address string) (net.Conn, error)
+
 type PacketDialer = func(ctx context.Context, network, address string) (PacketConn, error)
+
 type Listener = func(ctx context.Context, network, address string) (net.Listener, error)
+
 type PacketListener = func(ctx context.Context, network, address string) (PacketConn, error)
 type Resolver interface {
 	LookupIP(ctx context.Context, network, address string) ([]net.IP, error)
@@ -122,7 +125,10 @@ func BuildFilter(str string) Filter {
 			if ip := net.ParseIP(host); ip != nil {
 				ips = append(ips, ipEntry{ip: ip, hasPort: true, port: port})
 			} else {
-				hosts = append(hosts, hostEntry{pattern: host, hasPort: true, port: port})
+				hosts = append(
+					hosts,
+					hostEntry{pattern: host, hasPort: true, port: port},
+				)
 			}
 			continue
 		}
@@ -142,15 +148,8 @@ func BuildFilter(str string) Filter {
 		if h, p, err := net.SplitHostPort(address); err == nil {
 			host, port = h, p
 		} else {
-			// If address contains >=2 ':' and not bracketed -> likely IPv6 literal without port
-			if strings.Count(address, ":") >= 2 && !strings.HasPrefix(address, "[") {
-				host = address
-				port = ""
-			} else {
-				// else treat whole address as host (no port)
-				host = address
-				port = ""
-			}
+			host = address
+			port = ""
 		}
 
 		// normalize host for comparisons

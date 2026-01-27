@@ -20,12 +20,15 @@ func (e UnknownAuthVerError) Error() string {
 	return fmt.Sprintf("unknown socks auth version %d", e.Version)
 }
 
-type UnsupportedAuthMethod struct {
+type UnsupportedAuthMethodError struct {
 	Method AuthMethodCode
 }
 
-func (e UnsupportedAuthMethod) Error() string {
-	return fmt.Sprintf("socks server select unsupported auth method %d", e.Method)
+func (e UnsupportedAuthMethodError) Error() string {
+	return fmt.Sprintf(
+		"socks server select unsupported auth method %d",
+		e.Method,
+	)
 }
 
 type UnknownAddrTypeError struct {

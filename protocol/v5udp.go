@@ -100,7 +100,7 @@ func WriteSocks5TUNUDPPacket(
 	if len(data) > 65535 {
 		data = data[:65535]
 	}
-	rsv := uint16(len(data))
+	rsv := uint16(len(data)) //nolint
 
 	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
 	defer bufpool.PutBuffer(pool, buf)
@@ -148,7 +148,7 @@ loop:
 			continue
 		}
 
-		start := 0 // Place in pkg where payload starts
+		var start int // Place in pkg where payload starts
 		switch AddrType(buf[3]) {
 		case IP4Addr:
 			if n < 10 {
@@ -263,7 +263,10 @@ func ReadSocks5TunUDPPacket(
 			}
 			if !skipAddr && !skip {
 				port := binary.BigEndian.Uint16(hbuf[ln : ln+2])
-				host := net.JoinHostPort(string(hbuf[:ln]), strconv.Itoa(int(port)))
+				host := net.JoinHostPort(
+					string(hbuf[:ln]),
+					strconv.Itoa(int(port)),
+				)
 				addr = AddrFromFQDN(host, port, conn.LocalAddr().Network())
 			}
 		default:
@@ -302,7 +305,7 @@ type Socks5UDPClientAssoc struct {
 func NewSocks5UDPClientAssoc(
 	conn PacketConn, addr *Addr, pool bufpool.Pool, onc func(),
 ) *Socks5UDPClientAssoc {
-	raddr := Addr{}
+	var raddr Addr
 	if addr != nil {
 		raddr = addr.Copy()
 	} else {
@@ -343,7 +346,13 @@ func (uc *Socks5UDPClientAssoc) RemoteAddr() net.Addr {
 }
 
 func (uc *Socks5UDPClientAssoc) Read(b []byte) (n int, err error) {
-	n, _, _, err = ReadSocks5AssocUDPPacket(uc.Pool, uc.PacketConn, b, true, nil)
+	n, _, _, err = ReadSocks5AssocUDPPacket(
+		uc.Pool,
+		uc.PacketConn,
+		b,
+		true,
+		nil,
+	)
 	return
 }
 
@@ -362,15 +371,31 @@ func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
 	return n, nil
 }
 
-func (uc *Socks5UDPClientAssoc) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	n, addr, _, err = ReadSocks5AssocUDPPacket(uc.Pool, uc.PacketConn, p, false, nil)
+func (uc *Socks5UDPClientAssoc) ReadFrom(
+	p []byte,
+) (n int, addr net.Addr, err error) {
+	n, addr, _, err = ReadSocks5AssocUDPPacket(
+		uc.Pool,
+		uc.PacketConn,
+		p,
+		false,
+		nil,
+	)
 	return
 }
 
-func (uc *Socks5UDPClientAssoc) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
+func (uc *Socks5UDPClientAssoc) ReadFromUDP(
+	b []byte,
+) (n int, addr *net.UDPAddr, err error) {
 	for {
 		var ad Addr
-		n, ad, _, err = ReadSocks5AssocUDPPacket(uc.Pool, uc.PacketConn, b, false, nil)
+		n, ad, _, err = ReadSocks5AssocUDPPacket(
+			uc.Pool,
+			uc.PacketConn,
+			b,
+			false,
+			nil,
+		)
 		if err != nil {
 			return
 		}
@@ -381,19 +406,29 @@ func (uc *Socks5UDPClientAssoc) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr,
 	}
 }
 
-func (uc *Socks5UDPClientAssoc) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (uc *Socks5UDPClientAssoc) WriteTo(
+	p []byte,
+	addr net.Addr,
+) (n int, err error) {
 	return WriteSocksAssoc5UDPPacket(
 		uc.Pool, uc.PacketConn, nil, AddrFromNetAddr(addr), p,
 	)
 }
 
-func (uc *Socks5UDPClientAssoc) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+func (uc *Socks5UDPClientAssoc) WriteToUDP(
+	b []byte,
+	addr *net.UDPAddr,
+) (int, error) {
 	return WriteSocksAssoc5UDPPacket(
 		uc.Pool, uc.PacketConn, nil, AddrFromUDPAddr(addr), b,
 	)
 }
 
-func (uc *Socks5UDPClientAssoc) WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error) {
+func (uc *Socks5UDPClientAssoc) WriteToIpPort(
+	p []byte,
+	ip net.IP,
+	port uint16,
+) (n int, err error) {
 	return WriteSocksAssoc5UDPPacket(
 		uc.Pool, uc.PacketConn, nil, AddrFromIP(ip, port, "udp"), p,
 	)
@@ -410,7 +445,7 @@ type Socks5UDPClientTUN struct {
 func NewSocks5UDPClientTUN(
 	conn net.Conn, laddr Addr, raddr *Addr, pool bufpool.Pool,
 ) *Socks5UDPClientTUN {
-	nraddr := Addr{}
+	var nraddr Addr
 	if raddr != nil {
 		nraddr = raddr.Copy()
 	} else {
@@ -468,8 +503,12 @@ func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
 
 	buf := bufpool.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
 	defer bufpool.PutBuffer(uc.Pool, buf)
-	buf = binary.BigEndian.AppendUint16(buf, uint16(len(b))) // RSV
-	buf = append(buf, uc.DefaultHeader[2:]...)               // Header without RSV
+	buf = binary.BigEndian.AppendUint16(
+		buf, uint16(len(b)), //nolint
+	) // RSV
+	buf = append(
+		buf,
+		uc.DefaultHeader[2:]...) // Header without RSV
 	buf = append(buf, b...)
 
 	n, err = uc.Conn.Write(buf)
@@ -481,11 +520,15 @@ func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
 	return n, nil
 }
 
-func (uc *Socks5UDPClientTUN) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+func (uc *Socks5UDPClientTUN) ReadFrom(
+	p []byte,
+) (n int, addr net.Addr, err error) {
 	return ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, p, false)
 }
 
-func (uc *Socks5UDPClientTUN) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
+func (uc *Socks5UDPClientTUN) ReadFromUDP(
+	b []byte,
+) (n int, addr *net.UDPAddr, err error) {
 	for {
 		var ad Addr
 		n, ad, err = ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, b, false)
@@ -499,19 +542,29 @@ func (uc *Socks5UDPClientTUN) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, e
 	}
 }
 
-func (uc *Socks5UDPClientTUN) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (uc *Socks5UDPClientTUN) WriteTo(
+	p []byte,
+	addr net.Addr,
+) (n int, err error) {
 	return WriteSocks5TUNUDPPacket(
 		uc.Pool, uc.Conn, AddrFromNetAddr(addr), p,
 	)
 }
 
-func (uc *Socks5UDPClientTUN) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+func (uc *Socks5UDPClientTUN) WriteToUDP(
+	b []byte,
+	addr *net.UDPAddr,
+) (int, error) {
 	return WriteSocks5TUNUDPPacket(
 		uc.Pool, uc.Conn, AddrFromUDPAddr(addr), b,
 	)
 }
 
-func (uc *Socks5UDPClientTUN) WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error) {
+func (uc *Socks5UDPClientTUN) WriteToIpPort(
+	p []byte,
+	ip net.IP,
+	port uint16,
+) (n int, err error) {
 	return WriteSocks5TUNUDPPacket(
 		uc.Pool, uc.Conn, AddrFromIP(ip, port, "udp"), p,
 	)
@@ -534,15 +587,26 @@ func ProxySocks5UDPAssoc(
 	// Possibly the worst code I've ever written
 	go func() {
 		// assoc -> proxy
-		defer ctrl.Close()
+		defer func() { _ = ctrl.Close() }()
 		var clientUDPAddr net.Addr
 		ctrlAddr := ctrl.RemoteAddr()
 		for {
 			deadline := time.Now().Add(timeOut)
-			assoc.SetReadDeadline(deadline)
-			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(pool, assoc, assoc2proxy, false, clientUDPAddr)
+			err := assoc.SetReadDeadline(deadline)
 			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				done <- err
+				return
+			}
+			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(
+				pool,
+				assoc,
+				assoc2proxy,
+				false,
+				clientUDPAddr,
+			)
+			if err != nil {
+				var ne net.Error
+				if errors.As(err, &ne) && ne.Timeout() {
 					err = errors.Join(ErrUDPAssocTimeout, err)
 				}
 				done <- err
@@ -557,7 +621,7 @@ func ProxySocks5UDPAssoc(
 				clientUDPAddr = incAddr
 				go func() {
 					// assoc <- proxy
-					defer ctrl.Close()
+					defer func() { _ = ctrl.Close() }()
 					for {
 						n, addr, err := proxy.ReadFrom(proxy2assoc)
 						if err != nil {
@@ -565,7 +629,11 @@ func ProxySocks5UDPAssoc(
 							return
 						}
 						_, err = WriteSocksAssoc5UDPPacket(
-							pool, assoc, clientUDPAddr, AddrFromNetAddr(addr), proxy2assoc[:n],
+							pool,
+							assoc,
+							clientUDPAddr,
+							AddrFromNetAddr(addr),
+							proxy2assoc[:n],
 						)
 						if err != nil {
 							done <- err
@@ -574,7 +642,7 @@ func ProxySocks5UDPAssoc(
 					}
 				}()
 			}
-			if binded {
+			if binded { //nolint nestif
 				_, err = proxy.Write(assoc2proxy[:n])
 			} else {
 				if addr.IsUnspecified() && defaultAddr != nil {
@@ -600,8 +668,8 @@ func ProxySocks5UDPAssoc(
 	}()
 
 	internal.WaitForClose(ctrl)
-	assoc.Close()
-	proxy.Close()
+	_ = assoc.Close()
+	_ = proxy.Close()
 
 	return internal.JoinNetErrors(<-done, <-done)
 }
@@ -621,8 +689,10 @@ func ProxySocks5UDPTun(
 
 	go func() {
 		// tun -> proxy
-		defer tun.Close()
-		defer proxy.Close()
+		defer func() {
+			_ = tun.Close()
+			_ = proxy.Close()
+		}()
 
 		for {
 			n, addr, err := ReadSocks5TunUDPPacket(pool, tun, tun2proxy, false)
@@ -630,7 +700,7 @@ func ProxySocks5UDPTun(
 				done <- err
 				return
 			}
-			if binded {
+			if binded { //nolint nestif
 				_, err = proxy.Write(tun2proxy[:n])
 			} else {
 				if addr.IsUnspecified() && defaultAddr != nil {
@@ -669,8 +739,8 @@ func ProxySocks5UDPTun(
 		}
 	}
 
-	tun.Close()
-	proxy.Close()
+	_ = tun.Close()
+	_ = proxy.Close()
 
 	return internal.JoinNetErrors(err, <-done)
 }

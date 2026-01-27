@@ -13,7 +13,12 @@ import (
 	"github.com/asciimoth/socksgo"
 )
 
-func torResolve(t *testing.T, v string, proxy, req string, rev bool) (string, error) {
+func torResolve(
+	t *testing.T,
+	v string,
+	proxy, req string,
+	rev bool,
+) (string, error) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

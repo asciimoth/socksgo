@@ -16,8 +16,8 @@ func BuildSocsk4TCPRequest(
 ) (request []byte, err error) {
 	if addr.Type == IP4Addr {
 		// Socks4
-		request = bufpool.GetBuffer(pool, 9+len(user))[:0]
-		request = append(request, 4) // Socks version
+		request = bufpool.GetBuffer(pool, 9+len(user))[:0] //nolint mnd
+		request = append(request, 4)                       //nolint mnd
 		request = append(request, byte(cmd))
 		request = binary.BigEndian.AppendUint16(request, addr.Port)
 		request = append(request, addr.ToIP().To4()...)
@@ -31,7 +31,7 @@ func BuildSocsk4TCPRequest(
 	}
 	host := addr.ToFQDN() // String representation
 	request = bufpool.GetBuffer(pool, 10+len(user)+len(host))[:0]
-	request = append(request, 4) // Socks version
+	request = append(request, 4) //nolint mnd
 	request = append(request, byte(cmd))
 	request = binary.BigEndian.AppendUint16(request, addr.Port)
 	request = append(request, 0, 0, 0, 1) // inadmissible addr
@@ -59,7 +59,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	defer bufpool.PutBuffer(pool, buf)
 	user, err = internal.ReadNullTerminatedString(reader, buf)
 	if err != nil {
-		if errors.Is(err, internal.TooLongStringErr) {
+		if errors.Is(err, internal.ErrTooLongString) {
 			err = ErrTooLongUser
 		}
 		return
@@ -70,7 +70,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 		var fqdn string
 		fqdn, err = internal.ReadNullTerminatedString(reader, buf)
 		if err != nil {
-			if errors.Is(err, internal.TooLongStringErr) {
+			if errors.Is(err, internal.ErrTooLongString) {
 				err = ErrTooLongUser
 			}
 			return
@@ -90,10 +90,10 @@ func BuildSocks4TCPReply(
 ) (request []byte) {
 	ip := addr.ToIP().To4()
 	if ip == nil {
-		ip = net.IPv4(0, 0, 0, 0).To4()
+		_ = net.IPv4(0, 0, 0, 0).To4()
 	}
-	request = bufpool.GetBuffer(pool, 9)[:0]
-	request = append(request, 0) // Reply ver
+	request = bufpool.GetBuffer(pool, 9)[:0] //nolint mnd
+	request = append(request, 0)             // Reply ver
 	request = append(request, byte(stat.To4()))
 	request = binary.BigEndian.AppendUint16(request, addr.Port)
 	request = append(request, addr.ToIP().To4()...)
