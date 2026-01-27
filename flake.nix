@@ -21,6 +21,7 @@
         pre-commit-check = pre-commit-hooks.lib.${system}.run {
           src = ./.;
           hooks = {
+            gotest.enable = true;
             commitizen.enable = true;
             typos.enable = true;
             typos-commit = {
