@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/asciimoth/bufpool"
@@ -395,4 +396,284 @@ func contains(s, substr string) bool {
 			}
 			return false
 		}())
+}
+
+func TestBuildSocks5TCPReply(t *testing.T) {
+	tests := []struct {
+		name     string
+		stat     protocol.ReplyStatus
+		addr     protocol.Addr
+		wantErr  bool
+		errMsg   string
+		expected []byte
+	}{
+		{
+			name: "IPv4 SuccReply",
+			stat: protocol.SuccReply,
+			addr: protocol.AddrFromIP(net.ParseIP("192.168.1.1"), 8080, ""),
+			expected: []byte{
+				0x05,           // SOCKS version
+				0x00,           // Status
+				0x00,           // Reserved
+				0x01,           // IPv4 address type
+				192, 168, 1, 1, // IP address
+				0x1F, 0x90, // Port 8080
+			},
+		},
+		{
+			name: "IPv6 Fail",
+			stat: protocol.FailReply,
+			addr: protocol.AddrFromIP(net.ParseIP("2001:db8::1"), 443, ""),
+			expected: []byte{
+				0x05,                   // SOCKS version
+				0x01,                   // Stataus
+				0x00,                   // Reserved
+				0x04,                   // IPv6 address type
+				0x20, 0x01, 0x0d, 0xb8, // IPv6 address
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x01,
+				0x01, 0xBB, // Port 443
+			},
+		},
+		{
+			name: "FQDN Fail",
+			stat: protocol.FailReply,
+			addr: protocol.AddrFromFQDN("example.com", 80, ""),
+			expected: []byte{
+				0x05, // SOCKS version
+				0x01, // Status
+				0x00, // Reserved
+				0x03, // Domain name address type
+				11,   // Domain name length
+				'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+				0x00, 0x50, // Port 80
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
+			got, err := protocol.BuildSocks5TCPReply(tt.stat, tt.addr, pool)
+			defer bufpool.PutBuffer(pool, got)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("BuildSocks5TCPReply() expected error, got nil")
+				}
+				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+					t.Errorf(
+						"BuildSocks5TCPReply() error = %v, want containing %v",
+						err,
+						tt.errMsg,
+					)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("BuildSocks5TCPReply() unexpected error: %v", err)
+				return
+			}
+
+			if !bytes.Equal(got, tt.expected) {
+				t.Errorf(
+					"BuildSocks5TCPReply() = %v, want %v",
+					got,
+					tt.expected,
+				)
+			}
+		})
+	}
+}
+
+func TestReadSocks5TCPReply(t *testing.T) {
+	tests := []struct {
+		name      string
+		data      []byte // Data WITHOUT the first version byte
+		wantReply protocol.ReplyStatus
+		wantAddr  string // Using Addr.String() format for comparison
+		wantErr   bool
+	}{
+		{
+			name: "IPv4 Granted",
+			data: []byte{
+				0x05, // SOCKS version
+				90,   // Granted
+				0x00, // Reserved
+				0x01, // IPv4 address type
+				192, 168, 1, 1,
+				0x1F, 0x90, // Port 8080
+			},
+			wantReply: protocol.SuccReply,
+			wantAddr:  "192.168.1.1:8080",
+		},
+		{
+			name: "IPv6 SuccReply",
+			data: []byte{
+				0x05, // SOCKS version
+				0x00, // SuccReply
+				0x00, // Reserved
+				0x04, // IPv6 address type
+				0x20, 0x01, 0x0d, 0xb8,
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x01,
+				0x01, 0xBB, // Port 443
+			},
+			wantReply: protocol.SuccReply,
+			wantAddr:  "[2001:db8::1]:443",
+		},
+		{
+			name: "FQDN Fail",
+			data: []byte{
+				0x05, // SOCKS version
+				0x01, // Fail
+				0x00, // Reserved
+				0x03, // Domain name address type
+				11,   // Domain name length
+				'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+				0x00, 0x50, // Port 80
+			},
+			wantReply: protocol.FailReply,
+			wantAddr:  "example.com:80",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
+			reader := bytes.NewReader(tt.data)
+			rply, addr, err := protocol.ReadSocks5TCPReply(reader, pool)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ReadSocks5TCPReply() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ReadSocks5TCPReply() unexpected error: %v", err)
+				return
+			}
+
+			if rply != tt.wantReply {
+				t.Errorf(
+					"ReadSocks5TCPReply() cmd = %v, want %v",
+					rply,
+					tt.wantReply,
+				)
+			}
+
+			if addr.String() != tt.wantAddr {
+				t.Errorf(
+					"ReadSocks5TCPReply() addr = %v, want %v",
+					addr.String(),
+					tt.wantAddr,
+				)
+			}
+		})
+	}
+}
+
+func TestReadSocks5TCPRequestErrors(t *testing.T) {
+	t.Run("Wrong Ver", func(t *testing.T) {
+		pool := bufpool.NewTestDebugPool(t)
+		defer pool.Close()
+
+		a, b := net.Pipe()
+		defer func() {
+			_ = a.Close()
+			_ = b.Close()
+		}()
+		go func() {
+			defer func() { _ = b.Close() }()
+			_, _ = io.Copy(b, bytes.NewReader([]byte{42, 42, 42, 42}))
+		}()
+		go func() {
+			for {
+				_, err := b.Read([]byte{0})
+				if err != nil {
+					return
+				}
+			}
+		}()
+		_, _, err := protocol.ReadSocks5TCPRequest(a, pool)
+		exp := protocol.WrongProtocolVerError{42}
+		if err.Error() != exp.Error() {
+			t.Fatal(err)
+		}
+	})
+	t.Run("IPv6 read err", func(t *testing.T) {
+		pool := bufpool.NewTestDebugPool(t)
+		defer pool.Close()
+
+		a, b := net.Pipe()
+		defer func() {
+			_ = a.Close()
+			_ = b.Close()
+		}()
+		go func() {
+			defer func() { _ = b.Close() }()
+			_, _ = io.Copy(b, bytes.NewReader([]byte{
+				0x05, // SOCKS version
+				0x02, // BIND command
+				0x00, // Reserved
+				0x04, // Partial IPv6 address
+				0x20, 0x01, 0x0d, 0xb8,
+				0x00, 0x00, 0x00, 0x00,
+			}))
+		}()
+		go func() {
+			for {
+				_, err := b.Read([]byte{0})
+				if err != nil {
+					return
+				}
+			}
+		}()
+		_, _, err := protocol.ReadSocks5TCPRequest(a, pool)
+		if !strings.Contains(err.Error(), "EOF") {
+			t.Fatalf("got %s while expecting EOF", err)
+		}
+	})
+	t.Run("FQDN read err", func(t *testing.T) {
+		pool := bufpool.NewTestDebugPool(t)
+		defer pool.Close()
+
+		a, b := net.Pipe()
+		defer func() {
+			_ = a.Close()
+			_ = b.Close()
+		}()
+		go func() {
+			defer func() { _ = b.Close() }()
+			_, _ = io.Copy(b, bytes.NewReader([]byte{
+				0x05,                              // SOCKS version
+				0x03,                              // UDP ASSOCIATE command
+				0x00,                              // Reserved
+				0x03,                              // Domain name address type
+				11,                                // Domain name length
+				'e', 'x', 'a', 'm', 'p', 'l', 'e', // Partial fqdn
+			}))
+		}()
+		go func() {
+			for {
+				_, err := b.Read([]byte{0})
+				if err != nil {
+					return
+				}
+			}
+		}()
+		_, _, err := protocol.ReadSocks5TCPRequest(a, pool)
+		if !strings.Contains(err.Error(), "EOF") {
+			t.Fatalf("got %s while expecting EOF", err)
+		}
+	})
 }

@@ -622,3 +622,53 @@ func TestAddrsEq(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteAllSlices(t *testing.T) {
+	t.Run("Ok", func(t *testing.T) {
+		r, w := io.Pipe()
+		defer func() {
+			_ = r.Close()
+			_ = w.Close()
+		}()
+		go func() {
+			defer func() { _ = r.Close() }()
+			for {
+				_, err := r.Read([]byte{0})
+				if err != nil {
+					return
+				}
+			}
+		}()
+		hello := []byte("hello ")
+		world := []byte("world")
+		n, err := internal.WriteAllSlices(w, hello, world)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != int64(len(hello)+len(world)) {
+			t.Fatal(n, int64(len(hello)+len(world)))
+		}
+	})
+	t.Run("Err", func(t *testing.T) {
+		r, w := io.Pipe()
+		defer func() {
+			_ = r.Close()
+			_ = w.Close()
+		}()
+		go func() {
+			defer func() { _ = r.Close() }()
+			for range 5 {
+				_, err := r.Read([]byte{0})
+				if err != nil {
+					return
+				}
+			}
+		}()
+		hello := []byte("hello ")
+		world := []byte("world")
+		_, err := internal.WriteAllSlices(w, hello, world)
+		if err.Error() != "io: read/write on closed pipe" {
+			t.Fatal(err)
+		}
+	})
+}

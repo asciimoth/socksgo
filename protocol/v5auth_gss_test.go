@@ -1,7 +1,10 @@
 package protocol_test
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"testing"
 
@@ -43,6 +46,19 @@ func (m *MockGSSClient) InitSecContext(
 
 func (m *MockGSSClient) DeleteSecContext() error { m.step = 0; return nil }
 
+type ErrGSSClient struct{}
+
+func (m *ErrGSSClient) InitSecContext(
+	_ string,
+	_ []byte,
+) ([]byte, bool, error) {
+	return nil, false, errors.New("TEST ERROR")
+}
+
+func (m *ErrGSSClient) DeleteSecContext() error {
+	return errors.New("TEST ERROR")
+}
+
 type MockGSSServer struct {
 	Rounds    int
 	Principal string
@@ -71,11 +87,23 @@ func (m *MockGSSServer) AcceptSecContext(
 
 func (m *MockGSSServer) DeleteSecContext() error { m.step = 0; return nil }
 
+type ErrGSSServer struct{}
+
+func (m *ErrGSSServer) AcceptSecContext(
+	_ []byte,
+) ([]byte, string, bool, error) {
+	return nil, "", false, errors.New("TEST ERROR")
+}
+
+func (m *ErrGSSServer) DeleteSecContext() error {
+	return errors.New("TEST ERROR")
+}
+
 func runGSSAuthTest(
 	method protocol.GSSAuthMethod, handler protocol.GSSAuthHandler,
 	pool bufpool.Pool,
 ) (
-	clientInfo, serverInfo protocol.AuthInfo,
+	clientInfo, serverInfo protocol.AuthInfo, //nolint
 	clientErr, serverErr error,
 ) {
 	clientConn, serverConn := net.Pipe()
@@ -89,12 +117,18 @@ func runGSSAuthTest(
 	// Server side
 	go func() {
 		_, serverInfo, serverErr = handler.HandleAuth(serverConn, pool)
+		if serverErr != nil {
+			_ = serverConn.Close()
+		}
 		readyCh <- nil
 	}()
 
 	// Client side
 	go func() {
 		_, clientInfo, clientErr = method.RunAuth(clientConn, pool)
+		if clientErr != nil {
+			_ = clientConn.Close()
+		}
 		readyCh <- nil
 	}()
 
@@ -102,6 +136,81 @@ func runGSSAuthTest(
 		<-readyCh
 	}
 	return
+}
+
+func TestGSSErrClient(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	clientGSS := &ErrGSSClient{}
+	serverGSS := &MockGSSServer{Rounds: 10, Principal: "client@mock"}
+
+	_, _, cE, sE := runGSSAuthTest(
+		protocol.GSSAuthMethod{
+			Client:     clientGSS,
+			TargetName: "socks@server",
+		},
+		protocol.GSSAuthHandler{Server: serverGSS},
+		nil,
+	)
+
+	if cE.Error() != "GSS init failed: TEST ERROR" {
+		t.Error(cE)
+	}
+
+	if sE.Error() != "EOF" {
+		t.Error(sE)
+	}
+}
+
+func TestGSSErrServer(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	clientGSS := &MockGSSClient{Rounds: 10}
+	serverGSS := &ErrGSSServer{}
+
+	_, _, cE, sE := runGSSAuthTest(
+		protocol.GSSAuthMethod{
+			Client:     clientGSS,
+			TargetName: "socks@server",
+		},
+		protocol.GSSAuthHandler{Server: serverGSS},
+		nil,
+	)
+
+	if cE.Error() != "EOF" {
+		t.Error(cE)
+	}
+
+	if sE.Error() != "GSS accept failed: TEST ERROR" {
+		t.Error(sE)
+	}
+}
+
+func TestGSSErrBoth(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	clientGSS := &ErrGSSClient{}
+	serverGSS := &ErrGSSServer{}
+
+	_, _, cE, sE := runGSSAuthTest(
+		protocol.GSSAuthMethod{
+			Client:     clientGSS,
+			TargetName: "socks@server",
+		},
+		protocol.GSSAuthHandler{Server: serverGSS},
+		nil,
+	)
+
+	if cE.Error() != "GSS init failed: TEST ERROR" {
+		t.Error(cE)
+	}
+
+	if sE.Error() != "EOF" {
+		t.Error(sE)
+	}
 }
 
 func TestGSSAuth(t *testing.T) {
@@ -128,5 +237,219 @@ func TestGSSAuth(t *testing.T) {
 		if sE != nil {
 			t.Errorf("GSS Server failed: %v", sE)
 		}
+	}
+}
+
+func TestGSSClientClosedConn(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	_ = a.Close()
+	_ = b.Close()
+	clientGSS := &MockGSSClient{Rounds: 42}
+	method := protocol.GSSAuthMethod{
+		Client:     clientGSS,
+		TargetName: "socks@server",
+	}
+	_, _, err := method.RunAuth(a, pool)
+	if err.Error() != "io: read/write on closed pipe" {
+		t.Error(err)
+	}
+}
+
+func TestGSSClientInvalidFrame(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for {
+			_, err := b.Write([]byte{42, 42, 42, 42})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for {
+			_, err := b.Read([]byte{0})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	clientGSS := &MockGSSClient{Rounds: 42}
+	method := protocol.GSSAuthMethod{
+		Client:     clientGSS,
+		TargetName: "socks@server",
+	}
+	_, _, err := method.RunAuth(a, pool)
+	if err.Error() != "invalid GSS frame: ver=0x2a mtyp=0x2a" {
+		t.Error(err)
+	}
+}
+
+func TestGSSClientBrokenToken(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		_, _ = io.Copy(b, bytes.NewReader([]byte{1, 1, 10 >> 8, 10 & 0xff}))
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for {
+			_, err := b.Read([]byte{0})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	clientGSS := &MockGSSClient{Rounds: 42}
+	method := protocol.GSSAuthMethod{
+		Client:     clientGSS,
+		TargetName: "socks@server",
+	}
+	_, _, err := method.RunAuth(a, pool)
+	if err.Error() != "EOF" {
+		t.Error(err)
+	}
+}
+
+func TestGSSAuthNaming(t *testing.T) {
+	method := (&protocol.GSSAuthMethod{}).Name()
+	handler := (&protocol.GSSAuthHandler{}).Name()
+
+	if method != "GSS auth" || handler != "GSS auth" {
+		t.Fatal(method, handler)
+	}
+}
+
+func TestGSSHandlerInvalidFrame(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for {
+			_, err := b.Write([]byte{42, 42, 42, 42})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for {
+			_, err := b.Read([]byte{0})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	_, _, err := handler.HandleAuth(a, pool)
+	if err.Error() != "invalid GSS frame: ver=0x2a mtyp=0x2a" {
+		t.Error(err)
+	}
+}
+
+func TestGSSHanslerBrokenToken(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		_, _ = io.Copy(b, bytes.NewReader([]byte{1, 1, 10 >> 8, 10 & 0xff}))
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for {
+			_, err := b.Read([]byte{0})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	_, _, err := handler.HandleAuth(a, pool)
+	if err.Error() != "EOF" {
+		t.Error(err)
+	}
+}
+
+func TestGSSHandlerHeaderWriteFail(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		_, _ = io.Copy(b, bytes.NewReader([]byte{1, 1, 1 >> 8, 1 & 0xff, 42}))
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		_, _ = b.Read([]byte{0})
+	}()
+	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	_, _, err := handler.HandleAuth(a, pool)
+	if err.Error() != "io: read/write on closed pipe" {
+		t.Error(err)
+	}
+}
+
+func TestGSSHandlerTookenWriteFail(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		_, _ = io.Copy(b, bytes.NewReader([]byte{1, 1, 1 >> 8, 1 & 0xff, 42}))
+	}()
+	go func() {
+		defer func() { _ = b.Close() }()
+		for range 4 {
+			_, err := b.Read([]byte{0})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	_, _, err := handler.HandleAuth(a, pool)
+	if err.Error() != "io: read/write on closed pipe" {
+		t.Error(err)
 	}
 }

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -114,13 +115,10 @@ func ClosedNetworkErrToNil(err error) error {
 		unwrapped = u
 	}
 	if unwrapped != nil {
-		if unwrapped.Error() == "use of closed network connection" {
-			return nil
-		}
-		if unwrapped.Error() == "EOF" {
-			return nil
-		}
-		if unwrapped.Error() == "io: read/write on closed pipe" {
+		str := unwrapped.Error()
+		if str == "use of closed network connection" || str == "EOF" ||
+			str == "unexpected EOF" ||
+			str == "io: read/write on closed pipe" {
 			return nil
 		}
 	}
@@ -225,4 +223,16 @@ func tcpUDPAddrEqual(aIP net.IP, aPort int, bIP net.IP, bPort int) bool {
 		return false
 	}
 	return IpEqual(aIP, bIP)
+}
+
+func WriteAllSlices(w io.Writer, slices ...[]byte) (n int64, err error) {
+	for _, slice := range slices {
+		var nw int64
+		nw, err = io.Copy(w, bytes.NewReader(slice))
+		if err != nil {
+			return
+		}
+		n += nw
+	}
+	return
 }

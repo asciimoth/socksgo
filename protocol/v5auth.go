@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,7 @@ const (
 )
 
 var (
-	defaultMethodSelectionMsg = []byte{
+	DefaultMethodSelectionMsg = []byte{
 		5, // VER
 		1, // NMETHODS
 		byte(NoAuthCode),
@@ -35,19 +36,19 @@ func (a AuthMethodCode) String() string {
 	if a >= 0x80 && a <= 0xfe {
 		return "private auth method"
 	}
+	name := "auth method no" + strconv.Itoa(int(a))
 	// Standard auth method
 	switch a {
 	case NoAuthCode:
-		return "no auth required"
+		name = "no auth required"
 	case GSSAuthCode:
-		return "GSS auth"
+		name = "GSS auth"
 	case PassAuthCode:
-		return "user-pass auth"
+		name = "user-pass auth"
 	case NoAccAuthCode:
-		return "no acceptable auth methods"
-	default:
-		return "auth method no" + strconv.Itoa(int(a))
+		name = "no acceptable auth methods"
 	}
+	return name
 }
 
 // AuthInfo provides information about successful auth like used password.
@@ -60,8 +61,13 @@ type AuthInfo struct {
 func (a AuthInfo) String() string {
 	var str strings.Builder
 	fmt.Fprintf(&str, "%d %s\n", a.Code, a.GetName())
+	pairs := make([]string, 0, len(a.Info))
 	for k, v := range a.Info {
-		fmt.Fprintf(&str, "%s: %v", k, v)
+		pairs = append(pairs, fmt.Sprintf("%s: %v", k, v)) //nolint makezero
+	}
+	sort.Strings(pairs)
+	for _, pair := range pairs {
+		_, _ = str.WriteString(pair)
 	}
 	return str.String()
 }
@@ -105,17 +111,17 @@ type AuthHandler interface {
 	HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
 }
 
-type noAuthHandler struct{}
+type NoAuthHandler struct{}
 
-func (m *noAuthHandler) Code() AuthMethodCode {
+func (m *NoAuthHandler) Code() AuthMethodCode {
 	return NoAuthCode
 }
 
-func (m *noAuthHandler) Name() string {
+func (m *NoAuthHandler) Name() string {
 	return m.Code().String()
 }
 
-func (m *noAuthHandler) HandleAuth(
+func (m *NoAuthHandler) HandleAuth(
 	conn net.Conn,
 	pool bufpool.Pool,
 ) (net.Conn, AuthInfo, error) {
@@ -153,7 +159,7 @@ func (m *AuthMethods) Add(method AuthMethod) *AuthMethods {
 	} else {
 		m.methodsMap[method.Code()] = method
 	}
-	m.rebuild()
+	m.Rebuild()
 	return m
 }
 
@@ -175,19 +181,19 @@ func (m *AuthMethods) User() string {
 func (m *AuthMethods) Clone() *AuthMethods {
 	var clone *AuthMethods
 	for _, v := range m.methodsMap {
-		clone.Add(v)
+		clone = clone.Add(v)
 	}
 	return clone
 }
 
-func (m *AuthMethods) getMsg() []byte {
+func (m *AuthMethods) GetMsg() []byte {
 	if m == nil || m.msg == nil {
-		return defaultMethodSelectionMsg
+		return DefaultMethodSelectionMsg
 	}
 	return m.msg
 }
 
-func (m *AuthMethods) rebuild() {
+func (m *AuthMethods) Rebuild() {
 	count := min(len(m.methodsMap), MAX_AUTH_METHODS_COUNT-1)
 	if count == 0 {
 		// defaultMethodSelectionMsg will be used
@@ -199,11 +205,10 @@ func (m *AuthMethods) rebuild() {
 		byte(NoAuthCode),
 	}
 	for code := range m.methodsMap {
-		if count <= 0 {
-			break
+		if count > 0 {
+			msg = append(msg, byte(code))
 		}
 		count -= 1
-		msg = append(msg, byte(code))
 	}
 	m.msg = msg
 }
@@ -212,16 +217,14 @@ type AuthHandlers struct {
 	handlers map[AuthMethodCode]AuthHandler
 }
 
-func (m *AuthHandlers) CheckSocks4User(user string) bool {
+func (m *AuthHandlers) CheckSocks4User(user string) (accept bool) {
 	handler := m.Get(PassAuthCode)
-	if handler == nil {
-		return false
+	if handler != nil {
+		if pass, ok := handler.(*PassAuthHandler); ok {
+			accept = pass.verify(user, "")
+		}
 	}
-	pass, ok := handler.(*PassAuthHandler)
-	if !ok {
-		return false
-	}
-	return pass.verify(user, "")
+	return
 }
 
 // For nil or void AuthHandlers
@@ -230,7 +233,7 @@ func (m *AuthHandlers) CheckSocks4User(user string) bool {
 func (m *AuthHandlers) Get(code AuthMethodCode) AuthHandler {
 	if m == nil || m.handlers == nil {
 		if code == NoAuthCode {
-			return &noAuthHandler{}
+			return &NoAuthHandler{}
 		}
 		if code == PassAuthCode {
 			return &PassAuthHandler{}
@@ -264,7 +267,7 @@ func RunAuth(
 ) (c net.Conn, i AuthInfo, err error) {
 	c = conn
 
-	_, err = io.Copy(conn, bytes.NewReader(methods.getMsg()))
+	_, err = io.Copy(conn, bytes.NewReader(methods.GetMsg()))
 	if err != nil {
 		return
 	}
@@ -343,10 +346,8 @@ func HandleAuth(
 	buf[0] = 5 // Ver
 	buf[1] = byte(handler.Code())
 	_, err = io.Copy(conn, bytes.NewReader(buf[:2]))
-	if err != nil {
-		return
+	if err == nil {
+		c, i, err = handler.HandleAuth(conn, pool)
 	}
-
-	c, i, err = handler.HandleAuth(conn, pool)
 	return
 }

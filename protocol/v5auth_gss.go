@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 // Static type assertion
@@ -75,10 +76,11 @@ func (m *GSSAuthMethod) RunAuth(
 				byte(len(outToken) >> 8),   //nolint mnd
 				byte(len(outToken) & 0xff), //nolint mnd
 			}
-			if _, err := conn.Write(header); err != nil {
-				return conn, info, err
-			}
-			if _, err := conn.Write(outToken); err != nil {
+			if _, err := internal.WriteAllSlices(
+				conn,
+				header,
+				outToken,
+			); err != nil {
 				return conn, info, err
 			}
 		}
@@ -134,7 +136,11 @@ func (h *GSSAuthHandler) HandleAuth(
 			return conn, info, err
 		}
 		if hdr[0] != 0x01 || hdr[1] != 0x01 {
-			return conn, info, fmt.Errorf("invalid GSS frame from client")
+			return conn, info, fmt.Errorf(
+				"invalid GSS frame: ver=0x%x mtyp=0x%x",
+				hdr[0],
+				hdr[1],
+			)
 		}
 		tokLen := int(hdr[2])<<8 | int(hdr[3])
 		clientToken := make([]byte, tokLen)
