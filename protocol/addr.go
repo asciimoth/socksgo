@@ -253,6 +253,15 @@ func (a Addr) WithDefaultHost(host string) Addr {
 	}
 }
 
+// WithDefaultAddr returns def if it is not nil and a.IsUnspecified() or
+// else returns itself.
+func (a Addr) WithDefaultAddr(def *Addr) Addr {
+	if a.IsUnspecified() && def != nil {
+		return def.Copy()
+	}
+	return a
+}
+
 // ToIP returns the net.IP representation of the address if it's an IP
 // Addr, or nil for FQDN addresses.
 func (a Addr) ToIP() net.IP {

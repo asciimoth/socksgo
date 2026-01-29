@@ -526,3 +526,19 @@ func TestAddrToUnknownNet(t *testing.T) {
 		t.Fatalf("got %s while expected unknown", addr.Network())
 	}
 }
+
+func TestWithDefaultAddr(t *testing.T) {
+	orig := protocol.AddrFromHostPort("0.0.0.0:0", "")
+	a := orig.WithDefaultAddr(nil)
+	b := orig.WithDefaultAddr(&protocol.Addr{
+		Type: protocol.IP4Addr,
+		Host: net.IPv4(127, 0, 0, 1).To4(),
+		Port: 42,
+	})
+	if !a.IsUnspecified() {
+		t.Error(a.String())
+	}
+	if b.IsUnspecified() {
+		t.Error(b.String())
+	}
+}

@@ -34,6 +34,22 @@ type PacketConn interface {
 	net.PacketConn
 }
 
+func WriteToAddrUDP(conn PacketConn, addr Addr, b []byte) (err error) {
+	if udpProxy, ok := conn.(*net.UDPConn); ok {
+		// For some fucking reason net.UDPConn.WriteTo just crashing on any
+		// net.Addr that is not *net.UDPAddr so we handling it individually
+		udpAddr := addr.ToUDP()
+		if udpAddr == nil {
+			return nil
+		}
+		_, err = udpProxy.WriteToUDP(b, udpAddr)
+	} else {
+		// For all others PacketConn implementations
+		_, err = conn.WriteTo(b, addr)
+	}
+	return
+}
+
 // For standard socks UDP ASSOC leave rsv == 0.
 // For gost's UDP TUN extension rsv == payload length
 func AppendSocks5UDPHeader(
@@ -52,9 +68,7 @@ func AppendSocks5UDPHeader(
 		buf = append(buf, ip...)
 	} else {
 		host := addr.Host
-		if len(host) > MAX_HEADER_STR_LENGTH {
-			host = host[:MAX_HEADER_STR_LENGTH]
-		}
+		host = host[:min(len(host), MAX_HEADER_STR_LENGTH)]
 		buf = append(buf, byte(len(host)))
 		buf = append(buf, host...)
 	}
@@ -106,11 +120,11 @@ func WriteSocks5TUNUDPPacket(
 
 	header := AppendSocks5UDPHeader(buf, rsv, addr)
 	_, err = io.Copy(conn, bytes.NewReader(header))
-	if err != nil {
-		return
+	if err == nil {
+		var n64 int64
+		n64, err = io.Copy(conn, bytes.NewReader(data))
+		n = int(n64)
 	}
-	n64, err := io.Copy(conn, bytes.NewReader(data))
-	n = int(n64)
 	return n, err
 }
 
@@ -129,21 +143,14 @@ loop:
 		if err != nil {
 			return
 		}
-		if checkAddr != nil && !internal.AddrsSameHost(checkAddr, incAddr) {
-			continue
-		}
-		if n < 8 {
+		if (checkAddr != nil && !internal.AddrsSameHost(checkAddr, incAddr)) ||
 			// Packet is too small to contain any meaningful socks5 header
-			continue
-		}
-
-		if buf[0] != 0 || buf[1] != 0 {
+			n < 8 ||
 			// RSV is not 0
-			continue
-		}
-		if buf[2] != 0 {
+			buf[0] != 0 || buf[1] != 0 ||
 			// Fragmentation is not supported
 			// TODO: Add fragmentation support
+			buf[2] != 0 {
 			continue
 		}
 
@@ -304,12 +311,7 @@ type Socks5UDPClientAssoc struct {
 func NewSocks5UDPClientAssoc(
 	conn PacketConn, addr *Addr, pool bufpool.Pool, onc func(),
 ) *Socks5UDPClientAssoc {
-	var raddr Addr
-	if addr != nil {
-		raddr = addr.Copy()
-	} else {
-		raddr = AddrFromHostPort("0.0.0.0:0", "udp")
-	}
+	raddr := AddrFromHostPort("0.0.0.0:0", "udp").WithDefaultAddr(addr)
 
 	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
 
@@ -338,10 +340,8 @@ func (uc *Socks5UDPClientAssoc) Close() error {
 }
 
 func (uc *Socks5UDPClientAssoc) RemoteAddr() net.Addr {
-	if uc.Raddr != nil {
-		return uc.Raddr
-	}
-	return uc.PacketConn.RemoteAddr()
+	return internal.FirstNonNil( //nolint forcetypeassert
+		uc.Raddr, uc.PacketConn.RemoteAddr()).(net.Addr)
 }
 
 func (uc *Socks5UDPClientAssoc) Read(b []byte) (n int, err error) {
@@ -362,11 +362,10 @@ func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
 	buf = append(buf, b...)
 
 	n, err = uc.PacketConn.Write(buf)
-	if err != nil {
-		return 0, err
+	if err == nil {
+		n = max(0, n-len(uc.DefaultHeader))
 	}
 
-	n = max(0, n-len(uc.DefaultHeader))
 	return n, nil
 }
 
@@ -476,17 +475,13 @@ func (uc *Socks5UDPClientTUN) Close() error {
 }
 
 func (uc *Socks5UDPClientTUN) RemoteAddr() net.Addr {
-	if uc.Raddr != nil {
-		return uc.Raddr
-	}
-	return uc.Conn.RemoteAddr()
+	return internal.FirstNonNil( //nolint forcetypeassert
+		uc.Raddr, uc.Conn.RemoteAddr()).(net.Addr)
 }
 
 func (uc *Socks5UDPClientTUN) LocalAddr() net.Addr {
-	if uc.Laddr != nil {
-		return uc.Laddr
-	}
-	return uc.Conn.LocalAddr()
+	return internal.FirstNonNil( //nolint forcetypeassert
+		uc.Laddr, uc.Conn.LocalAddr()).(net.Addr)
 }
 
 func (uc *Socks5UDPClientTUN) Read(b []byte) (n int, err error) {
@@ -496,9 +491,7 @@ func (uc *Socks5UDPClientTUN) Read(b []byte) (n int, err error) {
 
 func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
 	// Trim b cause we do not support fragmentation
-	if len(b) > 65535 {
-		b = b[:65535]
-	}
+	b = b[:min(len(b), 65535)]
 
 	buf := bufpool.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
 	defer bufpool.PutBuffer(uc.Pool, buf)
@@ -511,12 +504,10 @@ func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
 	buf = append(buf, b...)
 
 	n, err = uc.Conn.Write(buf)
-	if err != nil {
-		return 0, err
+	if err == nil {
+		n = max(0, n-len(uc.DefaultHeader))
 	}
-
-	n = max(0, n-len(uc.DefaultHeader))
-	return n, nil
+	return n, err
 }
 
 func (uc *Socks5UDPClientTUN) ReadFrom(
@@ -586,7 +577,6 @@ func ProxySocks5UDPAssoc(
 
 	done := make(chan error, 2)
 
-	// Possibly the worst code I've ever written
 	go func() {
 		// assoc -> proxy goroutine
 		defer func() { _ = ctrl.Close() }()
@@ -598,6 +588,9 @@ func ProxySocks5UDPAssoc(
 			err := assoc.SetReadDeadline(deadline)
 			if err != nil {
 				done <- err
+				if clientUDPAddr == nil {
+					done <- nil
+				}
 				return
 			}
 			n, addr, incAddr, err := ReadSocks5AssocUDPPacket(
@@ -613,6 +606,9 @@ func ProxySocks5UDPAssoc(
 					err = errors.Join(ErrUDPAssocTimeout, err)
 				}
 				done <- err
+				if clientUDPAddr == nil {
+					done <- nil
+				}
 				return
 			}
 			// It was first packet from client
@@ -657,22 +653,8 @@ func ProxySocks5UDPAssoc(
 				_, err = proxy.Write(assoc2proxy[:n])
 			} else {
 				// For unbinded connections (ones without fixed remote addr)
-				if addr.IsUnspecified() && defaultAddr != nil {
-					addr = *defaultAddr
-				}
-
-				if udpProxy, ok := proxy.(*net.UDPConn); ok {
-					// For some fucking reason net.UDPConn.WriteTo just crashing on any
-					// net.Addr that is not *net.UDPAddr so we handling it individually
-					udpAddr := addr.ToUDP()
-					if udpAddr == nil {
-						continue
-					}
-					_, err = udpProxy.WriteToUDP(assoc2proxy[:n], udpAddr)
-				} else {
-					// For all others PacketConn implementations
-					_, err = proxy.WriteTo(assoc2proxy[:n], addr)
-				}
+				addr = addr.WithDefaultAddr(defaultAddr)
+				err = WriteToAddrUDP(proxy, addr, assoc2proxy[:n])
 			}
 			if err != nil {
 				done <- err
@@ -723,22 +705,8 @@ func ProxySocks5UDPTun(
 				_, err = proxy.Write(tun2proxy[:n])
 			} else {
 				// For unbinded connections (ones without fixed remote addr)
-				if addr.IsUnspecified() && defaultAddr != nil {
-					addr = *defaultAddr
-				}
-
-				if udpProxy, ok := proxy.(*net.UDPConn); ok {
-					// For some fucking reason net.UDPConn.WriteTo just crashing on any
-					// net.Addr that is not *net.UDPAddr so we handling it individually
-					udpAddr := addr.ToUDP()
-					if udpAddr == nil {
-						continue
-					}
-					_, err = udpProxy.WriteToUDP(tun2proxy[:n], udpAddr)
-				} else {
-					// For all others PacketConn implementations
-					_, err = proxy.WriteTo(tun2proxy[:n], addr)
-				}
+				addr = addr.WithDefaultAddr(defaultAddr)
+				err = WriteToAddrUDP(proxy, addr, tun2proxy[:n])
 			}
 			if err != nil {
 				done <- err
@@ -757,6 +725,7 @@ func ProxySocks5UDPTun(
 			pool, tun, AddrFromNetAddr(addr), tun2assoc[:n],
 		)
 		if err != nil {
+			done <- err
 			break
 		}
 	}

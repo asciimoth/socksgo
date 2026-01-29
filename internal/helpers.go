@@ -236,3 +236,12 @@ func WriteAllSlices(w io.Writer, slices ...[]byte) (n int64, err error) {
 	}
 	return
 }
+
+func FirstNonNil(objs ...any) (obj any) {
+	for _, obj = range objs {
+		if obj != nil {
+			return
+		}
+	}
+	return
+}

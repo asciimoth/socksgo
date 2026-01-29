@@ -3,15 +3,43 @@ package protocol_test
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 )
+
+func TestWriteToAddrUDP(t *testing.T) {
+	pc, err := net.DialUDP("udp", nil, &net.UDPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = pc.Close()
+	err = protocol.WriteToAddrUDP(
+		pc, protocol.AddrFromFQDN("example.com", 42, "udp"), []byte{42},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = protocol.WriteToAddrUDP(
+		pc, protocol.AddrFromIP(net.IPv4(127, 0, 0, 1), 42, "udp"), []byte{42},
+	)
+	if !strings.Contains(
+		err.Error(),
+		"use of WriteTo with pre-connected connection",
+	) {
+		t.Fatal(err)
+	}
+}
 
 // Test cases for AppendSocks5UDPHeader
 func TestAppendSocks5UDPHeader(t *testing.T) {
@@ -104,6 +132,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		wantN     int
 		wantAddr  protocol.Addr
 		wantErr   bool
+		bufSize   int
 	}{
 		{
 			name: "packetconn-ipv4-standard",
@@ -131,6 +160,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 			wantN:    12, // len("payload data")
 			wantAddr: protocol.AddrFromString("192.168.1.1", 8080, "udp"),
 			wantErr:  false,
+			bufSize:  250,
 		},
 		{
 			name: "packetconn-ipv6-standard",
@@ -254,15 +284,15 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 				conn := &MockPacketConn{
 					Packets: []Packet{
 						{
+							Addr:    NetAddr{Addr: "10.0.0.2:8080", Net: "udp"},
+							Payload: buf2,
+						},
+						{
 							Addr: NetAddr{
 								Addr: "192.168.1.1:80",
 								Net:  "udp",
 							},
 							Payload: buf1,
-						},
-						{
-							Addr:    NetAddr{Addr: "10.0.0.2:8080", Net: "udp"},
-							Payload: buf2,
 						},
 					},
 					Local: NetAddr{Addr: "127.0.0.1:1080", Net: "udp"},
@@ -301,15 +331,15 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 				conn := &MockPacketConn{
 					Packets: []Packet{
 						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf2,
+						},
+						{
 							Addr: NetAddr{
 								Addr: "192.168.1.1:80",
 								Net:  "udp",
 							},
 							Payload: buf1,
-						},
-						{
-							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
-							Payload: buf2,
 						},
 					},
 					Local: NetAddr{Addr: "127.0.0.1:1080", Net: "udp"},
@@ -321,6 +351,147 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 			wantAddr: protocol.AddrFromString("10.0.0.3", 9090, "udp"),
 			wantErr:  false,
 		},
+		{
+			name: "too-short-ipv4-addr",
+			setupConn: func() protocol.PacketConn {
+				buf1 := make([]byte, 0, 1024)
+				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
+				buf1 = append(buf1, 0)                        // FRAG=0
+				buf1 = append(buf1, byte(protocol.IP4Addr))   // ATYP=IPv4
+				buf1 = append(buf1, []byte{0, 0, 0, 0}...)    // IPv4
+
+				// Second valid packet
+				buf2 := make([]byte, 0, 1024)
+				buf2 = binary.BigEndian.AppendUint16(buf2, 0)    // RSV=0
+				buf2 = append(buf2, 0)                           // FRAG=0
+				buf2 = append(buf2, byte(protocol.IP4Addr))      // ATYP=IPv4
+				buf2 = append(buf2, []byte{10, 0, 0, 3}...)      // IPv4
+				buf2 = binary.BigEndian.AppendUint16(buf2, 9090) // PORT
+				buf2 = append(buf2, []byte("good data")...)      // payload
+
+				conn := &MockPacketConn{
+					Packets: []Packet{
+						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf2,
+						},
+						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf1,
+						},
+					},
+					Local: NetAddr{Addr: "127.0.0.1:1080", Net: "udp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    9, // len("good data")
+			wantAddr: protocol.AddrFromString("10.0.0.3", 9090, "udp"),
+			wantErr:  false,
+		},
+		{
+			name: "too-short-ipv6-addr",
+			setupConn: func() protocol.PacketConn {
+				buf1 := make([]byte, 0, 1024)
+				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
+				buf1 = append(buf1, 0)                        // FRAG=0
+				buf1 = append(buf1, byte(protocol.IP6Addr))   // ATYP=IPv6
+				// IPv6: 2001:db8::1
+				buf1 = append(buf1, []byte{0, 0, 0, 0}...)
+
+				// Second valid packet
+				buf2 := make([]byte, 0, 1024)
+				buf2 = binary.BigEndian.AppendUint16(buf2, 0)    // RSV=0
+				buf2 = append(buf2, 0)                           // FRAG=0
+				buf2 = append(buf2, byte(protocol.IP4Addr))      // ATYP=IPv4
+				buf2 = append(buf2, []byte{10, 0, 0, 3}...)      // IPv4
+				buf2 = binary.BigEndian.AppendUint16(buf2, 9090) // PORT
+				buf2 = append(buf2, []byte("good data")...)      // payload
+
+				conn := &MockPacketConn{
+					Packets: []Packet{
+						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf2,
+						},
+						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf1,
+						},
+					},
+					Local: NetAddr{Addr: "127.0.0.1:1080", Net: "udp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    9, // len("good data")
+			wantAddr: protocol.AddrFromString("10.0.0.3", 9090, "udp"),
+			wantErr:  false,
+		},
+		{
+			name: "too-short-fqdn-addr",
+			setupConn: func() protocol.PacketConn {
+				buf1 := make([]byte, 0, 1024)
+				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
+				buf1 = append(buf1, 0)                        // FRAG=0
+				buf1 = append(buf1, byte(protocol.FQDNAddr))  // ATYP=FQDN
+				buf1 = append(buf1, byte(11))                 // Domain length
+				buf1 = append(buf1, []byte("example.com")...) // Domain
+
+				// Second valid packet
+				buf2 := make([]byte, 0, 1024)
+				buf2 = binary.BigEndian.AppendUint16(buf2, 0)    // RSV=0
+				buf2 = append(buf2, 0)                           // FRAG=0
+				buf2 = append(buf2, byte(protocol.IP4Addr))      // ATYP=IPv4
+				buf2 = append(buf2, []byte{10, 0, 0, 3}...)      // IPv4
+				buf2 = binary.BigEndian.AppendUint16(buf2, 9090) // PORT
+				buf2 = append(buf2, []byte("good data")...)      // payload
+
+				conn := &MockPacketConn{
+					Packets: []Packet{
+						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf2,
+						},
+						{
+							Addr:    NetAddr{Addr: "10.0.0.3:9090", Net: "udp"},
+							Payload: buf1,
+						},
+					},
+					Local: NetAddr{Addr: "127.0.0.1:1080", Net: "udp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    9, // len("good data")
+			wantAddr: protocol.AddrFromString("10.0.0.3", 9090, "udp"),
+			wantErr:  false,
+		},
+		{
+			name: "packetconn-unknown-packet-type",
+			setupConn: func() protocol.PacketConn {
+				// Create a standard SOCKS5 UDP packet with IPv4
+				buf := make([]byte, 0, 1024)
+				buf = binary.BigEndian.AppendUint16(buf, 0)    // RSV=0
+				buf = append(buf, 0)                           // FRAG=0
+				buf = append(buf, 42)                          // Unknown ATYP
+				buf = append(buf, []byte{192, 168, 1, 1}...)   // IPv4
+				buf = binary.BigEndian.AppendUint16(buf, 8080) // PORT
+				buf = append(buf, []byte("payload data")...)   // payload
+
+				conn := &MockPacketConn{
+					Packets: []Packet{{
+						Addr:    NetAddr{Addr: "192.168.1.1:8080", Net: "udp"},
+						Payload: buf,
+					}},
+					Local:  NetAddr{Addr: "127.0.0.1:1080", Net: "udp"},
+					Remote: NetAddr{Addr: "192.168.1.1:8080", Net: "udp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantErr:  true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -328,7 +499,11 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 			defer pool.Close() //nolint
 
 			conn := tt.setupConn()
-			buf := make([]byte, 500) // Buffer for reading
+			bufSize := tt.bufSize
+			if bufSize == 0 {
+				bufSize = 500
+			}
+			buf := make([]byte, bufSize) // Buffer for reading
 
 			n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(
 				pool,
@@ -378,6 +553,7 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 		wantN     int
 		wantAddr  protocol.Addr
 		wantErr   bool
+		bufLen    int
 	}{
 		{
 			name: "tcp-tun-ipv4",
@@ -421,6 +597,80 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "tcp-tun-ipv4-incomplete",
+			setupConn: func() net.Conn {
+				payload := []byte("tcp tun payload")
+				// Create TUN packet: RSV = payload length, FRAG = GOST flag
+				buf := make([]byte, 0, 1024)
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV = payload length
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag for TUN
+				buf = append(
+					buf,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf = append(
+					buf,
+					[]byte{172, 16, 0, 1}...) // IPv4
+
+				conn := &MockConn{
+					Buffer: *bytes.NewBuffer(buf),
+					Local:  NetAddr{Addr: "127.0.0.1:1080", Net: "tcp"},
+					Remote: NetAddr{Addr: "172.16.0.1:3306", Net: "tcp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    15, // len("tcp tun payload")
+			wantAddr: protocol.AddrFromString("172.16.0.1", 3306, "udp"),
+			wantErr:  true,
+		},
+		{
+			name: "tcp-tun-ipv4-incomplete-payload",
+			setupConn: func() net.Conn {
+				// Create TUN packet: RSV = payload length, FRAG = GOST flag
+				buf := make([]byte, 0, 1024)
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					255, //nolint
+				) // RSV = payload length
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag for TUN
+				buf = append(
+					buf,
+					byte(protocol.IP4Addr),
+				) // ATYP=IPv4
+				buf = append(
+					buf,
+					[]byte{172, 16, 0, 1}...) // IPv4
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					3306,
+				) // PORT (MySQL)
+				buf = append(
+					buf,
+					42, 42) // incomplete payload
+
+				conn := &MockConn{
+					Buffer: *bytes.NewBuffer(buf),
+					Local:  NetAddr{Addr: "127.0.0.1:1080", Net: "tcp"},
+					Remote: NetAddr{Addr: "172.16.0.1:3306", Net: "tcp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    15, // len("tcp tun payload")
+			wantAddr: protocol.AddrFromString("172.16.0.1", 3306, "udp"),
+			wantErr:  true,
+		},
+		{
 			name: "tcp-tun-ipv6",
 			setupConn: func() net.Conn {
 				payload := []byte("ipv6 tcp data")
@@ -458,6 +708,40 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			wantN:    13, // len("ipv6 tcp data")
 			wantAddr: protocol.AddrFromString("::1", 5432, "udp"),
 			wantErr:  false,
+		},
+		{
+			name: "tcp-tun-ipv6-incomplete",
+			setupConn: func() net.Conn {
+				payload := []byte("ipv6 tcp data")
+				buf := make([]byte, 0, 1024)
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf = append(
+					buf,
+					byte(protocol.IP6Addr),
+				) // ATYP=IPv6
+				// IPv6: ::1
+				buf = append(
+					buf,
+					[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}...)
+
+				conn := &MockConn{
+					Buffer: *bytes.NewBuffer(buf),
+					Local:  NetAddr{Addr: "127.0.0.1:1080", Net: "tcp"},
+					Remote: NetAddr{Addr: "[::1]:5432", Net: "tcp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    13, // len("ipv6 tcp data")
+			wantAddr: protocol.AddrFromString("::1", 5432, "udp"),
+			wantErr:  true,
 		},
 		{
 			name: "tcp-tun-fqdn",
@@ -502,6 +786,43 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			wantN:    14, // len("domain payload")
 			wantAddr: protocol.AddrFromString("localhost", 6379, "udp"),
 			wantErr:  false,
+		},
+		{
+			name: "tcp-tun-fqdn-incomplete",
+			setupConn: func() net.Conn {
+				payload := []byte("domain payload")
+				buf := make([]byte, 0, 1024)
+				buf = binary.BigEndian.AppendUint16(
+					buf,
+					uint16(len(payload)), //nolint
+				) // RSV
+				buf = append(
+					buf,
+					protocol.GOST_UDP_FRAG_FLAG,
+				) // FRAG flag
+				buf = append(
+					buf,
+					byte(protocol.FQDNAddr),
+				) // ATYP=FQDN
+				buf = append(
+					buf,
+					byte(9),
+				) // Domain length
+				buf = append(
+					buf,
+					[]byte("localhost")...) // Domain
+
+				conn := &MockConn{
+					Buffer: *bytes.NewBuffer(buf),
+					Local:  NetAddr{Addr: "127.0.0.1:1080", Net: "tcp"},
+					Remote: NetAddr{Addr: "localhost:6379", Net: "tcp"},
+				}
+				return conn
+			},
+			skipAddr: false,
+			wantN:    14, // len("domain payload")
+			wantAddr: protocol.AddrFromString("localhost", 6379, "udp"),
+			wantErr:  true,
 		},
 		{
 			name: "tcp-tun-skip-addr",
@@ -683,6 +1004,7 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			skipAddr: false,
 			wantN:    0,
 			wantErr:  true, // Will hang because it keeps trying to read
+			bufLen:   10,
 		},
 	}
 
@@ -692,7 +1014,11 @@ func TestReadSocks5UDPPacketTUN(t *testing.T) {
 			defer pool.Close() //nolint
 
 			conn := tt.setupConn()
-			buf := make([]byte, 500) // Buffer for reading
+			bufLen := 500
+			if tt.bufLen != 0 {
+				bufLen = tt.bufLen
+			}
+			buf := make([]byte, bufLen) // Buffer for reading
 
 			n, addr, err := protocol.ReadSocks5TunUDPPacket(
 				pool,
@@ -1020,6 +1346,22 @@ func TestWriteSocks5TUNUDPPacket_and_ReadSocks5TunUDPPacket_IPv4_IPv6_FQDN_trunc
 	}
 }
 
+func TestWriteSocks5TUNUDPPacketConnErr(t *testing.T) {
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	a, b := net.Pipe()
+	_ = a.Close()
+	_ = b.Close()
+
+	_, err := protocol.WriteSocks5TUNUDPPacket(
+		pool, a, protocol.AddrFromFQDN("example.com", 42, ""), []byte{42},
+	)
+	if err.Error() != "io: read/write on closed pipe" {
+		t.Fatal(err)
+	}
+}
+
 func TestReadSocks5AssocUDPPacket_ignore_small_and_checkAddr(t *testing.T) {
 	// Use a single receiver fake conn (no peer) and push packets directly into it.
 	receiver := &fakePacketConn{
@@ -1258,6 +1600,13 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 		t.Fatalf("expected onClose to be called")
 	}
 
+	// ReadFromUDP Error
+	outBuf = make([]byte, 1024)
+	_, _, err = assoc.ReadFromUDP(outBuf)
+	if err == nil {
+		t.Fatal("error expected")
+	}
+
 	// TUN client tests using net.Pipe
 	laddr := protocol.AddrFromHostPort("0.0.0.0:0", "udp")
 	var raddr *protocol.Addr
@@ -1302,6 +1651,15 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 	}
 	if nr != 1 || addrr == nil {
 		t.Fatalf("tun.ReadFrom unexpected")
+	}
+
+	_ = c1.Close()
+	_ = c2.Close()
+	_ = tun.Close()
+
+	_, _, err = tun.ReadFromUDP(make([]byte, 1024))
+	if err == nil {
+		t.Fatal("error expected")
 	}
 }
 
@@ -2005,6 +2363,7 @@ func TestProxySocks5UDPAssoc_Binded(t *testing.T) {
 	payload := []byte("assoc-to-proxy-binded")
 	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
 	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	assocA.in <- pkt{data: append(hdr, payload...), from: nil} // Wrong client; skip
 	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
 
 	// read from proxyB
@@ -2067,5 +2426,282 @@ func TestProxySocks5UDPAssoc_Binded(t *testing.T) {
 	case <-doneCh:
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timeout waiting for ProxySocks5UDPAssoc to exit (binded)")
+	}
+}
+
+type deadlineErrPacketConn struct {
+	protocol.PacketConn
+}
+
+func (d deadlineErrPacketConn) SetReadDeadline(t time.Time) error {
+	return errors.New("mock deadline error")
+}
+
+func TestProxySocks5UDPAssoc_SetTimeoutErr(t *testing.T) {
+	assocA, assocB := newPacketConnPair()
+	defer assocA.Close() //nolint
+	defer assocB.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	clientIP := net.ParseIP("127.0.0.1")
+	ctrlAddr := &net.UDPAddr{IP: clientIP, Port: 61000}
+	ctrl := newFakeCtrlConn(ctrlAddr)
+
+	err := protocol.ProxySocks5UDPAssoc(
+		deadlineErrPacketConn{assocA},
+		proxyA,
+		ctrl,
+		true, // binded=true -> proxy.Write path
+		nil,
+		nil,
+		2048,
+		1*time.Second,
+	)
+	if err.Error() != "mock deadline error" {
+		t.Fatal(err)
+	}
+}
+
+type timeoutError struct{}
+
+func (t timeoutError) Error() string {
+	return "mock timeout error"
+}
+
+func (t timeoutError) Timeout() bool {
+	return true
+}
+
+func (t timeoutError) Temporary() bool {
+	return false
+}
+
+type timeoutPacketConn struct {
+	protocol.PacketConn
+}
+
+func (t timeoutPacketConn) ReadFrom(_ []byte) (int, net.Addr, error) {
+	return 0, nil, timeoutError{}
+}
+
+func TestProxySocks5UDPAssoc_ReadTimeoutErr(t *testing.T) {
+	assocA, assocB := newPacketConnPair()
+	defer assocA.Close() //nolint
+	defer assocB.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	clientIP := net.ParseIP("127.0.0.1")
+	ctrlAddr := &net.UDPAddr{IP: clientIP, Port: 61000}
+	ctrl := newFakeCtrlConn(ctrlAddr)
+
+	err := protocol.ProxySocks5UDPAssoc(
+		timeoutPacketConn{assocA},
+		proxyA,
+		ctrl,
+		true, // binded=true -> proxy.Write path
+		nil,
+		nil,
+		2048,
+		1*time.Second,
+	)
+	if !strings.Contains(err.Error(), "mock timeout error") {
+		t.Fatal(err)
+	}
+}
+
+type writeErrPacketConn struct {
+	protocol.PacketConn
+}
+
+func (w writeErrPacketConn) Write([]byte) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func (w writeErrPacketConn) WriteTo([]byte, net.Addr) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func (w writeErrPacketConn) WriteToUDP([]byte, *net.UDPAddr) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func (w writeErrPacketConn) WriteToIpPort([]byte, net.IP, uint16) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func TestProxySocks5UDPAssoc_ErrWriteProxy(t *testing.T) {
+	assocA, assocB := newPacketConnPair()
+	defer assocA.Close() //nolint
+	defer assocB.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	proxyA.Close() //nolint
+	proxyB.Close() //nolint
+
+	clientIP := net.ParseIP("127.0.0.1")
+	ctrlAddr := &net.UDPAddr{IP: clientIP, Port: 61000}
+	ctrl := newFakeCtrlConn(ctrlAddr)
+	defer ctrl.Close() //nolint
+
+	doneCh := make(chan error, 1)
+	go func() {
+		err := protocol.ProxySocks5UDPAssoc(
+			assocA,
+			writeErrPacketConn{proxyA},
+			ctrl,
+			true, // binded=true -> proxy.Write path
+			nil,
+			nil,
+			2048,
+			1*time.Second,
+		)
+		doneCh <- err
+	}()
+
+	// 1) assoc -> proxy (binded): send header+payload into assocA; proxyB should receive the payload via Write.
+	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
+	payload := []byte("assoc-to-proxy-binded")
+	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
+	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
+
+	err := <-doneCh
+	if err.Error() != "mock write error" {
+		t.Fatal(err)
+	}
+}
+
+func TestProxySocks5UDPAssoc_ErrWriteAssoc(t *testing.T) {
+	assocA, assocB := newPacketConnPair()
+	defer assocA.Close() //nolint
+	defer assocB.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	clientIP := net.ParseIP("127.0.0.1")
+	ctrlAddr := &net.UDPAddr{IP: clientIP, Port: 61000}
+	ctrl := newFakeCtrlConn(ctrlAddr)
+	defer ctrl.Close() //nolint
+
+	doneCh := make(chan error, 1)
+	go func() {
+		err := protocol.ProxySocks5UDPAssoc(
+			writeErrPacketConn{assocA},
+			proxyA,
+			ctrl,
+			true, // binded=true -> proxy.Write path
+			nil,
+			nil,
+			2048,
+			1*time.Second,
+		)
+		doneCh <- err
+	}()
+
+	// 1) assoc -> proxy (binded): send header+payload into assocA; proxyB should receive the payload via Write.
+	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
+	payload := []byte("assoc-to-proxy-binded")
+	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
+	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
+	proxyA.in <- pkt{data: []byte("data"), from: clientFrom}
+
+	err := <-doneCh
+	if err.Error() != "mock write error" {
+		t.Fatal(err)
+	}
+}
+
+func TestProxySocks5UDPTun_ErrWriteProxy(t *testing.T) {
+	tunLocal, tunRemote := net.Pipe()
+	defer tunLocal.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- protocol.ProxySocks5UDPTun(
+			tunLocal,
+			writeErrPacketConn{proxyA},
+			true, // binded=true -> proxy.Write path
+			nil,
+			nil,
+			2048,
+		)
+	}()
+
+	// 1) tun -> proxy (binded uses proxy.Write)
+	payload := []byte("proxy-tun-binded")
+	addr := protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 4444, "udp")
+	hdr := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(payload)), //nolint
+		addr,
+	) //nolint
+	_, _ = tunRemote.Write(append(hdr, payload...))
+
+	err := <-errCh
+	if err.Error() != "mock write error" {
+		t.Fatal(err)
+	}
+}
+
+type writeErrConn struct {
+	net.Conn
+}
+
+func (w writeErrConn) Write([]byte) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func (w writeErrConn) WriteTo([]byte, net.Addr) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func (w writeErrConn) WriteToUDP([]byte, *net.UDPAddr) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func (w writeErrConn) WriteToIpPort([]byte, net.IP, uint16) (int, error) {
+	return 0, errors.New("mock write error")
+}
+
+func TestProxySocks5UDPTun_ErrWriteTun(t *testing.T) {
+	tunLocal, _ := net.Pipe()
+	defer tunLocal.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- protocol.ProxySocks5UDPTun(
+			writeErrConn{tunLocal},
+			proxyA,
+			true, // binded=true -> proxy.Write path
+			nil,
+			nil,
+			2048,
+		)
+	}()
+
+	clientIP := net.ParseIP("127.0.0.1")
+	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
+	proxyA.in <- pkt{data: []byte("data"), from: clientFrom}
+
+	err := <-errCh
+	if err.Error() != "mock write error" {
+		t.Fatal(err)
 	}
 }
