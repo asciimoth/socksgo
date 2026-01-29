@@ -11,7 +11,6 @@ import (
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/ident"
-	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/gorilla/websocket"
 	"github.com/xtaci/smux"
@@ -79,7 +78,7 @@ func (s *Server) AcceptWS(
 	conn *websocket.Conn,
 	isTLS bool,
 ) error {
-	return s.Accept(ctx, &internal.WSConn{
+	return s.Accept(ctx, &wsConn{
 		Conn: conn,
 	}, isTLS)
 }

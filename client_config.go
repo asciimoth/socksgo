@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/gorilla/websocket"
 )
@@ -235,7 +234,7 @@ func (c *Client) connectWebSocket(
 	}
 	_ = resp.Body.Close()
 
-	return &internal.WSConn{
+	return &wsConn{
 		Conn: ws,
 	}, nil
 }
