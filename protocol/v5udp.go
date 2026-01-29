@@ -35,7 +35,7 @@ type PacketConn interface {
 }
 
 // For standard socks UDP ASSOC leave rsv == 0.
-// For gost's UDP TUN extension
+// For gost's UDP TUN extension rsv == payload length
 func AppendSocks5UDPHeader(
 	buf []byte,
 	rsv uint16,
@@ -62,6 +62,7 @@ func AppendSocks5UDPHeader(
 	return buf
 }
 
+// Builds ans writes socks5 UDP Assoc packet to conn
 func WriteSocksAssoc5UDPPacket(
 	pool bufpool.Pool,
 	conn PacketConn,
@@ -88,15 +89,13 @@ func WriteSocksAssoc5UDPPacket(
 	return n, err
 }
 
+// Builds ans writes gost's socks5 extension's UDP TUN packet to conn
 func WriteSocks5TUNUDPPacket(
 	pool bufpool.Pool,
 	conn net.Conn,
 	addr Addr,
 	data []byte,
 ) (n int, err error) {
-	// conn is not a packet one (udp) conn
-	// gost's UDP TUN extension should be used
-
 	if len(data) > 65535 {
 		data = data[:65535]
 	}
@@ -298,8 +297,8 @@ type Socks5UDPClientAssoc struct {
 	PacketConn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
 	Pool          bufpool.Pool
-	raddr         net.Addr
-	onClose       func()
+	Raddr         net.Addr
+	OnClose       func()
 }
 
 func NewSocks5UDPClientAssoc(
@@ -317,11 +316,11 @@ func NewSocks5UDPClientAssoc(
 	client := &Socks5UDPClientAssoc{
 		PacketConn:    conn,
 		Pool:          pool,
-		raddr:         raddr,
+		Raddr:         raddr,
 		DefaultHeader: AppendSocks5UDPHeader(buf, 0, raddr),
 	}
 
-	client.onClose = sync.OnceFunc(func() {
+	client.OnClose = sync.OnceFunc(func() {
 		dh := client.DefaultHeader
 		client.DefaultHeader = nil
 		bufpool.PutBuffer(pool, dh)
@@ -334,13 +333,13 @@ func NewSocks5UDPClientAssoc(
 
 func (uc *Socks5UDPClientAssoc) Close() error {
 	err := uc.PacketConn.Close()
-	uc.onClose()
+	uc.OnClose()
 	return err
 }
 
 func (uc *Socks5UDPClientAssoc) RemoteAddr() net.Addr {
-	if uc.raddr != nil {
-		return uc.raddr
+	if uc.Raddr != nil {
+		return uc.Raddr
 	}
 	return uc.PacketConn.RemoteAddr()
 }
@@ -438,8 +437,8 @@ type Socks5UDPClientTUN struct {
 	net.Conn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
 	Pool          bufpool.Pool
-	laddr, raddr  net.Addr
-	onClose       func()
+	Laddr, Raddr  net.Addr
+	OnClose       func()
 }
 
 func NewSocks5UDPClientTUN(
@@ -457,12 +456,12 @@ func NewSocks5UDPClientTUN(
 	client := &Socks5UDPClientTUN{
 		Conn:          conn,
 		Pool:          pool,
-		raddr:         raddr,
-		laddr:         laddr,
+		Raddr:         raddr,
+		Laddr:         laddr,
 		DefaultHeader: AppendSocks5UDPHeader(buf, 0, nraddr),
 	}
 
-	client.onClose = sync.OnceFunc(func() {
+	client.OnClose = sync.OnceFunc(func() {
 		dh := client.DefaultHeader
 		client.DefaultHeader = nil
 		bufpool.PutBuffer(pool, dh)
@@ -472,20 +471,20 @@ func NewSocks5UDPClientTUN(
 
 func (uc *Socks5UDPClientTUN) Close() error {
 	err := uc.Conn.Close()
-	uc.onClose()
+	uc.OnClose()
 	return err
 }
 
 func (uc *Socks5UDPClientTUN) RemoteAddr() net.Addr {
-	if uc.raddr != nil {
-		return uc.raddr
+	if uc.Raddr != nil {
+		return uc.Raddr
 	}
 	return uc.Conn.RemoteAddr()
 }
 
 func (uc *Socks5UDPClientTUN) LocalAddr() net.Addr {
-	if uc.laddr != nil {
-		return uc.laddr
+	if uc.Laddr != nil {
+		return uc.Laddr
 	}
 	return uc.Conn.LocalAddr()
 }
@@ -570,6 +569,9 @@ func (uc *Socks5UDPClientTUN) WriteToIpPort(
 	)
 }
 
+// Proxy packages assoc (incoming socks5 client conn) <-> proxy (outgoing udp socket)
+// while ctrl connection is alive.
+// Stops and closes assoc, proxy and ctrl if one of them becomes closed.
 func ProxySocks5UDPAssoc(
 	assoc, proxy PacketConn, ctrl net.Conn,
 	binded bool,
@@ -586,11 +588,12 @@ func ProxySocks5UDPAssoc(
 
 	// Possibly the worst code I've ever written
 	go func() {
-		// assoc -> proxy
+		// assoc -> proxy goroutine
 		defer func() { _ = ctrl.Close() }()
 		var clientUDPAddr net.Addr
 		ctrlAddr := ctrl.RemoteAddr()
 		for {
+			// Enforce assoc udp conn idle timeout
 			deadline := time.Now().Add(timeOut)
 			err := assoc.SetReadDeadline(deadline)
 			if err != nil {
@@ -612,15 +615,21 @@ func ProxySocks5UDPAssoc(
 				done <- err
 				return
 			}
-			// First packet
+			// It was first packet from client
 			if clientUDPAddr == nil {
 				if !internal.AddrsSameHost(incAddr, ctrlAddr) {
-					// Incoming packet from uncnown client
+					// Packet is not from our client
 					continue
 				}
+
+				// Now we should remember client's host:port and reject all packets
+				// with other addrs appearing at assoc
 				clientUDPAddr = incAddr
+
+				// Only now after clientUDPAddr is known, we can start reverse
+				// directional proxy too
 				go func() {
-					// assoc <- proxy
+					// assoc <- proxy goroutine
 					defer func() { _ = ctrl.Close() }()
 					for {
 						n, addr, err := proxy.ReadFrom(proxy2assoc)
@@ -642,21 +651,26 @@ func ProxySocks5UDPAssoc(
 					}
 				}()
 			}
+
 			if binded { //nolint nestif
+				// For binded connections (ones with fixed remote addr)
 				_, err = proxy.Write(assoc2proxy[:n])
 			} else {
+				// For unbinded connections (ones without fixed remote addr)
 				if addr.IsUnspecified() && defaultAddr != nil {
 					addr = *defaultAddr
 				}
-				// For some fucking reason net.UDPConn.WriteTo just crashing on any
-				// net.Addr that is not *net.UDPAddr so we handling it individually
+
 				if udpProxy, ok := proxy.(*net.UDPConn); ok {
+					// For some fucking reason net.UDPConn.WriteTo just crashing on any
+					// net.Addr that is not *net.UDPAddr so we handling it individually
 					udpAddr := addr.ToUDP()
 					if udpAddr == nil {
 						continue
 					}
 					_, err = udpProxy.WriteToUDP(assoc2proxy[:n], udpAddr)
 				} else {
+					// For all others PacketConn implementations
 					_, err = proxy.WriteTo(assoc2proxy[:n], addr)
 				}
 			}
@@ -674,6 +688,10 @@ func ProxySocks5UDPAssoc(
 	return internal.JoinNetErrors(<-done, <-done)
 }
 
+// Proxy packages tun (incoming gost socks5 client conn) <-> proxy (outgoing udp socket).
+// Stops and closes tun and proxy if one of them becomes closed.
+// There is no ctrl connection here cause tun itself is a tcp conn and there is
+// no parallel udp connection like in standard socks5 TCP Assoc.
 func ProxySocks5UDPTun(
 	tun net.Conn, proxy PacketConn,
 	binded bool,
@@ -701,20 +719,24 @@ func ProxySocks5UDPTun(
 				return
 			}
 			if binded { //nolint nestif
+				// For binded connections (ones with fixed remote addr)
 				_, err = proxy.Write(tun2proxy[:n])
 			} else {
+				// For unbinded connections (ones without fixed remote addr)
 				if addr.IsUnspecified() && defaultAddr != nil {
 					addr = *defaultAddr
 				}
-				// For some fucking reason net.UDPConn.WriteTo just crashing on any
-				// net.Addr that is not *net.UDPAddr so we handling it individually
+
 				if udpProxy, ok := proxy.(*net.UDPConn); ok {
+					// For some fucking reason net.UDPConn.WriteTo just crashing on any
+					// net.Addr that is not *net.UDPAddr so we handling it individually
 					udpAddr := addr.ToUDP()
 					if udpAddr == nil {
 						continue
 					}
 					_, err = udpProxy.WriteToUDP(tun2proxy[:n], udpAddr)
 				} else {
+					// For all others PacketConn implementations
 					_, err = proxy.WriteTo(tun2proxy[:n], addr)
 				}
 			}
