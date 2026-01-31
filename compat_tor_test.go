@@ -1,4 +1,4 @@
-//go:build compattesttor
+//go:build compattest
 
 package socksgo_test
 

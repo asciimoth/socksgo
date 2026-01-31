@@ -1,4 +1,4 @@
-//go:build compattest
+//go:build compattestcurl
 
 package socksgo_test
 
