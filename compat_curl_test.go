@@ -1,4 +1,4 @@
-//go:build compattestcurl
+//go:build compattest
 
 package socksgo_test
 
@@ -24,20 +24,15 @@ func curlViaSocks(t *testing.T, targetURL, proxyURL string) error {
 	}
 
 	// Use a context timeout so tests don't hang forever.
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Build curl args:
-	// -sS      : silent but show errors
-	// --fail   : exit non-zero on HTTP 4xx/5xx
-	// -L       : follow redirects
-	// --proxy  : supply full proxy URL (including scheme)
-	// -o <devnull> : discard response body
 	args := []string{
-		"-sS",
-		"--fail",
-		"-L",
-		"--proxy", proxyURL,
+		"-4",                // force IPv4
+		"-sS",               // silent but show errors
+		"--fail",            // exit non-zero on HTTP 4xx/5xx
+		"-L",                // follow redirects
+		"--proxy", proxyURL, // supply full proxy URL (including scheme)
 		"-o", os.DevNull,
 		targetURL,
 	}
@@ -64,8 +59,10 @@ func curlViaSocksList(t *testing.T, targets []string, proxyURL string) {
 	for _, target := range targets {
 		err = curlViaSocks(t, target, proxyURL)
 		if err == nil {
+			t.Log("ok", target, proxyURL)
 			break
 		}
+		t.Log(err)
 	}
 	if err != nil {
 		t.Fatal(err)

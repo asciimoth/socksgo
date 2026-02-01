@@ -44,12 +44,45 @@ func runWSServer(
 
 	upgrader := websocket.Upgrader{}
 
+	var wg sync.WaitGroup
+	stopped := false
+	var mu sync.Mutex
+	sessions := map[string]*websocket.Conn{}
+	addSession := func(conn *websocket.Conn) {
+		sessions[connID(conn.NetConn())] = conn
+	}
+	rmSession := func(conn *websocket.Conn) {
+		mu.Lock()
+		defer mu.Unlock()
+		delete(sessions, connID(conn.NetConn()))
+	}
+	cancel := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		stopped = true
+		ctx_cancel()
+		for _, v := range sessions {
+			_ = v.Close()
+		}
+		sessions = map[string]*websocket.Conn{}
+	}
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
 		defer func() { _ = c.Close() }()
+		mu.Lock()
+		if stopped {
+			mu.Unlock()
+			return
+		}
+		addSession(c)
+		defer rmSession(c)
+		wg.Add(1)
+		defer wg.Done()
+		mu.Unlock()
 		_ = server.AcceptWS(ctx, c, isTLS)
 	})
 
@@ -60,8 +93,9 @@ func runWSServer(
 	}
 
 	return func() {
-		ctx_cancel()
 		stop()
+		cancel()
+		wg.Wait()
 	}, addr, nil
 }
 

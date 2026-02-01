@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/socksgo/internal"
 )
 
 // Send socks4/socks5 reply
@@ -29,6 +30,7 @@ func Reply(
 	}
 	defer bufpool.PutBuffer(pool, reply)
 	_, err = io.Copy(conn, bytes.NewReader(reply))
+	err = internal.ClosedNetworkErrToNil(err)
 	return
 }
 
