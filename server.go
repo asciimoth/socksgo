@@ -132,7 +132,7 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 		)
 	}
 
-	handler := s.getHandler(cmd)
+	handler := s.GetHandler(cmd)
 	if handler == nil || !handler.Allowed("4", isTLS) {
 		return UnsupportedCommandError{
 			SocksVersion: "4",
@@ -199,7 +199,7 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 		return err
 	}
 
-	handler := s.getHandler(cmd)
+	handler := s.GetHandler(cmd)
 	if handler == nil || !handler.Allowed("5", isTLS) {
 		protocol.Reject("5", conn, protocol.CmdNotSuppReply, pool)
 		return UnsupportedCommandError{

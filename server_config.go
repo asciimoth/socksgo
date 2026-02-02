@@ -11,7 +11,7 @@ import (
 	"github.com/xtaci/smux"
 )
 
-func (s *Server) getHandler(cmd protocol.Cmd) *CommandHandler {
+func (s *Server) GetHandler(cmd protocol.Cmd) *CommandHandler {
 	handlers := DefaultCommandHandlers
 	if s != nil && s.Handlers != nil {
 		handlers = s.Handlers
@@ -69,7 +69,7 @@ func (s *Server) CheckUseIDENT(user string, clientAddr net.Addr) bool {
 }
 
 func (s *Server) GetUDPBufferSize() int {
-	if s.UDPBufferSize == 0 {
+	if s == nil || s.UDPBufferSize == 0 {
 		return 8192
 	}
 	return s.UDPBufferSize
@@ -119,7 +119,7 @@ func (s *Server) GetSmux() *smux.Config {
 
 // Return s.Listener or default net listener.
 func (s *Server) GetListener() Listener {
-	if s.Listener == nil {
+	if s == nil || s.Listener == nil {
 		return (&net.ListenConfig{}).Listen
 	}
 	return s.Listener
@@ -127,7 +127,7 @@ func (s *Server) GetListener() Listener {
 
 // Return s.PacketListener or default net UDP listener.
 func (s *Server) GetPacketListener() PacketListener {
-	if s.PacketListener == nil {
+	if s == nil || s.PacketListener == nil {
 		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
 			addr := protocol.AddrFromHostPort(laddr, network)
 			udpAddr := addr.ToUDP()
@@ -139,7 +139,7 @@ func (s *Server) GetPacketListener() PacketListener {
 
 // Return s.Dialer or default net dialer.
 func (s *Server) GetDialer() Dialer {
-	if s.Dialer == nil {
+	if s == nil || s.Dialer == nil {
 		return func(ctx context.Context, network, address string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, address)
 		}
@@ -149,7 +149,7 @@ func (s *Server) GetDialer() Dialer {
 
 // Return s.PacketDialer or default net udp dialer.
 func (s *Server) GetPacketDialer() PacketDialer {
-	if s.Dialer == nil {
+	if s == nil || s.Dialer == nil {
 		return func(ctx context.Context, network, raddr string) (PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(raddr, network).ToUDP()
 			return net.DialUDP(network, nil, udpAddr)
@@ -160,7 +160,7 @@ func (s *Server) GetPacketDialer() PacketDialer {
 
 // Return s.Resolver4 or net.DefaultResolver
 func (s *Server) GetResolver() Resolver {
-	if s.Resolver == nil {
+	if s == nil || s.Resolver == nil {
 		return net.DefaultResolver
 	}
 	return s.Resolver
