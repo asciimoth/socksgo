@@ -58,7 +58,7 @@ func (r ReplyStatus) String() string {
 	case DisallowReply:
 		return "connection not allowed by ruleset"
 	case NetUnreachReply:
-		return "hetwork unreachable"
+		return "network unreachable"
 	case HostUnreachReply:
 		return "host unreachable"
 	case ConnRefusedReply:

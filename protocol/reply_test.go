@@ -48,7 +48,7 @@ func TestReplyStatus_String(t *testing.T) {
 		{protocol.SuccReply, "succeeded"},
 		{protocol.FailReply, "general SOCKS server failure"},
 		{protocol.DisallowReply, "connection not allowed by ruleset"},
-		{protocol.NetUnreachReply, "hetwork unreachable"},
+		{protocol.NetUnreachReply, "network unreachable"},
 		{protocol.HostUnreachReply, "host unreachable"},
 		{protocol.ConnRefusedReply, "connection refused"},
 		{protocol.TTLExpiredReply, "TTL expired"},
