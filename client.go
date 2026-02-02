@@ -328,6 +328,7 @@ func (c *Client) Listen(
 			return &clientListener5mux{
 				session: session,
 				addr:    addr,
+				conn:    conn,
 			}, nil
 		}
 		return &clientListener5{

@@ -26,7 +26,11 @@ var DefaultBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, protocol.DisallowReply, pool)
 			return err
 		}
-		listener, err := server.GetListener()(ctx, "tcp", addr.ToHostPort())
+		tcp := "tcp"
+		if ver == "4" || ver == "4a" {
+			tcp = "tcp4"
+		}
+		listener, err := server.GetListener()(ctx, tcp, addr.ToHostPort())
 		if err != nil {
 			// TODO: What ReplyCode should we return here?
 			protocol.Reject(ver, conn, protocol.FailReply, pool)

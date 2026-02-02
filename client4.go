@@ -3,6 +3,7 @@ package socksgo
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 
@@ -59,7 +60,7 @@ func (c *Client) request4(
 	}
 
 	// Use server host:port if returned one is 0.0.0.0
-	if addr.IsUnspecified() {
+	if addr.IsUnspecified() && addr.Port == 0 {
 		proxyAddr := protocol.AddrFromNetAddr(proxy.RemoteAddr())
 		proxyAddr.NetTyp = addr.NetTyp
 		addr = proxyAddr
@@ -68,8 +69,9 @@ func (c *Client) request4(
 }
 
 type clientListener4 struct {
-	addr protocol.Addr
-	conn net.Conn
+	addr     protocol.Addr
+	conn     net.Conn
+	accepted bool
 }
 
 func (l *clientListener4) Addr() net.Addr {
@@ -81,7 +83,16 @@ func (l *clientListener4) Close() error {
 }
 
 func (l *clientListener4) Accept() (net.Conn, error) {
+	if l.accepted {
+		return nil, &net.OpError{
+			Op:   "accept",
+			Net:  "tcp",
+			Addr: l.addr,
+			Err:  errors.New("use of closed network connection"),
+		}
+	}
 	stat, _, err := protocol.ReadSocks4TCPReply(l.conn)
+	l.accepted = true
 	if err != nil {
 		_ = l.conn.Close()
 	}

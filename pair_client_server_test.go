@@ -51,9 +51,7 @@ func runClientHttp(t *testing.T, srv string, urls []string) {
 	}
 }
 
-func runClients45Http(
-	t *testing.T, addr string, urls []string, tls, ws bool,
-) {
+func buildSocksPostfix(tls, ws bool) string {
 	postfix := ""
 	if tls {
 		if ws {
@@ -66,6 +64,109 @@ func runClients45Http(
 			postfix = "+ws"
 		}
 	}
+	return postfix
+}
+
+func runListen45Tcp(t *testing.T, addr string, tls, ws bool) {
+	postfix := buildSocksPostfix(tls, ws)
+	t.Run("group", func(t *testing.T) {
+		t.Run("socks4", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks4" + postfix + "://" + addr,
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 1)
+		})
+		t.Run("socks4 user", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks4" + postfix + "://user@" + addr,
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 1)
+		})
+		t.Run("socks4a", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks4a" + postfix + "://" + addr,
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 1)
+		})
+		t.Run("socks4a user", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks4a" + postfix + "://user@" + addr,
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 1)
+		})
+
+		t.Run("socks5", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks5" + postfix + "://" + addr,
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 1)
+		})
+		t.Run("socks5 pass", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks5" + postfix + "://user:pass@" + addr,
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 1)
+		})
+
+		t.Run("socks5 gost", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks5" + postfix + "://" + addr + "?gost",
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 10)
+		})
+		t.Run("socks5 pass gost", func(t *testing.T) {
+			t.Parallel()
+			client, err := socksgo.ClientFromURL(
+				"socks5" + postfix + "://user:pass@" + addr + "?gost",
+			)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			testListen(client, t, 10)
+		})
+	})
+}
+
+func runClients45Http(
+	t *testing.T, addr string, urls []string, tls, ws bool,
+) {
+	postfix := buildSocksPostfix(tls, ws)
 	t.Run("group", func(t *testing.T) {
 		t.Run("socks4", func(t *testing.T) {
 			t.Parallel()
@@ -172,4 +273,84 @@ func TestClientWSSServerConnect(t *testing.T) {
 	defer cancel()
 
 	runClients45Http(t, addr.String(), cfg.CurlURLs, true, true)
+}
+
+func TestClientServerBind(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTCPServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	runListen45Tcp(t, addr.String(), false, false)
+}
+
+func TestClientServerTLSBind(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTLSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	runListen45Tcp(t, addr.String(), true, false)
+}
+
+func TestClientWSServerBind(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runWSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	runListen45Tcp(t, addr.String(), false, true)
+}
+
+func TestClientWSSServerBind(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runWSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	runListen45Tcp(t, addr.String(), true, true)
 }

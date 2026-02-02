@@ -343,8 +343,11 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 			if got != expect {
 				t.Fatalf("got '%s' while expecting '%s'", got, expect)
 			}
+
+			t.Logf("client %d ok", i)
 		}()
 	}
+	t.Log("all clients ok")
 }
 
 func testUDPDial(c *socksgo.Client, t *testing.T, pairs ...HostPort) {

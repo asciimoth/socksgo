@@ -59,6 +59,17 @@ var DefaultGostMBindHandler = CommandHandler{
 		}()
 
 		var wg sync.WaitGroup
+		wg.Go(func() {
+			for {
+				rw, err := session.Accept()
+				if err != nil {
+					_ = session.Close()
+					_ = listener.Close()
+					return
+				}
+				_ = rw.Close()
+			}
+		})
 		for {
 			var inc net.Conn
 			inc, err = listener.Accept()

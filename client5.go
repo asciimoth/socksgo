@@ -176,6 +176,7 @@ func (l *clientListener5) Accept() (net.Conn, error) {
 
 type clientListener5mux struct {
 	addr    net.Addr
+	conn    net.Conn
 	session *smux.Session
 }
 
@@ -184,7 +185,13 @@ func (l *clientListener5mux) Addr() net.Addr {
 }
 
 func (l *clientListener5mux) Close() error {
-	return l.session.Close()
+	err := l.session.Close()
+	if err == nil {
+		err = l.conn.Close()
+	} else {
+		_ = l.conn.Close()
+	}
+	return err
 }
 
 func (l *clientListener5mux) Accept() (net.Conn, error) {
