@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -34,7 +35,7 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 		return client
 	}
 
-	version, isTLS, isWS := parseScheme(u.Scheme)
+	version, isTLS, isWS := internal.ParseScheme(u.Scheme)
 	client.SocksVersion = version
 	client.TLS = isTLS
 
@@ -59,12 +60,12 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 
 	q := u.Query()
 
-	if f, s := checkURLBoolKey(q, "gost"); s {
+	if f, s := internal.CheckURLBoolKey(q, "gost"); s {
 		client.GostMbind = f
 		client.GostUDPTun = f
 	}
 
-	if f, s := checkURLBoolKey(q, "tor"); s {
+	if f, s := internal.CheckURLBoolKey(q, "tor"); s {
 		client.TorLookup = f
 	}
 
@@ -79,7 +80,7 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 		})
 	}
 
-	if f, s := checkURLBoolKey(q, "pass"); s && f {
+	if f, s := internal.CheckURLBoolKey(q, "pass"); s && f {
 		client.Filter = PassAllFilter
 	}
 
@@ -87,7 +88,7 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 		InsecureSkipVerify: true, //nolint
 	}
 	// In safe constructor we can enable it but not disable
-	if f, s := checkURLBoolKey(q, "secure"); s && f {
+	if f, s := internal.CheckURLBoolKey(q, "secure"); s && f {
 		client.TLSConfig.InsecureSkipVerify = false
 	}
 	return client
@@ -113,13 +114,13 @@ func ClientFromURLObj(u *url.URL) *Client {
 	client := ClientFromURLObjSafe(u)
 
 	q := u.Query()
-	if f, s := checkURLBoolKey(q, "insecureudp"); s {
+	if f, s := internal.CheckURLBoolKey(q, "insecureudp"); s {
 		client.InsecureUDP = f
 	}
-	if f, s := checkURLBoolKey(q, "assocprob"); s {
+	if f, s := internal.CheckURLBoolKey(q, "assocprob"); s {
 		client.DoNotSpawnUDPAsocProbber = !f
 	}
-	if f, s := checkURLBoolKey(q, "secure"); s {
+	if f, s := internal.CheckURLBoolKey(q, "secure"); s {
 		client.TLSConfig.InsecureSkipVerify = !f
 	}
 	// TODO: Add more TLS related args

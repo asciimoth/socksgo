@@ -1,11 +1,11 @@
-package socksgo
+package internal
 
 import (
 	"slices"
 	"strings"
 )
 
-func checkURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
+func CheckURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
 	val, ok := values[key]
 	if ok {
 		if len(val) == 0 {
@@ -19,7 +19,7 @@ func checkURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
 }
 
 // base = "4" | "4a" | "5"
-func parseScheme(scheme string) (base string, tls, ws bool) {
+func ParseScheme(scheme string) (base string, tls, ws bool) {
 	parts := strings.Split(strings.TrimSpace(strings.ToLower(scheme)), "+")
 	for _, p := range []string{"socks", "socks5", "socks5h"} {
 		if slices.Contains(parts, p) {
