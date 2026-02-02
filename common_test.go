@@ -104,3 +104,42 @@ func TestBuildFilter_HostnameVsIP_NoDNS(t *testing.T) {
 		}
 	}
 }
+
+func TestConstantFilters(t *testing.T) {
+	nets := []string{"tcp", "tcp4", "tcp6", "udp", "udp4", "udp6", "", "fsasdf"}
+	addrs := []string{"example.com", "127.0.0.1"}
+
+	for _, net := range nets {
+		for _, addr := range addrs {
+			p := socksgo.PassAllFilter(net, addr)
+			m := socksgo.MatchAllFilter(net, addr)
+			if p || !m {
+				t.Error(net, addr, p, m)
+			}
+		}
+	}
+}
+
+func TestLoopbackFilter(t *testing.T) {
+	table := []struct {
+		addr string
+		exp  bool
+	}{
+		{"localhost", true},
+		{"localhost:42", true},
+		{"127.0.0.1", true},
+		{"127.0.0.1:42", true},
+		{"::1", true},
+		{"[::1]:42", true},
+		{"192.168.0.0.1", false},
+		{"8.8.8.8", false},
+		{"example.com", false},
+		{"", false},
+	}
+	for _, tt := range table {
+		got := socksgo.LoopbackFilter("", tt.addr)
+		if got != tt.exp {
+			t.Error(tt.addr, tt.exp, got)
+		}
+	}
+}

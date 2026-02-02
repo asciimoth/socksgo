@@ -2,7 +2,10 @@ package protocol_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"net"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -540,5 +543,130 @@ func TestWithDefaultAddr(t *testing.T) {
 	}
 	if b.IsUnspecified() {
 		t.Error(b.String())
+	}
+}
+
+func TestResolveToIP4(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		input   protocol.Addr
+		lookup  func(context.Context, string, string) ([]net.IP, error)
+		wantNil bool
+		// optional expectations when wantNil == false
+		wantType protocol.AddrType
+		wantNet  string
+		wantIP   net.IP
+	}{
+		{
+			name:  "already IPv4 - returns itself and lookup not called",
+			input: protocol.AddrFromString("1.2.3.4", 80, "tcp"),
+			lookup: func(context.Context, string, string) ([]net.IP, error) {
+				t.Fatalf("lookup must not be called for IPv4 addresses")
+				return nil, nil
+			},
+			wantNil:  false,
+			wantType: protocol.IP4Addr,
+			wantNet:  "tcp", // original net typ preserved by returned copy
+			wantIP:   net.ParseIP("1.2.3.4").To4(),
+		},
+		{
+			name:  "FQDN resolves to IPv4 - returns ip with tcp4",
+			input: protocol.AddrFromFQDN("example.com", 8080, "tcp"),
+			lookup: func(_ context.Context, network, host string) ([]net.IP, error) {
+				if network != "ip4" {
+					t.Fatalf("expected lookup network 'ip4', got %q", network)
+				}
+				if host != "example.com" {
+					t.Fatalf("expected lookup host 'example.com', got %q", host)
+				}
+				return []net.IP{
+					net.ParseIP("5.6.7.8"),
+					net.ParseIP("::1"),
+				}, nil
+			},
+			wantNil:  false,
+			wantType: protocol.IP4Addr,
+			wantNet:  "tcp4", // ResolveToIP4 sets net to "tcp4"
+			wantIP:   net.ParseIP("5.6.7.8").To4(),
+		},
+		{
+			name:  "FQDN lookup returns empty slice -> nil",
+			input: protocol.AddrFromFQDN("noips.example", 53, "tcp"),
+			lookup: func(context.Context, string, string) ([]net.IP, error) {
+				return []net.IP{}, nil
+			},
+			wantNil: true,
+		},
+		{
+			name:  "FQDN lookup returns error -> nil",
+			input: protocol.AddrFromFQDN("err.example", 53, "tcp"),
+			lookup: func(context.Context, string, string) ([]net.IP, error) {
+				return nil, errors.New("lookup failed")
+			},
+			wantNil: true,
+		},
+		{
+			name:  "IPv6 address -> nil",
+			input: protocol.AddrFromString("::1", 1234, "tcp6"),
+			lookup: func(context.Context, string, string) ([]net.IP, error) {
+				t.Fatalf("lookup must not be called for IPv6 addresses")
+				return nil, nil
+			},
+			wantNil: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := tc.input.ResolveToIP4(ctx, tc.lookup)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil result, got %+v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected non-nil result, got nil")
+			}
+
+			// Type check
+			if got.Type != tc.wantType {
+				t.Fatalf("wrong type: want %v got %v", tc.wantType, got.Type)
+			}
+			// Port preserved
+			if got.Port != tc.input.Port {
+				t.Fatalf(
+					"port changed: want %d got %d",
+					tc.input.Port,
+					got.Port,
+				)
+			}
+			// NetTyp expectation
+			if got.NetTyp != tc.wantNet {
+				t.Fatalf("NetTyp: want %q got %q", tc.wantNet, got.NetTyp)
+			}
+			// Host bytes represent expected IP
+			if !reflect.DeepEqual(net.IP(got.Host).To4(), tc.wantIP) {
+				t.Fatalf(
+					"host IP mismatch: want %v got %v",
+					tc.wantIP,
+					net.IP(got.Host),
+				)
+			}
+
+			// Also ensure returned Addr is independent (copy) of original value:
+			// mutating original should not affect returned value's Host slice.
+			origCopy := tc.input.Copy()
+			if len(origCopy.Host) > 0 {
+				origCopy.Host[0] ^= 0xFF
+				if reflect.DeepEqual(net.IP(got.Host), net.IP(origCopy.Host)) {
+					t.Fatalf("returned Addr shares Host storage with original")
+				}
+			}
+		})
 	}
 }

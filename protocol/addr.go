@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"net"
 	"strconv"
 	"strings"
@@ -384,4 +385,22 @@ func (a Addr) String() string {
 		return a.ToFQDN()
 	}
 	return a.ToHostPort()
+}
+
+func (a Addr) ResolveToIP4(
+	ctx context.Context,
+	lookup func(context.Context, string, string) ([]net.IP, error),
+) *Addr {
+	if a.Type == IP4Addr {
+		return &a
+	}
+	if a.Type == FQDNAddr {
+		ips, err := lookup(ctx, "ip4", a.ToFQDN())
+		if err != nil || len(ips) < 1 {
+			return nil
+		}
+		a = AddrFromIP(ips[0], a.Port, "tcp4")
+		return &a
+	}
+	return nil
 }

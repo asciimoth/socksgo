@@ -430,7 +430,7 @@ func (c *Client) request(
 		return c.request4(ctx, cmd, address)
 	}
 	if ver == "4" {
-		ipaddr := resolveTcp4Addr(ctx, address, c.GetResolver())
+		ipaddr := address.ResolveToIP4(ctx, c.GetResolver().LookupIP)
 		if ipaddr == nil {
 			err = UnsupportedAddrError{
 				SocksVersion: ver,

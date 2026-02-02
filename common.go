@@ -5,8 +5,6 @@ import (
 	"net"
 	"path"
 	"strings"
-
-	"github.com/asciimoth/socksgo/protocol"
 )
 
 var supportedNetworks = map[string]any{
@@ -58,6 +56,9 @@ func LoopbackFilter(_, address string) bool {
 	if address == "localhost" {
 		return true
 	}
+	if net.ParseIP(address).IsLoopback() {
+		return true
+	}
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return false
@@ -98,9 +99,6 @@ func BuildFilter(str string) Filter {
 	// parse entries
 	for raw := range strings.SplitSeq(str, ",") {
 		e := strings.TrimSpace(raw)
-		if e == "" {
-			continue
-		}
 
 		// Try CIDR
 		if strings.Contains(e, "/") {
@@ -133,8 +131,10 @@ func BuildFilter(str string) Filter {
 		}
 
 		// Finally treat as host pattern (may include wildcards)
-		patt := trimDot(strings.ToLower(e))
-		hosts = append(hosts, hostEntry{pattern: patt, hasPort: false})
+		if e != "" {
+			patt := trimDot(strings.ToLower(e))
+			hosts = append(hosts, hostEntry{pattern: patt, hasPort: false})
+		}
 	}
 
 	// filter function
@@ -185,25 +185,6 @@ func BuildFilter(str string) Filter {
 		}
 		return false
 	}
-}
-
-func resolveTcp4Addr(
-	ctx context.Context,
-	addr protocol.Addr,
-	resolver Resolver,
-) *protocol.Addr {
-	if addr.Type == protocol.IP4Addr {
-		return &addr
-	}
-	if addr.Type == protocol.FQDNAddr {
-		ips, err := resolver.LookupIP(ctx, "ip4", addr.ToFQDN())
-		if err != nil || len(ips) < 1 {
-			return nil
-		}
-		addr = protocol.AddrFromIP(ips[0], addr.Port, "tcp4")
-		return &addr
-	}
-	return nil
 }
 
 func trimDot(s string) string {
