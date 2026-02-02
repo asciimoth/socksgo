@@ -83,7 +83,6 @@ linters:
     - tagliatelle
     - testifylint
     - testpackage
-    - tparallel
     - unconvert
     - unparam
     - usestdlibvars
@@ -95,3 +94,4 @@ linters:
   disable:
     - unused
     - contextcheck
+    - tparallel
