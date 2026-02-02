@@ -105,6 +105,7 @@ func GetEnvConfig() EnvConfig {
 func buildClient(url string, t *testing.T, pool bufpool.Pool) *socksgo.Client {
 	c, err := socksgo.ClientFromURL(url)
 	c.Pool = pool
+	c.Filter = socksgo.PassAllFilter
 	if err != nil {
 		t.Fatalf("failed to create gost socks client: %s %v", url, err)
 	}
