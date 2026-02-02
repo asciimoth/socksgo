@@ -116,7 +116,7 @@ func BuildFilter(str string) Filter {
 		}
 
 		// Try split host:port (handles bracketed IPv6)
-		if host, port, ok := splitHostPortEntry(e); ok {
+		if host, port, err := net.SplitHostPort(e); err == nil {
 			// host part might be IP or pattern/hostname
 			host = trimDot(strings.ToLower(host))
 			if ip := net.ParseIP(host); ip != nil {
@@ -193,19 +193,4 @@ func trimDot(s string) string {
 		s = strings.TrimRight(s, ".")
 	}
 	return s
-}
-
-// helper for BuildFilter to split host:port from strings like "*.example.com:443", "1.2.3.4:80", "[::1]:22"
-func splitHostPortEntry(e string) (host, port string, ok bool) {
-	// first try net.SplitHostPort (handles bracketed IPv6)
-	if h, p, err := net.SplitHostPort(e); err == nil {
-		return h, p, true
-	}
-	// If string contains >=2 ':' and not bracketed -> likely raw IPv6 without port.
-	if strings.Count(e, ":") >= 2 && !strings.HasPrefix(e, "[") {
-		// treat as host only (IPv6 literal)
-		return e, "", false
-	}
-	// no port found
-	return e, "", false
 }
