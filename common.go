@@ -3,7 +3,6 @@ package socksgo
 import (
 	"context"
 	"net"
-	"os"
 	"path"
 	"strings"
 
@@ -228,27 +227,4 @@ func splitHostPortEntry(e string) (host, port string, ok bool) {
 	}
 	// no port found
 	return e, "", false
-}
-
-func getProxyFromEnvVar(scheme string) (val string) {
-	prior := []string{"ALL_PROXY", "all_proxy"}
-	if scheme == "" {
-		prior = append([]string{"SOCKS_PROXY", "socks_proxy"}, prior...)
-	} else {
-		scheme = strings.TrimSpace(scheme)
-		prior = append([]string{
-			strings.ToUpper(scheme) + "_PROXY",
-			strings.ToLower(scheme) + "_proxy",
-		}, prior...)
-	}
-	for _, key := range prior {
-		val = os.Getenv(key)
-		if val != "" {
-			break
-		}
-	}
-	if val != "" {
-		val = strings.TrimSpace(val)
-	}
-	return
 }

@@ -103,7 +103,7 @@ func ClientFromURLSafe(urlstr string) (*Client, error) {
 }
 
 func ClientFromENVSafe(scheme string) (*Client, error) {
-	urlstring := getProxyFromEnvVar(scheme)
+	urlstring := internal.GetProxyFromEnvVar(scheme)
 	if urlstring == "" {
 		return ClientNoProxy(), nil
 	}
@@ -137,7 +137,7 @@ func ClientFromURL(urlstr string) (*Client, error) {
 }
 
 func ClientFromENV(scheme string) (*Client, error) {
-	urlstring := getProxyFromEnvVar(scheme)
+	urlstring := internal.GetProxyFromEnvVar(scheme)
 	if urlstring == "" {
 		return ClientNoProxy(), nil
 	}
