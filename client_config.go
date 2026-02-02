@@ -20,23 +20,6 @@ type WebSocketConfig struct {
 	RequestHeader     http.Header
 }
 
-func (w *WebSocketConfig) Clone() *WebSocketConfig {
-	if w == nil {
-		return nil
-	}
-	subprotocols := make([]string, 0, len(w.Subprotocols))
-
-	subprotocols = append(subprotocols, w.Subprotocols...)
-	cfg := WebSocketConfig{
-		ReadBufferSize:    w.ReadBufferSize,
-		Subprotocols:      subprotocols,
-		EnableCompression: w.EnableCompression,
-		Jar:               w.Jar,
-		RequestHeader:     w.RequestHeader.Clone(),
-	}
-	return &cfg
-}
-
 func (w *WebSocketConfig) jar() http.CookieJar {
 	if w == nil {
 		return websocket.DefaultDialer.Jar
