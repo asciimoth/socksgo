@@ -426,29 +426,44 @@ func TestGSSHandlerHeaderWriteFail(t *testing.T) {
 }
 
 func TestGSSHandlerTookenWriteFail(t *testing.T) {
-	pool := bufpool.NewTestDebugPool(t)
-	defer pool.Close()
-
-	a, b := net.Pipe()
-	defer func() {
-		_ = a.Close()
-		_ = b.Close()
-	}()
-	go func() {
-		defer func() { _ = b.Close() }()
-		_, _ = io.Copy(b, bytes.NewReader([]byte{1, 1, 1 >> 8, 1 & 0xff, 42}))
-	}()
-	go func() {
-		defer func() { _ = b.Close() }()
-		for range 5 {
-			_, err := b.Read([]byte{0})
-			if err != nil {
-				return
-			}
+	var err error
+	stop := false
+	for i := range 15 {
+		if stop {
+			break
 		}
-	}()
-	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
-	_, _, err := handler.HandleAuth(a, pool)
+		func() {
+			pool := bufpool.NewTestDebugPool(t)
+			defer pool.Close()
+
+			a, b := net.Pipe()
+			defer func() {
+				_ = a.Close()
+				_ = b.Close()
+			}()
+			go func() {
+				defer func() { _ = b.Close() }()
+				_, _ = io.Copy(
+					b,
+					bytes.NewReader([]byte{1, 1, 1 >> 8, 1 & 0xff, 42}),
+				)
+			}()
+			go func() {
+				defer func() { _ = b.Close() }()
+				for range i {
+					_, err := b.Read([]byte{0})
+					if err != nil {
+						return
+					}
+				}
+			}()
+			handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+			_, _, err = handler.HandleAuth(a, pool)
+			if err.Error() == "io: read/write on closed pipe" {
+				stop = true
+			}
+		}()
+	}
 	if err.Error() != "io: read/write on closed pipe" {
 		t.Error(err)
 	}
