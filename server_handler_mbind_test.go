@@ -8,22 +8,23 @@ import (
 
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
+	"github.com/xtaci/smux"
 )
 
-func TestBindHandlerLaddrBlocked(t *testing.T) {
+func TestMindHandlerLaddrBlocked(t *testing.T) {
 	server := socksgo.Server{
 		LaddrFilter: func(*protocol.Addr) bool {
 			return false
 		},
 	}
 	conn := &net.TCPConn{}
-	err := socksgo.DefaultBindHandler.Handler(
+	err := socksgo.DefaultGostMBindHandler.Handler(
 		context.Background(),
 		&server,
 		conn,
 		"5",
 		protocol.AuthInfo{},
-		protocol.CmdBind,
+		protocol.CmdGostMuxBind,
 		protocol.AddrFromFQDN("example.com", 8080, ""),
 	)
 	if err.Error() != "address example.com:8080 is disallowed by server laddr filter" {
@@ -31,7 +32,7 @@ func TestBindHandlerLaddrBlocked(t *testing.T) {
 	}
 }
 
-func TestBindHandlerListenFail(t *testing.T) {
+func TestMbindHandlerListenFail(t *testing.T) {
 	errstr := "mock dialer error"
 	server := socksgo.Server{
 		Listener: func(context.Context, string, string) (net.Listener, error) {
@@ -39,13 +40,13 @@ func TestBindHandlerListenFail(t *testing.T) {
 		},
 	}
 	conn := &net.TCPConn{}
-	err := socksgo.DefaultBindHandler.Handler(
+	err := socksgo.DefaultGostMBindHandler.Handler(
 		context.Background(),
 		&server,
 		conn,
 		"5",
 		protocol.AuthInfo{},
-		protocol.CmdBind,
+		protocol.CmdGostMuxBind,
 		protocol.AddrFromFQDN("example.com", 8080, ""),
 	)
 	if err.Error() != errstr {
@@ -53,7 +54,7 @@ func TestBindHandlerListenFail(t *testing.T) {
 	}
 }
 
-func TestBindHandlerReplyFail(t *testing.T) {
+func TestMbindHandlerReplyFail(t *testing.T) {
 	server := socksgo.Server{
 		Listener: func(context.Context, string, string) (net.Listener, error) {
 			return listenerWithAddr{
@@ -75,13 +76,13 @@ func TestBindHandlerReplyFail(t *testing.T) {
 		},
 	}
 	conn := &net.TCPConn{}
-	err := socksgo.DefaultBindHandler.Handler(
+	err := socksgo.DefaultGostMBindHandler.Handler(
 		context.Background(),
 		&server,
 		conn,
 		"5",
 		protocol.AuthInfo{},
-		protocol.CmdBind,
+		protocol.CmdGostMuxBind,
 		protocol.AddrFromFQDN("example.com", 8080, ""),
 	)
 	if err == nil {
@@ -89,7 +90,7 @@ func TestBindHandlerReplyFail(t *testing.T) {
 	}
 }
 
-func TestBindHandlerSecondReplyFail(t *testing.T) {
+func TestMbindHandlerSmuxFail(t *testing.T) {
 	conn, conn2 := net.Pipe()
 	defer func() {
 		_ = conn.Close()
@@ -101,8 +102,58 @@ func TestBindHandlerSecondReplyFail(t *testing.T) {
 				Listener: listenerWithAccept{
 					Listener: &net.TCPListener{},
 					Acc: func() (net.Conn, error) {
-						_ = conn.Close()
-						_ = conn2.Close()
+						return connWithAaddr{
+							Conn: &net.TCPConn{},
+							Raddr: protocol.AddrFromFQDN(
+								"example.com",
+								8080,
+								"",
+							),
+						}, nil
+					},
+				},
+				Laddr: protocol.AddrFromFQDN("example.com", 8080, ""),
+			}, nil
+		},
+		// Invalid config
+		Smux: &smux.Config{
+			Version: 42,
+		},
+	}
+	go func() {
+		for {
+			_, err := conn2.Read([]byte{0})
+			if err != nil {
+				return
+			}
+		}
+	}()
+	err := socksgo.DefaultGostMBindHandler.Handler(
+		context.Background(),
+		&server,
+		conn,
+		"5",
+		protocol.AuthInfo{},
+		protocol.CmdGostMuxBind,
+		protocol.AddrFromFQDN("example.com", 8080, ""),
+	)
+	if err.Error() != "unsupported protocol version" {
+		t.Fatal(err)
+	}
+}
+
+func TestMbindHandlerSmuxAccept(t *testing.T) {
+	conn, conn2 := net.Pipe()
+	defer func() {
+		_ = conn.Close()
+		_ = conn2.Close()
+	}()
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listenerWithAddr{
+				Listener: listenerWithAccept{
+					Listener: &net.TCPListener{},
+					Acc: func() (net.Conn, error) {
 						return connWithAaddr{
 							Conn: &net.TCPConn{},
 							Raddr: protocol.AddrFromFQDN(
@@ -118,65 +169,34 @@ func TestBindHandlerSecondReplyFail(t *testing.T) {
 		},
 	}
 	go func() {
-		for {
-			_, err := conn2.Read([]byte{0})
-			if err != nil {
-				return
+		_, addr, _ := protocol.ReadSocks5TCPReply(conn2, nil)
+		go func() {
+			c, err := net.Dial("tcp", addr.String()) //nolint
+			if err == nil {
+				_ = c.Close()
 			}
+		}()
+		session, err := smux.Server(conn2, nil)
+		if err != nil {
+			panic(err)
 		}
-	}()
-	err := socksgo.DefaultBindHandler.Handler(
-		context.Background(),
-		&server,
-		conn,
-		"5",
-		protocol.AuthInfo{},
-		protocol.CmdBind,
-		protocol.AddrFromFQDN("example.com", 8080, ""),
-	)
-	if err.Error() != "io: read/write on closed pipe" {
-		t.Fatal(err)
-	}
-}
-
-func TestBindHandlerAcceptFail(t *testing.T) {
-	errstr := "mock dialer error"
-	server := socksgo.Server{
-		Listener: func(context.Context, string, string) (net.Listener, error) {
-			return listenerWithAddr{
-				Listener: listenerWithAccept{
-					Listener: &net.TCPListener{},
-					Acc: func() (net.Conn, error) {
-						return nil, errors.New(errstr)
-					},
-				},
-				Laddr: protocol.AddrFromFQDN("example.com", 8080, ""),
-			}, nil
-		},
-	}
-	conn, conn2 := net.Pipe()
-	defer func() {
+		if rw, err := session.Open(); err == nil {
+			_ = rw.Close()
+		}
+		_ = session.Close()
 		_ = conn.Close()
 		_ = conn2.Close()
 	}()
-	go func() {
-		for {
-			_, err := conn2.Read([]byte{0})
-			if err != nil {
-				return
-			}
-		}
-	}()
-	err := socksgo.DefaultBindHandler.Handler(
+	err := socksgo.DefaultGostMBindHandler.Handler(
 		context.Background(),
 		&server,
 		conn,
 		"5",
 		protocol.AuthInfo{},
-		protocol.CmdBind,
+		protocol.CmdGostMuxBind,
 		protocol.AddrFromFQDN("example.com", 8080, ""),
 	)
-	if err.Error() != errstr {
+	if err != nil {
 		t.Fatal(err)
 	}
 }
