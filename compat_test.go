@@ -179,20 +179,16 @@ func checkPacketConnLaddr(t *testing.T, conn net.PacketConn) (addr net.Addr) {
 	return
 }
 
-func testUDPListen(c *socksgo.Client, t *testing.T, times int, needStun bool) {
+func testUDPListen(c *socksgo.Client, t *testing.T, times int) { //nolint unparam
 	serverConn, err := c.ListenPacket(context.Background(), "udp4", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("failed to start udp server with client %T: %v", c, err)
 	}
 	defer func() { _ = serverConn.Close() }()
 
-	serverAddr := serverConn.LocalAddr()
+	serverAddr := checkPacketConnLaddr(t, serverConn)
 
-	if needStun {
-		serverAddr = checkPacketConnLaddr(t, serverConn)
-	}
-
-	t.Log(serverAddr)
+	t.Logf("%s %T", serverAddr, serverConn)
 
 	clientConn, err := net.Dial("udp4", serverAddr.String()) //nolint noctx
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"net"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -185,13 +186,7 @@ func (l *clientListener5mux) Addr() net.Addr {
 }
 
 func (l *clientListener5mux) Close() error {
-	err := l.session.Close()
-	if err == nil {
-		err = l.conn.Close()
-	} else {
-		_ = l.conn.Close()
-	}
-	return err
+	return internal.JoinNetErrors(l.session.Close(), l.conn.Close())
 }
 
 func (l *clientListener5mux) Accept() (net.Conn, error) {

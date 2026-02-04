@@ -342,19 +342,19 @@ func testGostCompat(t *testing.T, tls bool, ws bool) {
 		t.Run("Listen UDP", func(t *testing.T) {
 			t.Run("socks5 gost", func(t *testing.T) {
 				t.Parallel()
-				testUDPListen(c5g, t, 10, false)
+				testUDPListen(c5g, t, 10)
 			})
 			t.Run("socks5 gost pass", func(t *testing.T) {
 				t.Parallel()
-				testUDPListen(c5gp, t, 10, false)
+				testUDPListen(c5gp, t, 10)
 			})
 			t.Run("socks5", func(t *testing.T) {
 				t.Parallel()
-				testUDPListen(c5, t, 10, true)
+				testUDPListen(c5, t, 10)
 			})
 			t.Run("socks5 pass", func(t *testing.T) {
 				t.Parallel()
-				testUDPListen(c5p, t, 10, true)
+				testUDPListen(c5p, t, 10)
 			})
 		})
 	}

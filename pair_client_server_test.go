@@ -11,11 +11,6 @@ import (
 
 /*
  TODO:
-- Bind
-- Mbind
-- UDP Assoc dial
-- USP Assoc listen
-- x2 for UDP Tun
 - Resolve, ResolvePtr with custom resolver
 */
 
@@ -67,97 +62,139 @@ func buildSocksPostfix(tls, ws bool) string {
 	return postfix
 }
 
-func runListen45Tcp(t *testing.T, addr string, tls, ws bool) {
+func runAssoc5UDP(
+	t *testing.T,
+	addr string,
+	tls, ws bool,
+	pairs []HostPort,
+	pool bufpool.Pool,
+) {
 	postfix := buildSocksPostfix(tls, ws)
-	t.Run("group", func(t *testing.T) {
+	t.Run("assoc", func(t *testing.T) {
+		t.Run("dial socks5", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://"+addr, t, pool,
+			)
+			testUDPDial(client, t, pairs...)
+		})
+		t.Run("dial socks5 pass", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://user:pass@"+addr, t, pool,
+			)
+			testUDPDial(client, t, pairs...)
+		})
+		t.Run("dial socks5 gost", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://"+addr+"?gost", t, pool,
+			)
+			testUDPDial(client, t, pairs...)
+		})
+		t.Run("dial socks5 pass gost", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://user:pass@"+addr+"?gost", t, pool,
+			)
+			testUDPDial(client, t, pairs...)
+		})
+
+		t.Run("listen socks5", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://"+addr, t, pool,
+			)
+			testUDPListen(client, t, 10)
+		})
+		t.Run("listen socks5 pass", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://user:pass@"+addr, t, pool,
+			)
+			testUDPListen(client, t, 10)
+		})
+		t.Run("listen socks5 gost", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://"+addr+"?gost", t, pool,
+			)
+			testUDPListen(client, t, 10)
+		})
+		t.Run("lsiten socks5 pass gost", func(t *testing.T) {
+			t.Parallel()
+			client := buildClient(
+				"socks5"+postfix+"://user:pass@"+addr+"?gost", t, pool,
+			)
+			testUDPListen(client, t, 10)
+		})
+	})
+}
+
+func runListen45Tcp(
+	t *testing.T,
+	addr string,
+	tls, ws bool,
+	pool bufpool.Pool,
+) {
+	postfix := buildSocksPostfix(tls, ws)
+	t.Run("listen", func(t *testing.T) {
 		t.Run("socks4", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks4" + postfix + "://" + addr,
+			client := buildClient(
+				"socks4"+postfix+"://"+addr, t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 1)
 		})
 		t.Run("socks4 user", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks4" + postfix + "://user@" + addr,
+			client := buildClient(
+				"socks4"+postfix+"://user@"+addr, t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 1)
 		})
 		t.Run("socks4a", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks4a" + postfix + "://" + addr,
+			client := buildClient(
+				"socks4a"+postfix+"://"+addr, t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 1)
 		})
 		t.Run("socks4a user", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks4a" + postfix + "://user@" + addr,
+			client := buildClient(
+				"socks4a"+postfix+"://user@"+addr, t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 1)
 		})
 
 		t.Run("socks5", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks5" + postfix + "://" + addr,
+			client := buildClient(
+				"socks5"+postfix+"://"+addr, t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 1)
 		})
 		t.Run("socks5 pass", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks5" + postfix + "://user:pass@" + addr,
+			client := buildClient(
+				"socks5"+postfix+"://user:pass@"+addr, t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 1)
 		})
 
 		t.Run("socks5 gost", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks5" + postfix + "://" + addr + "?gost",
+			client := buildClient(
+				"socks5"+postfix+"://"+addr+"?gost", t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 10)
 		})
 		t.Run("socks5 pass gost", func(t *testing.T) {
 			t.Parallel()
-			client, err := socksgo.ClientFromURL(
-				"socks5" + postfix + "://user:pass@" + addr + "?gost",
+			client := buildClient(
+				"socks5"+postfix+"://user:pass@"+addr+"?gost", t, pool,
 			)
-			if err != nil {
-				t.Fatal(err)
-				return
-			}
 			testListen(client, t, 10)
 		})
 	})
@@ -292,7 +329,7 @@ func TestClientServerBind(t *testing.T) {
 	}
 	defer cancel()
 
-	runListen45Tcp(t, addr.String(), false, false)
+	runListen45Tcp(t, addr.String(), false, false, pool)
 }
 
 func TestClientServerTLSBind(t *testing.T) {
@@ -312,7 +349,7 @@ func TestClientServerTLSBind(t *testing.T) {
 	}
 	defer cancel()
 
-	runListen45Tcp(t, addr.String(), true, false)
+	runListen45Tcp(t, addr.String(), true, false, pool)
 }
 
 func TestClientWSServerBind(t *testing.T) {
@@ -332,7 +369,7 @@ func TestClientWSServerBind(t *testing.T) {
 	}
 	defer cancel()
 
-	runListen45Tcp(t, addr.String(), false, true)
+	runListen45Tcp(t, addr.String(), false, true, pool)
 }
 
 func TestClientWSSServerBind(t *testing.T) {
@@ -352,5 +389,45 @@ func TestClientWSSServerBind(t *testing.T) {
 	}
 	defer cancel()
 
-	runListen45Tcp(t, addr.String(), true, true)
+	runListen45Tcp(t, addr.String(), true, true, pool)
+}
+
+func TestClientServerAssoc(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTCPServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	runAssoc5UDP(t, addr.String(), false, false, cfg.Pairs, pool)
+}
+
+func TestClientWSServerAssoc(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runWSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	runAssoc5UDP(t, addr.String(), false, true, cfg.Pairs, pool)
 }
