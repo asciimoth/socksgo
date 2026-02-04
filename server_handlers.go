@@ -59,10 +59,10 @@ func (h *CommandHandler) Allowed(ver string, isTLS bool) bool {
 	if isTLS && !h.TLSCompat {
 		return false
 	}
-	if ver == "4" && h.Socks4 {
+	if (ver == "4" || ver == "4a") && h.Socks4 {
 		return true
 	}
-	if ver == "5" && h.Socks5 {
+	if (ver == "5" || ver == "5h") && h.Socks5 {
 		return true
 	}
 	return false

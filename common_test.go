@@ -1,6 +1,7 @@
 package socksgo_test
 
 import (
+	"net"
 	"testing"
 
 	"github.com/asciimoth/socksgo"
@@ -142,4 +143,17 @@ func TestLoopbackFilter(t *testing.T) {
 			t.Error(tt.addr, tt.exp, got)
 		}
 	}
+}
+
+type connWithAaddr struct {
+	net.Conn
+	Laddr, Raddr net.Addr
+}
+
+func (c connWithAaddr) RemoteAddr() net.Addr {
+	return c.Raddr
+}
+
+func (c connWithAaddr) LocalAddr() net.Addr {
+	return c.Laddr
 }
