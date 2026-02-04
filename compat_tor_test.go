@@ -95,6 +95,7 @@ func TestTorCompat(t *testing.T) {
 
 	t.Run("Lookup", func(t *testing.T) {
 		testLookup(c5, t, true, cfg.Pairs...)
+		testLookup(c5, t, false, cfg.Pairs...)
 		testLookup(c4a, t, false, cfg.Pairs...)
 	})
 }

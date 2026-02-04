@@ -9,11 +9,6 @@ import (
 	socksgo "github.com/asciimoth/socksgo"
 )
 
-/*
- TODO:
-- Resolve, ResolvePtr with custom resolver
-*/
-
 func runClientHttp(t *testing.T, srv string, urls []string) {
 	socks, err := socksgo.ClientFromURL(srv)
 	if err != nil {
@@ -430,4 +425,112 @@ func TestClientWSServerAssoc(t *testing.T) {
 	defer cancel()
 
 	runAssoc5UDP(t, addr.String(), false, true, cfg.Pairs, pool)
+}
+
+func TestClientServerResolve(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTCPServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	c5 := buildClient("socks5://"+addr.String()+"?tor", t, pool)
+	c4a := buildClient("socks4a://"+addr.String()+"?tor", t, pool)
+
+	t.Run("Lookup", func(t *testing.T) {
+		testLookup(c5, t, true, cfg.Pairs...)
+		testLookup(c5, t, false, cfg.Pairs...)
+		testLookup(c4a, t, false, cfg.Pairs...)
+	})
+}
+
+func TestClientServerTLSResolve(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTLSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	c5 := buildClient("socks5+tls://"+addr.String()+"?tor", t, pool)
+	c4a := buildClient("socks4a+tls://"+addr.String()+"?tor", t, pool)
+
+	t.Run("Lookup", func(t *testing.T) {
+		testLookup(c5, t, true, cfg.Pairs...)
+		testLookup(c5, t, false, cfg.Pairs...)
+		testLookup(c4a, t, false, cfg.Pairs...)
+	})
+}
+
+func TestClientWSServerResolve(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runWSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	c5 := buildClient("socks5+ws://"+addr.String()+"?tor", t, pool)
+	c4a := buildClient("socks4a+ws://"+addr.String()+"?tor", t, pool)
+
+	t.Run("Lookup", func(t *testing.T) {
+		testLookup(c5, t, true, cfg.Pairs...)
+		testLookup(c5, t, false, cfg.Pairs...)
+		testLookup(c4a, t, false, cfg.Pairs...)
+	})
+}
+
+func TestClientWSSServerResolve(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runWSServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	c5 := buildClient("socks5+wss://"+addr.String()+"?tor", t, pool)
+	c4a := buildClient("socks4a+wss://"+addr.String()+"?tor", t, pool)
+
+	t.Run("Lookup", func(t *testing.T) {
+		testLookup(c5, t, true, cfg.Pairs...)
+		testLookup(c5, t, false, cfg.Pairs...)
+		testLookup(c4a, t, false, cfg.Pairs...)
+	})
 }

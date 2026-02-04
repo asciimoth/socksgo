@@ -440,7 +440,7 @@ func TestGSSHandlerTookenWriteFail(t *testing.T) {
 	}()
 	go func() {
 		defer func() { _ = b.Close() }()
-		for range 4 {
+		for range 5 {
 			_, err := b.Read([]byte{0})
 			if err != nil {
 				return
