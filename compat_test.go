@@ -179,7 +179,11 @@ func checkPacketConnLaddr(t *testing.T, conn net.PacketConn) (addr net.Addr) {
 	return
 }
 
-func testUDPListen(c *socksgo.Client, t *testing.T, times int) { //nolint unparam
+func testUDPListen(
+	c *socksgo.Client,
+	t *testing.T,
+	times int, //nolint unparam
+) { //nolint unparam
 	serverConn, err := c.ListenPacket(context.Background(), "udp4", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("failed to start udp server with client %T: %v", c, err)

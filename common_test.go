@@ -157,3 +157,21 @@ func (c connWithAaddr) RemoteAddr() net.Addr {
 func (c connWithAaddr) LocalAddr() net.Addr {
 	return c.Laddr
 }
+
+type listenerWithAddr struct {
+	net.Listener
+	Laddr net.Addr
+}
+
+func (c listenerWithAddr) Addr() net.Addr {
+	return c.Laddr
+}
+
+type listenerWithAccept struct {
+	net.Listener
+	Acc func() (net.Conn, error)
+}
+
+func (c listenerWithAccept) Accept() (net.Conn, error) {
+	return c.Acc()
+}
