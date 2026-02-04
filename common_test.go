@@ -1,6 +1,7 @@
 package socksgo_test
 
 import (
+	"context"
 	"net"
 	"testing"
 
@@ -174,4 +175,23 @@ type listenerWithAccept struct {
 
 func (c listenerWithAccept) Accept() (net.Conn, error) {
 	return c.Acc()
+}
+
+type mockResolver struct {
+	FnLookupIP   func(ctx context.Context, network, address string) ([]net.IP, error)
+	FnLookupAddr func(ctx context.Context, address string) ([]string, error)
+}
+
+func (m *mockResolver) LookupIP(
+	ctx context.Context,
+	network, address string,
+) ([]net.IP, error) {
+	return m.FnLookupIP(ctx, network, address)
+}
+
+func (m *mockResolver) LookupAddr(
+	ctx context.Context,
+	address string,
+) ([]string, error) {
+	return m.FnLookupAddr(ctx, address)
 }

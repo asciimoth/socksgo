@@ -33,7 +33,7 @@ var DefaultResolvePtrHandler = CommandHandler{
 		if len(names) < 1 {
 			protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
 			return &net.DNSError{
-				Err:        "zero IPs found",
+				Err:        "zero addrs found",
 				Name:       addr.ToFQDN(),
 				IsNotFound: true,
 			}
