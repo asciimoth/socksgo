@@ -159,6 +159,19 @@ func (c connWithAaddr) LocalAddr() net.Addr {
 	return c.Laddr
 }
 
+type packetConnWithAaddr struct {
+	socksgo.PacketConn
+	Laddr, Raddr net.Addr
+}
+
+func (c packetConnWithAaddr) RemoteAddr() net.Addr {
+	return c.Raddr
+}
+
+func (c packetConnWithAaddr) LocalAddr() net.Addr {
+	return c.Laddr
+}
+
 type listenerWithAddr struct {
 	net.Listener
 	Laddr net.Addr

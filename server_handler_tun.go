@@ -29,16 +29,22 @@ var DefaultGostUDPTUNHandler = CommandHandler{
 			// UDP socket should not be binded to any specific raddr
 			// aka UDP server
 			laddr := addr.WithDefaultHost(server.GetDefaultListenHost())
-			proxy, err = server.GetPacketListener()(
-				ctx, laddr.Network(), laddr.ToHostPort(),
-			)
+			err = server.CheckLaddr(&addr)
+			if err == nil {
+				proxy, err = server.GetPacketListener()(
+					ctx, laddr.Network(), laddr.ToHostPort(),
+				)
+			}
 		} else {
-			binded = true
-			proxy, err = server.GetPacketDialer()(
-				ctx,
-				addr.Network(),
-				addr.ToHostPort(),
-			)
+			err = server.CheckRaddr(&addr)
+			if err == nil {
+				binded = true
+				proxy, err = server.GetPacketDialer()(
+					ctx,
+					addr.Network(),
+					addr.ToHostPort(),
+				)
+			}
 		}
 		if err != nil {
 			// TODO: What ReplyCode should we return here?
