@@ -365,7 +365,7 @@ func TestGSSHandlerInvalidFrame(t *testing.T) {
 			}
 		}
 	}()
-	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	handler := protocol.GSSAuthHandler{Server: &MockGSSServer{Rounds: 42}}
 	_, _, err := handler.HandleAuth(a, pool)
 	if err.Error() != "invalid GSS frame: ver=0x2a mtyp=0x2a" {
 		t.Error(err)
@@ -394,7 +394,7 @@ func TestGSSHanslerBrokenToken(t *testing.T) {
 			}
 		}
 	}()
-	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	handler := protocol.GSSAuthHandler{Server: &MockGSSServer{Rounds: 42}}
 	_, _, err := handler.HandleAuth(a, pool)
 	if err.Error() != "EOF" {
 		t.Error(err)
@@ -418,7 +418,7 @@ func TestGSSHandlerHeaderWriteFail(t *testing.T) {
 		defer func() { _ = b.Close() }()
 		_, _ = b.Read([]byte{0})
 	}()
-	handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+	handler := protocol.GSSAuthHandler{Server: &MockGSSServer{Rounds: 42}}
 	_, _, err := handler.HandleAuth(a, pool)
 	if err.Error() != "io: read/write on closed pipe" {
 		t.Error(err)
@@ -457,7 +457,9 @@ func TestGSSHandlerTookenWriteFail(t *testing.T) {
 					}
 				}
 			}()
-			handler := protocol.GSSAuthHandler{&MockGSSServer{Rounds: 42}}
+			handler := protocol.GSSAuthHandler{
+				Server: &MockGSSServer{Rounds: 42},
+			}
 			_, _, err = handler.HandleAuth(a, pool)
 			if err.Error() == "io: read/write on closed pipe" {
 				stop = true
@@ -467,4 +469,111 @@ func TestGSSHandlerTookenWriteFail(t *testing.T) {
 	if err.Error() != "io: read/write on closed pipe" {
 		t.Error(err)
 	}
+}
+
+func TestGSSHandlerMultiRoundWithTokenWrite(t *testing.T) {
+	t.Parallel()
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	// Create a 2-round GSS exchange where server sends tokens back
+	clientGSS := &MockGSSClient{Rounds: 2}
+	serverGSS := &MockGSSServer{Rounds: 2, Principal: "client@mock"}
+
+	clientInfo, serverInfo, clientErr, serverErr := runGSSAuthTest(
+		protocol.GSSAuthMethod{
+			Client:     clientGSS,
+			TargetName: "socks@server",
+		},
+		protocol.GSSAuthHandler{Server: serverGSS},
+		pool,
+	)
+
+	if clientErr != nil {
+		t.Errorf("GSS Client failed: %v", clientErr)
+	}
+
+	if serverErr != nil {
+		t.Errorf("GSS Server failed: %v", serverErr)
+	}
+
+	if serverInfo.Name != "client@mock" {
+		t.Errorf(
+			"Expected server info name 'client@mock', got %q",
+			serverInfo.Name,
+		)
+	}
+
+	if clientInfo.Code != protocol.GSSAuthCode {
+		t.Errorf(
+			"Expected client auth code GSSAuthCode, got %v",
+			clientInfo.Code,
+		)
+	}
+
+	if serverInfo.Code != protocol.GSSAuthCode {
+		t.Errorf(
+			"Expected server auth code GSSAuthCode, got %v",
+			serverInfo.Code,
+		)
+	}
+}
+
+func TestGSSHandlerTokenWriteFail(t *testing.T) {
+	t.Parallel()
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	// Create a connection that fails on the second write
+	writeCount := 0
+	failConn := &failAfterWriteConn{
+		Conn:       nil, // Will be set below
+		FailAfter:  1,   // Fail after 1 successful write
+		WriteCount: &writeCount,
+	}
+
+	a, b := net.Pipe()
+	failConn.Conn = a
+
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	// Client sends initial token and reads response
+	go func() {
+		defer func() { _ = b.Close() }()
+		// Send header + token "c:1" (length 3)
+		token := []byte("c:1")
+		hdr := []byte{
+			0x01, 0x01,
+			byte(len(token) >> 8), byte(len(token) & 0xff),
+		}
+		_, _ = b.Write(hdr)
+		_, _ = b.Write(token)
+		// Try to read response (will fail or hang)
+		_, _ = b.Read(make([]byte, 10))
+	}()
+
+	// Server tries to respond but connection fails on second write
+	handler := protocol.GSSAuthHandler{Server: &MockGSSServer{Rounds: 2}}
+	_, _, err := handler.HandleAuth(failConn, pool)
+	if err == nil {
+		t.Fatal("expected error when token write fails")
+	}
+}
+
+// failAfterWriteConn wraps a net.Conn and fails after N successful writes
+type failAfterWriteConn struct {
+	net.Conn
+	FailAfter  int
+	WriteCount *int
+}
+
+func (c *failAfterWriteConn) Write(p []byte) (int, error) {
+	*c.WriteCount++
+	if *c.WriteCount > c.FailAfter {
+		return 0, errors.New("simulated write error")
+	}
+	return c.Conn.Write(p)
 }
