@@ -12,6 +12,24 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// resolveUnspecifiedAddr resolves an unspecified address using the proxy's remote address.
+// If SplitHostPort fails, returns the original naddr unchanged (graceful degradation).
+func resolveUnspecifiedAddr(
+	proxy net.Conn,
+	naddr protocol.Addr,
+) protocol.Addr {
+	if !naddr.IsUnspecified() || proxy.RemoteAddr() == nil {
+		return naddr
+	}
+	h, _, err := net.SplitHostPort(proxy.RemoteAddr().String())
+	if err != nil {
+		// If we can't parse the remote addr, return naddr unchanged
+		// This is an extreme edge case - proxy.RemoteAddr() should always be parseable
+		return naddr
+	}
+	return protocol.AddrFromString(h, naddr.Port, proxy.RemoteAddr().Network())
+}
+
 func (c *Client) request5(
 	ctx context.Context,
 	cmd protocol.Cmd,
@@ -30,9 +48,8 @@ func (c *Client) request5(
 		return
 	}
 
-	proxy, _, err = protocol.RunAuth(proxy, c.Pool, c.Auth)
+	proxy, err = c.authenticate(proxy)
 	if err != nil {
-		_ = proxy.Close()
 		return
 	}
 
@@ -70,6 +87,16 @@ func (c *Client) request5(
 	}
 
 	return
+}
+
+// authenticate performs SOCKS5 authentication and closes the connection on error.
+func (c *Client) authenticate(proxy net.Conn) (net.Conn, error) {
+	proxy, _, err := protocol.RunAuth(proxy, c.Pool, c.Auth)
+	if err != nil {
+		_ = proxy.Close()
+		return nil, err
+	}
+	return proxy, nil
 }
 
 func (c *Client) dialPacket5(
@@ -122,29 +149,12 @@ func (c *Client) setupUDPTun5(
 		return nil, ErrUDPDisallowed
 	}
 
-	var (
-		// header []byte
-		err error
-	)
-
 	proxy, naddr, err := c.Request(ctx, protocol.CmdGostUDPTun, laddr)
 	if err != nil {
 		return nil, err
 	}
+	naddr = resolveUnspecifiedAddr(proxy, naddr)
 	naddr.NetTyp = "udp"
-
-	if naddr.IsUnspecified() && proxy.RemoteAddr() != nil {
-		h, _, err := net.SplitHostPort(proxy.RemoteAddr().String())
-		if err != nil {
-			_ = proxy.Close()
-			return nil, err
-		}
-		naddr = protocol.AddrFromString(
-			h,
-			naddr.Port,
-			proxy.RemoteAddr().Network(),
-		)
-	}
 
 	return protocol.NewSocks5UDPClientTUN(proxy, naddr, raddr, c.Pool), nil
 }
