@@ -28,8 +28,10 @@ jobs:
         uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - name: Run tests
-        run: nix develop --command go test ./... -tags=compattest -coverprofile=coverage.out
+      - name: Run tests with testhooks
+        run: nix develop --command go test ./... -tags="compattest testhooks" -coverprofile=coverage.out -coverpkg=./...
+      - name: Filter testhooks from coverage
+        run: grep -v "client_testhooks.go" coverage.out > coverage_filtered.out && mv coverage_filtered.out coverage.out
       - name: Send coverage
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
@@ -79,4 +81,4 @@ jobs:
         uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - run: nix develop --command go test ./...
+      - run: nix develop --command go test ./... -tags="compattest testhooks"

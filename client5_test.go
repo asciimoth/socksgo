@@ -1197,7 +1197,10 @@ func TestRequest5_DifferentReplyStatuses(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error when server rejects")
 				}
-				if !bytes.Contains([]byte(err.Error()), []byte(tt.expected)) { //nolint
+				if !bytes.Contains( //nolint
+					[]byte(err.Error()),
+					[]byte(tt.expected),
+				) { //nolint
 					t.Fatalf(
 						"expected error to contain %q, got %v",
 						tt.expected,

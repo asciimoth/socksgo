@@ -320,23 +320,14 @@ func (c *Client) Listen(
 	}
 	if ver == "5" {
 		if c.GostMbind {
-			session, err := smux.Server(conn, c.Smux)
-			if err != nil {
-				_ = conn.Close()
-				return nil, err
-			}
-			return &clientListener5mux{
-				session: session,
-				addr:    addr,
-				conn:    conn,
-			}, nil
+			return c.listenSmuxWithHook(conn, addr)
 		}
 		return &clientListener5{
 			conn: conn,
 			addr: addr,
 		}, nil
 	}
-	_ = conn.Close()
+	testListenCloseHook(conn)
 	return nil, UnknownSocksVersionError{ver}
 }
 
@@ -375,11 +366,7 @@ func (c *Client) LookupIP(
 	}
 	_ = proxy.Close()
 
-	ip := addr.ToIP()
-	if ip == nil {
-		return nil, ErrWrongAddrInLookupResponse
-	}
-	return []net.IP{ip}, nil
+	return c.lookupIPWithHook(ctx, network, address, addr)
 }
 
 func (c *Client) LookupAddr(
@@ -407,7 +394,7 @@ func (c *Client) LookupAddr(
 	}
 	_ = proxy.Close()
 
-	return []string{addr.ToFQDN()}, nil
+	return c.lookupAddrWithHook(ctx, addr)
 }
 
 func (c *Client) request(
@@ -419,6 +406,11 @@ func (c *Client) request(
 	addr protocol.Addr,
 	err error,
 ) {
+	// Test hook for bypassing normal flow (only compiled with testhooks tag)
+	if conn, a, ok := testRequestHook(ctx, cmd, address); ok {
+		return conn, a, nil
+	}
+
 	err = c.CheckNetworkSupport(address.Network())
 	if err != nil {
 		return
