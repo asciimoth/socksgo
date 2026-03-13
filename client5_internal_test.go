@@ -1,3 +1,5 @@
+//go:build compattest
+
 package socksgo
 
 import (

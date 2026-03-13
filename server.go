@@ -214,13 +214,14 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 		return err
 	}
 
-	if timeout != 0 {
-		err = conn.SetDeadline(time.Time{})
-		if err != nil {
-			return err
-		}
+	if timeout == 0 {
+		return handler.Run(ctx, s, conn, "5", info, cmd, addr)
 	}
 
+	err = conn.SetDeadline(time.Time{})
+	if err != nil {
+		return err
+	}
 	return handler.Run(ctx, s, conn, "5", info, cmd, addr)
 }
 
@@ -257,15 +258,15 @@ func (s *Server) checkIDENT(
 			err,
 		)
 	}
-	if iresp.ID != user {
-		protocol.Reject("4", conn, protocol.IdentFailed, pool)
-		return errors.Join(
-			ErrClientAuthFailed,
-			errors.New("IDENT user mismatch"),
-			fmt.Errorf("IDENT user mismatch '%s' vs '%s'", user, iresp.ID),
-		)
+	if iresp.ID == user {
+		return nil
 	}
-	return nil
+	protocol.Reject("4", conn, protocol.IdentFailed, pool)
+	return errors.Join(
+		ErrClientAuthFailed,
+		errors.New("IDENT user mismatch"),
+		fmt.Errorf("IDENT user mismatch '%s' vs '%s'", user, iresp.ID),
+	)
 }
 
 func (s *Server) runPreCmd(
