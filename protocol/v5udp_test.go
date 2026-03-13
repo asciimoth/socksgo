@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1621,7 +1622,10 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 
 	// Write small payload - this will write header+payload to underlying conn (c1),
 	// read from c2 and parse header to confirm payload transmission.
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		_, _ = tun.Write([]byte("tunw"))
 	}()
 	// Read header first bytes to observe exists
@@ -1633,6 +1637,7 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 	if nTun == 0 {
 		t.Fatalf("expected some bytes")
 	}
+	wg.Wait()
 
 	// Try ReadFrom on tun: construct a TUN-style packet and write into c2 so tun.ReadFrom reads it.
 	// For convenience, use AppendSocks5UDPHeader to build a TUN packet (with non-zero RSV).
@@ -1641,7 +1646,9 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 		uint16(len([]byte("T"))), //nolint
 		protocol.AddrFromIP(net.ParseIP("5.5.5.5"), 5555, "udp"),
 	)
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		_, _ = c2.Write(append(header2, []byte("T")...))
 	}()
 	out3 := make([]byte, 1024)
@@ -1652,6 +1659,7 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 	if nr != 1 || addrr == nil {
 		t.Fatalf("tun.ReadFrom unexpected")
 	}
+	wg.Wait()
 
 	_ = c1.Close()
 	_ = c2.Close()
