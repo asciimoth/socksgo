@@ -1,5 +1,53 @@
 package protocol
 
+// SOCKS5 Authentication Framework.
+//
+// This file implements the SOCKS5 authentication negotiation mechanism
+// as defined in RFC 1928 and RFC 1929.
+//
+// # Authentication Methods
+//
+// SOCKS5 supports multiple authentication methods:
+//   - No Auth (0x00): No authentication required
+//   - GSS-API (0x01): GSS-API authentication (RFC 1961)
+//   - Username/Password (0x02): Plain text credentials (RFC 1929)
+//   - No Acceptable Methods (0xFF): Server rejection
+//
+// # Negotiation Flow
+//
+//  1. Client sends method list:
+//     +----+----------+----------+------+
+//     |VER | NMETHODS | METHODS  | ...  |
+//     +----+----------+----------+------+
+//     | 1  |    1     | 1 to 255 |      |
+//     +----+----------+----------+------+
+//
+//  2. Server selects method:
+//     +----+--------+
+//     |VER | METHOD |
+//     +----+--------+
+//     | 1  |   1    |
+//     +----+--------+
+//
+//  3. If method requires authentication (e.g., Username/Password),
+//     the appropriate sub-protocol is executed.
+//
+// # Architecture
+//
+// The framework uses two interfaces:
+//   - AuthMethod: Client-side authentication implementation
+//   - AuthHandler: Server-side authentication implementation
+//
+// Collections:
+//   - AuthMethods: Client-side method list
+//   - AuthHandlers: Server-side handler registry
+//
+// # Files
+//
+//   - v5auth.go: Core framework and interfaces
+//   - v5auth_pass.go: Username/Password authentication (RFC 1929)
+//   - v5auth_gss.go: GSS-API authentication
+
 import (
 	"bytes"
 	"fmt"
@@ -12,10 +60,23 @@ import (
 	"github.com/asciimoth/bufpool"
 )
 
+// Authentication method codes as defined in RFC 1928.
 const (
-	NoAuthCode    AuthMethodCode = 0x0
-	GSSAuthCode   AuthMethodCode = 0x1
-	PassAuthCode  AuthMethodCode = 0x02
+	// NoAuthCode indicates no authentication is required.
+	// Wire value: 0x00
+	NoAuthCode AuthMethodCode = 0x0
+
+	// GSSAuthCode indicates GSS-API authentication.
+	// Wire value: 0x01
+	GSSAuthCode AuthMethodCode = 0x1
+
+	// PassAuthCode indicates username/password authentication.
+	// Wire value: 0x02
+	PassAuthCode AuthMethodCode = 0x02
+
+	// NoAccAuthCode indicates no acceptable authentication methods.
+	// Used by server to reject all client-proposed methods.
+	// Wire value: 0xFF
 	NoAccAuthCode AuthMethodCode = 0xff
 )
 
@@ -27,6 +88,29 @@ var (
 	}
 )
 
+// AuthMethodCode represents a SOCKS5 authentication method identifier.
+//
+// AuthMethodCode is used in the authentication negotiation phase to
+// advertise supported methods (client) or select a method (server).
+//
+// # Standard Values
+//
+//   - 0x00: No authentication required
+//   - 0x01: GSS-API
+//   - 0x02: Username/Password
+//   - 0x03-0x7F: IANA assigned
+//   - 0x80-0xFE: Private methods
+//   - 0xFF: No acceptable methods
+//
+// # Examples
+//
+//	code := protocol.PassAuthCode
+//	if code == protocol.PassAuthCode {
+//	    // Handle username/password auth
+//	}
+//
+//	// String representation
+//	code.String() // Returns "user-pass auth"
 type AuthMethodCode uint8
 
 func (a AuthMethodCode) String() string {
@@ -51,7 +135,28 @@ func (a AuthMethodCode) String() string {
 	return name
 }
 
-// AuthInfo provides information about successful auth like used password.
+// AuthInfo provides information about a successful authentication.
+//
+// AuthInfo is returned after successful authentication and contains
+// details about the method used and any relevant credentials or
+// session information.
+//
+// # Fields
+//
+//   - Code: The authentication method code used
+//   - Name: Human-readable method name (may be empty, use GetName())
+//   - Info: Method-specific information (e.g., username for PassAuth)
+//
+// # Examples
+//
+//	// After authentication
+//	info, err := protocol.RunAuth(conn, pool, methods)
+//	if err == nil {
+//	    fmt.Printf("Authenticated with: %s\n", info.GetName())
+//	    if user, ok := protocol.GetAuthParam[string](info, "user"); ok {
+//	        fmt.Printf("User: %s\n", user)
+//	    }
+//	}
 type AuthInfo struct {
 	Code AuthMethodCode
 	Name string // May be ""; Use GetName()
@@ -79,6 +184,26 @@ func (a AuthInfo) GetName() string {
 	return a.Name
 }
 
+// GetAuthParam retrieves a typed parameter from AuthInfo.Info.
+//
+// This is a type-safe helper for extracting authentication parameters.
+// Returns (false, zero) if the key doesn't exist or the type doesn't match.
+//
+// # Type Parameter
+//
+// # T - The expected type of the parameter
+//
+// # Examples
+//
+//	info, _ := protocol.RunAuth(conn, pool, methods)
+//
+//	if user, ok := protocol.GetAuthParam[string](info, "user"); ok {
+//	    fmt.Printf("Username: %s\n", user)
+//	}
+//
+//	if token, ok := protocol.GetAuthParam[[]byte](info, "token"); ok {
+//	    // Use GSS token
+//	}
 func GetAuthParam[T any](info AuthInfo, key string) (ok bool, val T) {
 	if info.Info == nil {
 		return
@@ -91,7 +216,25 @@ func GetAuthParam[T any](info AuthInfo, key string) (ok bool, val T) {
 	return
 }
 
-// Client side
+// AuthMethod is the client-side authentication interface.
+//
+// AuthMethod implementations handle the client side of SOCKS5
+// authentication protocols. Each method (NoAuth, PassAuth, GSSAuth)
+// has its own implementation.
+//
+// # Implementation Requirements
+//
+//   - Code() must return a valid method code (not 0x00 or 0xFF)
+//   - RunAuth() performs the authentication handshake
+//   - Name() returns a human-readable description
+//
+// # Usage
+//
+//	methods := (&protocol.AuthMethods{}).Add(&protocol.PassAuthMethod{
+//	    User: "username",
+//	    Pass: "password",
+//	})
+//	conn, info, err := protocol.RunAuth(conn, pool, methods)
 type AuthMethod interface {
 	Name() string
 
@@ -101,7 +244,26 @@ type AuthMethod interface {
 	RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
 }
 
-// Server side
+// AuthHandler is the server-side authentication interface.
+//
+// AuthHandler implementations handle the server side of SOCKS5
+// authentication protocols. Each method (NoAuth, PassAuth, GSSAuth)
+// has its own handler implementation.
+//
+// # Implementation Requirements
+//
+//   - Code() must return a valid method code (not 0x00 or 0xFF)
+//   - HandleAuth() performs the authentication handshake
+//   - Name() returns a human-readable description
+//
+// # Usage
+//
+//	handlers := (&protocol.AuthHandlers{}).Add(&protocol.PassAuthHandler{
+//	    Verify: func(user, pass string) bool {
+//	        return user == "admin" && pass == "secret"
+//	    },
+//	})
+//	conn, info, err := protocol.HandleAuth(conn, pool, handlers)
 type AuthHandler interface {
 	Name() string
 
@@ -111,6 +273,20 @@ type AuthHandler interface {
 	HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
 }
 
+// NoAuthHandler implements server-side no-authentication.
+//
+// This handler accepts any connection without requiring credentials.
+// It's the simplest auth handler and is commonly used for open proxies.
+//
+// # Wire Format
+//
+// Server response (2 bytes):
+//   - VER: 0x05
+//   - METHOD: 0x00 (NoAuth)
+//
+// # Examples
+//
+//	handlers := (&protocol.AuthHandlers{}).Add(&protocol.NoAuthHandler{})
 type NoAuthHandler struct{}
 
 func (m *NoAuthHandler) Code() AuthMethodCode {
@@ -131,6 +307,24 @@ func (m *NoAuthHandler) HandleAuth(
 	return conn, info, nil
 }
 
+// AuthMethods is a client-side collection of authentication methods.
+//
+// AuthMethods manages a set of authentication methods that the client
+// is willing to use. Methods are advertised to the server during
+// negotiation, and the selected method is used for authentication.
+//
+// # Thread Safety
+//
+// AuthMethods is not thread-safe. Build the method list before
+// calling RunAuth.
+//
+// # Usage
+//
+//	methods := (&protocol.AuthMethods{}).
+//	    Add(&protocol.PassAuthMethod{User: "user", Pass: "pass"}).
+//	    Add(&protocol.GSSAuthMethod{Client: gssClient})
+//
+//	conn, info, err := protocol.RunAuth(conn, pool, methods)
 type AuthMethods struct {
 	methodsMap map[AuthMethodCode]AuthMethod
 	msg        []byte
@@ -213,6 +407,34 @@ func (m *AuthMethods) Rebuild() {
 	m.msg = msg
 }
 
+// AuthHandlers is a server-side collection of authentication handlers.
+//
+// AuthHandlers manages a set of authentication handlers that the server
+// supports. When a client proposes authentication methods, the server
+// selects the first matching handler from this collection.
+//
+// # Default Behavior
+//
+// For nil or empty AuthHandlers:
+//   - Get(NoAuthCode) returns a blank NoAuthHandler
+//   - Get(PassAuthCode) returns a PassAuthHandler that accepts any credentials
+//
+// # Thread Safety
+//
+// AuthHandlers is not thread-safe. Build the handler list before
+// calling HandleAuth.
+//
+// # Usage
+//
+//	handlers := (&protocol.AuthHandlers{}).
+//	    Add(&protocol.NoAuthHandler{}).
+//	    Add(&protocol.PassAuthHandler{
+//	        Verify: func(user, pass string) bool {
+//	            return isValid(user, pass)
+//	        },
+//	    })
+//
+//	conn, info, err := protocol.HandleAuth(conn, pool, handlers)
 type AuthHandlers struct {
 	handlers map[AuthMethodCode]AuthHandler
 }
@@ -262,6 +484,34 @@ func (m *AuthHandlers) Add(handler AuthHandler) *AuthHandlers {
 	return m
 }
 
+// RunAuth performs client-side SOCKS5 authentication negotiation.
+//
+// Sends the client's method list to the server, reads the server's
+// selection, and executes the selected authentication method.
+//
+// # Negotiation Flow
+//
+// 1. Send method list: [VER, NMETHODS, METHODS...]
+// 2. Read server response: [VER, METHOD]
+// 3. If METHOD requires authentication, execute RunAuth() on selected method
+//
+// # Parameters
+//
+//   - conn: Network connection to SOCKS5 server
+//   - pool: Buffer pool for allocations
+//   - methods: Client's authentication methods
+//
+// # Returns
+//
+//   - c: Connection (possibly wrapped by auth method)
+//   - i: AuthInfo with authentication details
+//   - err: Error if negotiation or authentication fails
+//
+// # Errors
+//
+//   - ErrNoAcceptableAuthMethods: Server rejected all methods
+//   - UnsupportedAuthMethodError: Server selected unsupported method
+//   - UnknownAuthVerError: Invalid response version
 func RunAuth(
 	conn net.Conn, pool bufpool.Pool, methods *AuthMethods,
 ) (c net.Conn, i AuthInfo, err error) {
@@ -305,6 +555,34 @@ func RunAuth(
 	return
 }
 
+// HandleAuth performs server-side SOCKS5 authentication negotiation.
+//
+// Reads the client's method list, selects a supported method, and
+// executes the authentication handshake.
+//
+// # Negotiation Flow
+//
+// 1. Read client methods: [VER, NMETHODS, METHODS...]
+// 2. Select first matching handler
+// 3. Send response: [VER, METHOD]
+// 4. If METHOD requires authentication, execute HandleAuth() on selected handler
+//
+// # Parameters
+//
+//   - conn: Network connection from SOCKS5 client
+//   - pool: Buffer pool for allocations
+//   - handlers: Server's authentication handlers
+//
+// # Returns
+//
+//   - c: Connection (possibly wrapped by auth handler)
+//   - i: AuthInfo with authentication details
+//   - err: Error if negotiation or authentication fails
+//
+// # Errors
+//
+//   - ErrNoAcceptableAuthMethods: No matching handlers found
+//   - Method-specific errors from HandleAuth implementations
 func HandleAuth(
 	conn net.Conn, pool bufpool.Pool, handlers *AuthHandlers,
 ) (c net.Conn, i AuthInfo, err error) {

@@ -9,7 +9,42 @@ import (
 	"github.com/asciimoth/socksgo/internal"
 )
 
-// request is a buffer retrieved from provided pool and should be putted back
+// BuildSocks5TCPRequest builds a SOCKS5 TCP request.
+//
+// Creates a request packet for the given command and address.
+//
+// # Wire Format (RFC 1928)
+//
+//	+----+-----+-------+------+----------+----------+
+//	|VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+//	+----+-----+-------+------+----------+----------+
+//	| 1  |  1  |   1   |  1   | Variable |    2     |
+//	+----+-----+-------+------+----------+----------+
+//
+// Where:
+//   - VER: Protocol version (0x05)
+//   - CMD: Command code (Connect, Bind, UDPAssoc, etc.)
+//   - RSV: Reserved (0x00)
+//   - ATYP: Address type (IP4=0x01, IP6=0x04, FQDN=0x03)
+//   - DST.ADDR: Destination address (4/16 bytes for IP, variable for FQDN)
+//   - DST.PORT: Destination port (big-endian)
+//
+// # Parameters
+//
+//   - cmd: Command code (CmdConnect, CmdBind, CmdUDPAssoc, or extension commands)
+//   - addr: Target address
+//   - pool: Buffer pool for allocation
+//
+// # Returns
+//
+// The request byte slice, or an error if the hostname is too long.
+// The returned buffer must be returned to the pool after use.
+//
+// # Examples
+//
+//	addr := protocol.AddrFromFQDN("example.com", 80, "tcp")
+//	req, err := protocol.BuildSocks5TCPRequest(protocol.CmdConnect, addr, pool)
+//	defer bufpool.PutBuffer(pool, req)
 func BuildSocks5TCPRequest(
 	cmd Cmd, addr Addr, pool bufpool.Pool,
 ) (request []byte, err error) {
@@ -34,6 +69,26 @@ func BuildSocks5TCPRequest(
 	return
 }
 
+// ReadSocks5TCPRequest reads and parses a SOCKS5 TCP request.
+//
+// Reads a request packet and extracts the command and address.
+// Supports all three address types: IPv4, IPv6, and FQDN.
+//
+// # Parameters
+//
+//   - reader: Source to read from
+//   - pool: Buffer pool for temporary allocations
+//
+// # Returns
+//
+//   - cmd: Command code
+//   - addr: Target address
+//   - err: Error if parsing fails
+//
+// # Errors
+//
+//   - WrongProtocolVerError: If version byte is not 0x05
+//   - UnknownAddrTypeError: If address type is not recognized
 func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	cmd Cmd, addr Addr, err error,
 ) {
@@ -88,7 +143,44 @@ func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	return
 }
 
-// reply is a buffer retrieved from provided pool and should be putted back
+// BuildSocks5TCPReply builds a SOCKS5 TCP reply.
+//
+// Creates a reply packet with the given status and bound address.
+// The reply format is identical to the request format, with the CMD
+// field repurposed to carry the status code.
+//
+// # Wire Format (RFC 1928)
+//
+//	+----+-----+-------+------+----------+----------+
+//	|VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+//	+----+-----+-------+------+----------+----------+
+//	| 1  |  1  |   1   |  1   | Variable |    2     |
+//	+----+-----+-------+------+----------+----------+
+//
+// Where:
+//   - VER: Protocol version (0x05)
+//   - REP: Reply status code (SuccReply, FailReply, etc.)
+//   - RSV: Reserved (0x00)
+//   - ATYP: Address type
+//   - BND.ADDR: Bound address
+//   - BND.PORT: Bound port
+//
+// # Parameters
+//
+//   - stat: Reply status code (automatically converted to SOCKS5 format)
+//   - addr: Bound address (typically the server's listening address)
+//   - pool: Buffer pool for allocation
+//
+// # Returns
+//
+// The reply byte slice. The returned buffer must be returned to the pool
+// after use.
+//
+// # Examples
+//
+//	addr := protocol.AddrFromIP(net.ParseIP("192.168.1.1"), 8080, "tcp")
+//	reply, err := protocol.BuildSocks5TCPReply(protocol.SuccReply, addr, pool)
+//	defer bufpool.PutBuffer(pool, reply)
 func BuildSocks5TCPReply(
 	stat ReplyStatus, addr Addr, pool bufpool.Pool,
 ) (reply []byte, err error) {
@@ -98,6 +190,22 @@ func BuildSocks5TCPReply(
 	return BuildSocks5TCPRequest(cmd, addr, pool)
 }
 
+// ReadSocks5TCPReply reads and parses a SOCKS5 TCP reply.
+//
+// Reads a reply packet and extracts the status code and bound address.
+// Internally uses ReadSocks5TCPRequest since the wire format is identical,
+// then converts the command code to a status code.
+//
+// # Parameters
+//
+//   - reader: Source to read from
+//   - pool: Buffer pool for temporary allocations
+//
+// # Returns
+//
+//   - stat: Reply status code (converted to SOCKS5 format)
+//   - addr: Bound address (only valid if status indicates success)
+//   - err: Error if parsing fails
 func ReadSocks5TCPReply(reader io.Reader, pool bufpool.Pool) (
 	stat ReplyStatus, addr Addr, err error,
 ) {

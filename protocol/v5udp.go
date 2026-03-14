@@ -1,5 +1,53 @@
 package protocol
 
+// SOCKS5 UDP protocol implementation.
+//
+// This file implements SOCKS5 UDP ASSOCIATE (RFC 1928) and Gost's UDP Tunnel
+// extension for UDP relay over SOCKS5 proxies.
+//
+// # Standard UDP ASSOC (RFC 1928)
+//
+// The UDP ASSOCIATE command establishes a UDP relay association. The client
+// sends a UDP ASSOCIATE request over TCP, and the server responds with a
+// bound UDP address. UDP packets are then sent to/from this address with a
+// SOCKS5 UDP header:
+//
+//	+----+------+------+----------+----------+----------+
+//	|RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+//	+----+------+------+----------+----------+----------+
+//	| 2  |  1   |  1   | Variable |    2     | Variable |
+//	+----+------+------+----------+----------+----------+
+//
+// Where:
+//   - RSV: Reserved (0x0000)
+//   - FRAG: Fragment flag (0x00 = no fragmentation)
+//   - ATYP: Address type
+//   - DST.ADDR/DST.PORT: Destination address
+//   - DATA: UDP payload
+//
+// # Gost UDP Tunnel Extension
+//
+// Gost's UDP Tunnel encapsulates UDP packets over TCP instead of UDP.
+// The format differs from standard UDP ASSOC:
+//
+//	+----+------+------+----------+----------+----------+
+//	|RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+//	+----+------+------+----------+----------+----------+
+//	| 2  |  1   |  1   | Variable |    2     | Variable |
+//	+----+------+------+----------+----------+----------+
+//
+// Where:
+//   - RSV: Payload length (big-endian uint16)
+//   - FRAG: Always 0xFF (GOST_UDP_FRAG_FLAG)
+//   - ATYP: Address type
+//   - DST.ADDR/DST.PORT: Destination address
+//   - DATA: UDP payload
+//
+// # Implementations
+//
+//   - Socks5UDPClientAssoc: Standard UDP ASSOC over UDP
+//   - Socks5UDPClientTUN: Gost UDP Tunnel over TCP
+
 import (
 	"bytes"
 	"encoding/binary"
@@ -14,6 +62,19 @@ import (
 	"github.com/asciimoth/socksgo/internal"
 )
 
+// Socks5UDPClient is the interface for SOCKS5 UDP clients.
+//
+// This interface combines net.Conn and net.PacketConn to support both
+// stream-oriented and packet-oriented operations. It's implemented by:
+//   - Socks5UDPClientAssoc: Standard UDP ASSOC
+//   - Socks5UDPClientTUN: Gost UDP Tunnel
+//
+// # Methods
+//
+//   - Read/Write: Stream-oriented I/O (uses default remote address)
+//   - ReadFrom/WriteTo: Packet-oriented I/O with explicit addresses
+//   - ReadFromUDP/WriteToUDP: UDP-specific packet I/O
+//   - WriteToIpPort: Write to a specific IP and port
 type Socks5UDPClient interface {
 	net.Conn
 	net.PacketConn
@@ -50,8 +111,29 @@ func WriteToAddrUDP(conn PacketConn, addr Addr, b []byte) (err error) {
 	return
 }
 
-// For standard socks UDP ASSOC leave rsv == 0.
-// For gost's UDP TUN extension rsv == payload length
+// AppendSocks5UDPHeader appends a SOCKS5 UDP header to a buffer.
+//
+// Builds the header for either standard UDP ASSOC or Gost UDP Tunnel:
+//   - Standard: rsv=0, frag=0
+//   - Gost TUN: rsv=payload length, frag=0xFF
+//
+// # Header Format
+//
+//	+----+------+------+----------+----------+
+//	|RSV | FRAG | ATYP | DST.ADDR | DST.PORT |
+//	+----+------+------+----------+----------+
+//	| 2  |  1   |  1   | Variable |    2     |
+//	+----+------+------+----------+----------+
+//
+// # Parameters
+//
+//   - buf: Buffer to append to (may be nil for new allocation)
+//   - rsv: Reserved field (0 for standard, payload length for Gost)
+//   - addr: Destination address
+//
+// # Returns
+//
+// The buffer with the header appended.
 func AppendSocks5UDPHeader(
 	buf []byte,
 	rsv uint16,
@@ -76,7 +158,7 @@ func AppendSocks5UDPHeader(
 	return buf
 }
 
-// Builds ans writes socks5 UDP Assoc packet to conn
+// Builds and writes socks5 UDP Assoc packet to conn
 func WriteSocksAssoc5UDPPacket(
 	pool bufpool.Pool,
 	conn PacketConn,
@@ -300,6 +382,26 @@ func ReadSocks5TunUDPPacket(
 	}
 }
 
+// Socks5UDPClientAssoc implements standard SOCKS5 UDP ASSOCIATE.
+//
+// This type wraps a UDP PacketConn to provide SOCKS5 UDP relay functionality.
+// It adds SOCKS5 UDP headers to outgoing packets and parses them from
+// incoming packets.
+//
+// # Usage
+//
+// After a successful UDP ASSOCIATE command over TCP, use the returned
+// server UDP address to create this client:
+//
+//	udpConn, _ := net.DialUDP("udp", nil, serverUDPAddr)
+//	client := protocol.NewSocks5UDPClientAssoc(udpConn, &bindAddr, pool, onClose)
+//	defer client.Close()
+//
+//	// Send UDP packet
+//	client.WriteToUDP(data, &net.UDPAddr{IP: targetIP, Port: targetPort})
+//
+//	// Receive UDP packet
+//	n, addr, err := client.ReadFromUDP(buf)
 type Socks5UDPClientAssoc struct {
 	PacketConn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
@@ -308,6 +410,18 @@ type Socks5UDPClientAssoc struct {
 	OnClose       func()
 }
 
+// NewSocks5UDPClientAssoc creates a new standard UDP ASSOC client.
+//
+// # Parameters
+//
+//   - conn: Underlying UDP PacketConn (already connected to server's UDP address)
+//   - addr: Bound address from UDP ASSOCIATE reply (used as default remote)
+//   - pool: Buffer pool for allocations
+//   - onc: Optional callback called once on Close()
+//
+// # Returns
+//
+// A new Socks5UDPClientAssoc instance.
 func NewSocks5UDPClientAssoc(
 	conn PacketConn, addr *Addr, pool bufpool.Pool, onc func(),
 ) *Socks5UDPClientAssoc {
@@ -432,6 +546,33 @@ func (uc *Socks5UDPClientAssoc) WriteToIpPort(
 	)
 }
 
+// Socks5UDPClientTUN implements Gost's UDP Tunnel extension.
+//
+// This type wraps a TCP Conn to provide UDP-over-TCP relay. Unlike standard
+// UDP ASSOC which uses a separate UDP connection, Gost's tunnel encapsulates
+// UDP packets within a TCP stream.
+//
+// # Wire Format
+//
+// Each UDP packet is prefixed with a header:
+//   - RSV (2 bytes): Payload length (big-endian)
+//   - FRAG (1 byte): Always 0xFF
+//   - ATYP (1 byte): Address type
+//   - DST.ADDR/DST.PORT: Destination address
+//   - DATA: UDP payload
+//
+// # Usage
+//
+// After a successful GostUDPTun command over TCP:
+//
+//	client := protocol.NewSocks5UDPClientTUN(tcpConn, bindAddr, &targetAddr, pool)
+//	defer client.Close()
+//
+//	// Send UDP packet (automatically encapsulated in TCP)
+//	client.WriteToUDP(data, &net.UDPAddr{IP: targetIP, Port: targetPort})
+//
+//	// Receive UDP packet
+//	n, addr, err := client.ReadFromUDP(buf)
 type Socks5UDPClientTUN struct {
 	net.Conn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
@@ -440,6 +581,18 @@ type Socks5UDPClientTUN struct {
 	OnClose       func()
 }
 
+// NewSocks5UDPClientTUN creates a new Gost UDP Tunnel client.
+//
+// # Parameters
+//
+//   - conn: Underlying TCP connection (already upgraded to UDP tunnel)
+//   - laddr: Local bound address
+//   - raddr: Optional remote address (nil for unbound)
+//   - pool: Buffer pool for allocations
+//
+// # Returns
+//
+// A new Socks5UDPClientTUN instance.
 func NewSocks5UDPClientTUN(
 	conn net.Conn, laddr Addr, raddr *Addr, pool bufpool.Pool,
 ) *Socks5UDPClientTUN {
@@ -560,9 +713,34 @@ func (uc *Socks5UDPClientTUN) WriteToIpPort(
 	)
 }
 
-// Proxy packages assoc (incoming socks5 client conn) <-> proxy (outgoing udp socket)
-// while ctrl connection is alive.
-// Stops and closes assoc, proxy and ctrl if one of them becomes closed.
+// ProxySocks5UDPAssoc proxies UDP packets between a SOCKS5 client and a
+// target UDP server using standard UDP ASSOCIATE.
+//
+// This function runs two goroutines:
+//  1. Client -> Proxy: Reads SOCKS5 UDP packets, strips headers, forwards to target
+//  2. Proxy -> Client: Reads UDP responses, adds SOCKS5 headers, sends to client
+//
+// The control connection (ctrl) is monitored for closure. When it closes,
+// both UDP connections are closed and the function returns.
+//
+// # Parameters
+//
+//   - assoc: Client's UDP association (from UDP ASSOCIATE command)
+//   - proxy: Outgoing UDP connection to target server
+//   - ctrl: Control TCP connection (monitored for closure)
+//   - binded: If true, all packets use a fixed remote address
+//   - defaultAddr: Default destination for unbound packets
+//   - pool: Buffer pool for allocations
+//   - bufSize: Buffer size for packet copying
+//   - timeOut: Idle timeout for UDP association
+//
+// # Returns
+//
+// Error if any connection fails, including ErrUDPAssocTimeout on timeout.
+//
+// # Thread Safety
+//
+// This function spawns goroutines and blocks until all connections close.
 func ProxySocks5UDPAssoc(
 	assoc, proxy PacketConn, ctrl net.Conn,
 	binded bool,
@@ -678,10 +856,33 @@ func ProxySocks5UDPAssoc(
 	return internal.JoinNetErrors(<-done, <-done)
 }
 
-// Proxy packages tun (incoming gost socks5 client conn) <-> proxy (outgoing udp socket).
-// Stops and closes tun and proxy if one of them becomes closed.
-// There is no ctrl connection here cause tun itself is a tcp conn and there is
-// no parallel udp connection like in standard socks5 TCP Assoc.
+// ProxySocks5UDPTun proxies UDP packets between a Gost UDP Tunnel client
+// and a target UDP server.
+//
+// Unlike ProxySocks5UDPAssoc, this function works with a TCP connection
+// (tun) that carries encapsulated UDP packets. No separate control
+// connection is needed since the TCP connection itself carries the data.
+//
+// This function runs two goroutines:
+//  1. Client -> Proxy: Reads Gost UDP packets from TCP, forwards to target
+//  2. Proxy -> Client: Reads UDP responses, encapsulates in Gost format, sends via TCP
+//
+// # Parameters
+//
+//   - tun: Client's TCP connection (Gost UDP Tunnel)
+//   - proxy: Outgoing UDP connection to target server
+//   - binded: If true, all packets use a fixed remote address
+//   - defaultAddr: Default destination for unbound packets
+//   - pool: Buffer pool for allocations
+//   - bufSize: Buffer size for packet copying
+//
+// # Returns
+//
+// Error if any connection fails.
+//
+// # Thread Safety
+//
+// This function spawns goroutines and blocks until all connections close.
 func ProxySocks5UDPTun(
 	tun net.Conn, proxy PacketConn,
 	binded bool,
