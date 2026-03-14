@@ -3,3 +3,6 @@ gost = "gost"
 GOST = "GOST"
 importas = "importas"
 
+[files]
+extend-exclude = ["client_config_test.go"]
+

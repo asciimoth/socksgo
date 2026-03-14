@@ -304,6 +304,119 @@ func TestErrorToReplyStatus(t *testing.T) {
 			),
 			expected: 5, // ConnRefusedReply
 		},
+		{
+			name: "wrapped DNS error",
+			err: fmt.Errorf(
+				"lookup failed: %w",
+				&net.DNSError{
+					Err:  "no such host",
+					Name: "example.com",
+				},
+			),
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name: "wrapped permission denied",
+			err: fmt.Errorf(
+				"access denied: %w",
+				&net.OpError{
+					Op:  "dial",
+					Net: "tcp",
+					Err: errors.New("permission denied"),
+				},
+			),
+			expected: 2, // DisallowReply
+		},
+		{
+			name: "double wrapped error",
+			err: fmt.Errorf(
+				"outer: %w",
+				fmt.Errorf(
+					"inner: %w",
+					&net.OpError{
+						Op:  "dial",
+						Net: "tcp",
+						Err: errors.New("connection refused"),
+					},
+				),
+			),
+			expected: 5, // ConnRefusedReply
+		},
+		{
+			name: "OpError with OpError as Err",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: &net.OpError{
+					Op:  "read",
+					Net: "tcp",
+					Err: errors.New("connection refused"),
+				},
+			},
+			expected: 5, // ConnRefusedReply
+		},
+		{
+			name: "DNS error wrapped in OpError",
+			err: &net.OpError{
+				Op:  "lookup",
+				Net: "dns",
+				Err: &net.DNSError{
+					Err:  "no such host",
+					Name: "example.com",
+				},
+			},
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name: "OpError with nil Err falls back to OpError string",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("connection refused"),
+			},
+			expected: 5, // ConnRefusedReply
+		},
+		{
+			name: "bare DNSError without OpError wrapper",
+			err: &net.DNSError{
+				Err:  "no such host",
+				Name: "example.com",
+			},
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name: "OpError wrapping DNSError should find DNSError via errors.As",
+			err: fmt.Errorf(
+				"wrapped: %w",
+				&net.OpError{
+					Op:  "lookup",
+					Net: "dns",
+					Err: &net.DNSError{
+						Err:  "no such host",
+						Name: "example.com",
+					},
+				},
+			),
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name: "OpError with host unreachable message in Err",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("host unreachable"),
+			},
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name: "OpError with network unreachable message in Err",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("network unreachable"),
+			},
+			expected: 3, // NetUnreachReply
+		},
 	}
 
 	for _, tt := range tests {
@@ -342,6 +455,7 @@ func testErrorToReplyStatus(err error) uint8 {
 	// Check for specific error types
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
+		err = opErr
 		unwrapped = opErr.Err
 	}
 

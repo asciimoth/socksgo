@@ -579,3 +579,80 @@ func TestConnect_WebSocket_DialContextFails(t *testing.T) {
 		t.Fatalf("Connect expected error when websocket DialContext fails")
 	}
 }
+
+// Test Connect with context deadline when no explicit handshake timeout is set
+func TestConnect_ContextDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		100*time.Millisecond,
+	)
+	defer cancel()
+
+	c := &socksgo.Client{
+		ProxyAddr: "host:1",
+		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
+			a, _ := net.Pipe()
+			return a, nil
+		},
+		// No HandshakeTimeout set - should use context deadline
+	}
+	conn, err := c.Connect(ctx)
+	if err != nil {
+		t.Fatalf("Connect failed unexpectedly: %v", err)
+	}
+	_ = conn.Close()
+}
+
+// Test Connect with TLS when WebSocketURL is empty
+func TestConnect_TLS(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a test TLS listener
+	cert, err := tls.X509KeyPair([]byte(`-----BEGIN CERTIFICATE-----
+MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
+DgYDVQQKEwdBY21lIENvMB4XDTE3MTAyMDE5NDMwNloXDTE4MTAyMDE5NDMwNlow
+EjEQMA4GA1UEChMHQWNtZSBDbzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABD0d
+7VNhbWvZLWPuj/RtHFjvtJBEwOkhbN/BnnE8rnZR8+sbwnc/KhCk3FhnpHZnQz7B
+5aETbbIgmuvewdjvSBSjYzBhMA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggr
+BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdEQQiMCCCDmxvY2FsaG9zdDo1
+NDUzgg4xMjcuMC4wLjE6NTQ1MzAKBggqhkjOPQQDAgNIADBFAiEA2zpJEPQyz6/l
+Wf86aX6PepsntZv2GYlA5UpabfT2EZICICpJ5h/iI+i341gBmLiAFQOyTDT+/wQc
+6MF9+Yw1Yy0t
+-----END CERTIFICATE-----`), []byte(`-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49
+AwEHoUQDQgAEPR3tU2Fta9ktY+6P9G0cWO+0kETA6SFs38GecTyudlHz6xvCdz8q
+EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
+-----END EC PRIVATE KEY-----`))
+	if err != nil {
+		t.Skipf("Skipping TLS test: %v", err)
+	}
+
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	})
+	if err != nil {
+		t.Fatalf("tls.Listen failed: %v", err)
+	}
+	defer listener.Close() //nolint
+
+	// Start server in background
+	go func() {
+		_, _ = listener.Accept()
+	}()
+
+	c := &socksgo.Client{
+		ProxyAddr: listener.Addr().String(),
+		TLS:       true,
+		TLSConfig: &tls.Config{InsecureSkipVerify: true}, //nolint
+		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		},
+	}
+
+	conn, err := c.Connect(ctx)
+	if err != nil {
+		t.Fatalf("Connect with TLS failed: %v", err)
+	}
+	_ = conn.Close()
+}
