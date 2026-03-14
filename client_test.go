@@ -364,8 +364,6 @@ func TestClientFromURL_ErrorPath(t *testing.T) {
 }
 
 func TestClientFromENVSafe_EmptyEnv(t *testing.T) {
-	t.Parallel()
-
 	// Save original env
 	origAllProxy := os.Getenv("ALL_PROXY")
 	origHTTPSProxy := os.Getenv("HTTPS_PROXY")
@@ -395,8 +393,6 @@ func TestClientFromENVSafe_EmptyEnv(t *testing.T) {
 }
 
 func TestClientFromENVSafe_WithEnv(t *testing.T) {
-	t.Parallel()
-
 	// Save original env
 	orig := os.Getenv("ALL_PROXY")
 	defer os.Setenv("ALL_PROXY", orig)
@@ -418,8 +414,6 @@ func TestClientFromENVSafe_WithEnv(t *testing.T) {
 }
 
 func TestClientFromENV_EmptyEnv(t *testing.T) {
-	t.Parallel()
-
 	// Save original env
 	origAllProxy := os.Getenv("ALL_PROXY")
 	origHTTPSProxy := os.Getenv("HTTPS_PROXY")
@@ -449,8 +443,6 @@ func TestClientFromENV_EmptyEnv(t *testing.T) {
 }
 
 func TestClientFromENV_WithEnv(t *testing.T) {
-	t.Parallel()
-
 	// Save original env
 	orig := os.Getenv("ALL_PROXY")
 	defer os.Setenv("ALL_PROXY", orig)

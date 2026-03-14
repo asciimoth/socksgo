@@ -240,7 +240,12 @@ func (c *Client) Connect(ctx context.Context) (conn net.Conn, err error) {
 
 	timeout := c.GetHandshakeTimeout()
 	if timeout == 0 {
-		err = conn.SetDeadline(time.Time{})
+		// Use context deadline if no explicit handshake timeout is set
+		if deadline, ok := ctx.Deadline(); ok {
+			err = conn.SetDeadline(deadline)
+		} else {
+			err = conn.SetDeadline(time.Time{})
+		}
 	} else {
 		err = conn.SetDeadline(time.Now().Add(timeout))
 	}

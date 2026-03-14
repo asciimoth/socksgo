@@ -579,7 +579,14 @@ func ProxySocks5UDPAssoc(
 
 	go func() {
 		// assoc -> proxy goroutine
-		defer func() { _ = ctrl.Close() }()
+		var reverseProxyStarted bool
+		defer func() {
+			// Only close ctrl if reverse proxy goroutine was not started
+			// (the reverse proxy goroutine handles closing ctrl)
+			if !reverseProxyStarted {
+				_ = ctrl.Close()
+			}
+		}()
 		var clientUDPAddr net.Addr
 		ctrlAddr := ctrl.RemoteAddr()
 		for {
@@ -624,6 +631,7 @@ func ProxySocks5UDPAssoc(
 
 				// Only now after clientUDPAddr is known, we can start reverse
 				// directional proxy too
+				reverseProxyStarted = true
 				go func() {
 					// assoc <- proxy goroutine
 					defer func() { _ = ctrl.Close() }()
