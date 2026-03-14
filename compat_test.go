@@ -324,9 +324,18 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 		}
 	}()
 
+	// Use a custom HTTP client with keep-alives disabled to avoid
+	// connection reuse race conditions when the server sends
+	// "Connection: close" header.
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+		},
+	}
+
 	for i := range times {
 		func() {
-			resp, err := http.Get("http://" + l.Addr().String()) //nolint noctx
+			resp, err := httpClient.Get("http://" + l.Addr().String()) //nolint noctx
 			if err != nil {
 				t.Fatalf("error while requesting: %v", err)
 			}

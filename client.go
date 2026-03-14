@@ -15,7 +15,6 @@ import (
 )
 
 // Returns Client that pass all operations directly without using any proxy
-// TODO: Better comment
 func ClientNoProxy() *Client {
 	return &Client{
 		Filter:     MatchAllFilter,
@@ -123,7 +122,6 @@ func ClientFromURLObj(u *url.URL) *Client {
 	if f, s := internal.CheckURLBoolKey(q, "secure"); s {
 		client.TLSConfig.InsecureSkipVerify = !f
 	}
-	// TODO: Add more TLS related args
 
 	return client
 }

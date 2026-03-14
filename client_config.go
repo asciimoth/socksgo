@@ -8,9 +8,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/gorilla/websocket"
 )
+
+// wsBufferPoolAdapter adapts bufpool.Pool to websocket.BufferPool
+type wsBufferPoolAdapter struct {
+	pool bufpool.Pool
+}
+
+func (a *wsBufferPoolAdapter) Get() interface{} {
+	if a.pool == nil {
+		return nil
+	}
+	return bufpool.GetBuffer(a.pool, 0)
+}
+
+func (a *wsBufferPoolAdapter) Put(x interface{}) {
+	if a.pool == nil {
+		return
+	}
+	if buf, ok := x.([]byte); ok {
+		bufpool.PutBuffer(a.pool, buf)
+	}
+}
 
 type WebSocketConfig struct {
 	ReadBufferSize    int
@@ -187,8 +209,7 @@ func (c *Client) GetWsDialer() *websocket.Dialer {
 	dialer := &websocket.Dialer{
 		NetDialContext:  c.GetDialer(),
 		TLSClientConfig: c.GetTLSConfig(),
-		// TODO: Convert somehow BufferPool to websocket.BufferPool
-		WriteBufferPool: nil,
+		WriteBufferPool: &wsBufferPoolAdapter{pool: c.Pool},
 
 		HandshakeTimeout:  c.GetHandshakeTimeout(),
 		ReadBufferSize:    c.WebSocketConfig.readBufferSize(),

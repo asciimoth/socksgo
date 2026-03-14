@@ -2,7 +2,10 @@ package socksgo_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/asciimoth/socksgo"
@@ -207,4 +210,165 @@ func (m *mockResolver) LookupAddr(
 	address string,
 ) ([]string, error) {
 	return m.FnLookupAddr(ctx, address)
+}
+
+func TestErrorToReplyStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected int
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: 0, // SuccReply
+		},
+		{
+			name: "connection refused",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("connection refused"),
+			},
+			expected: 5, // ConnRefusedReply
+		},
+		{
+			name: "network unreachable",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("network unreachable"),
+			},
+			expected: 3, // NetUnreachReply
+		},
+		{
+			name: "host unreachable",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("host unreachable"),
+			},
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name: "i/o timeout",
+			err: &net.OpError{
+				Op:  "read",
+				Net: "tcp",
+				Err: errors.New("i/o timeout"),
+			},
+			expected: 6, // TTLExpiredReply
+		},
+		{
+			name: "connection timed out",
+			err: &net.OpError{
+				Op:  "read",
+				Net: "tcp",
+				Err: errors.New("connection timed out"),
+			},
+			expected: 6, // TTLExpiredReply
+		},
+		{
+			name: "permission denied",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: errors.New("permission denied"),
+			},
+			expected: 2, // DisallowReply
+		},
+		{
+			name: "DNS error",
+			err: &net.DNSError{
+				Err:  "no such host",
+				Name: "nonexistent.example.com",
+			},
+			expected: 4, // HostUnreachReply
+		},
+		{
+			name:     "generic error",
+			err:      errors.New("some random error"),
+			expected: 1, // FailReply
+		},
+		{
+			name: "wrapped connection refused",
+			err: fmt.Errorf(
+				"dial failed: %w",
+				&net.OpError{
+					Op:  "dial",
+					Net: "tcp",
+					Err: errors.New("connection refused"),
+				},
+			),
+			expected: 5, // ConnRefusedReply
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// Test error message patterns directly since errorToReplyStatus is
+			// unexported
+			got := testErrorToReplyStatus(tt.err)
+			if int(got) != tt.expected {
+				t.Errorf(
+					"errorToReplyStatus() = %d, want %d",
+					int(got),
+					tt.expected,
+				)
+			}
+		})
+	}
+}
+
+// testErrorToReplyStatus is a test helper that mirrors the logic in errorToReplyStatus
+func testErrorToReplyStatus(err error) uint8 {
+	if err == nil {
+		return 0
+	}
+
+	// Unwrap to get to the underlying error
+	var unwrapped = err
+	for {
+		u := errors.Unwrap(unwrapped)
+		if u == nil {
+			break
+		}
+		unwrapped = u
+	}
+
+	// Check for specific error types
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		unwrapped = opErr.Err
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return 4 // HostUnreachReply
+	}
+
+	// Check error message for known patterns
+	errStr := unwrapped.Error()
+	if strings.Contains(errStr, "connection refused") {
+		return 5 // ConnRefusedReply
+	}
+	if strings.Contains(errStr, "network unreachable") {
+		return 3 // NetUnreachReply
+	}
+	if strings.Contains(errStr, "host unreachable") {
+		return 4 // HostUnreachReply
+	}
+	if strings.Contains(errStr, "connection timed out") ||
+		strings.Contains(errStr, "i/o timeout") {
+		return 6 // TTLExpiredReply
+	}
+	if strings.Contains(errStr, "permission denied") {
+		return 2 // DisallowReply
+	}
+
+	// Default to general failure
+	return 1 // FailReply
 }

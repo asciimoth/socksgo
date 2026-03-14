@@ -175,7 +175,6 @@ func (l *clientListener5) Close() error {
 
 func (l *clientListener5) Accept() (net.Conn, error) {
 	stat, _, err := protocol.ReadSocks5TCPReply(l.conn, l.pool)
-	// TODO: Use addr & port as conn.RemoteAddr
 	if err != nil {
 		_ = l.conn.Close()
 	}
@@ -200,6 +199,5 @@ func (l *clientListener5mux) Close() error {
 }
 
 func (l *clientListener5mux) Accept() (net.Conn, error) {
-	// TODO: Use addr & port as RemoteAddr
 	return l.session.AcceptStream()
 }

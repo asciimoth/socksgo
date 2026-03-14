@@ -2,9 +2,12 @@ package socksgo
 
 import (
 	"context"
+	"errors"
 	"net"
 	"path"
 	"strings"
+
+	"github.com/asciimoth/socksgo/protocol"
 )
 
 var supportedNetworks = map[string]any{
@@ -193,4 +196,57 @@ func trimDot(s string) string {
 		s = strings.TrimRight(s, ".")
 	}
 	return s
+}
+
+// errorToReplyStatus maps network errors to appropriate SOCKS5 reply status codes.
+// For SOCKS4, the status is converted using ReplyStatus.To4().
+// Returns FailReply for unknown errors.
+func errorToReplyStatus(err error) protocol.ReplyStatus {
+	if err == nil {
+		return protocol.SuccReply
+	}
+
+	// Unwrap to get to the underlying error
+	var unwrapped = err
+	for {
+		u := errors.Unwrap(unwrapped)
+		if u == nil {
+			break
+		}
+		unwrapped = u
+	}
+
+	// Check for specific error types
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		err = opErr
+		unwrapped = opErr.Err
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return protocol.HostUnreachReply
+	}
+
+	// Check error message for known patterns
+	errStr := unwrapped.Error()
+	if strings.Contains(errStr, "connection refused") {
+		return protocol.ConnRefusedReply
+	}
+	if strings.Contains(errStr, "network unreachable") {
+		return protocol.NetUnreachReply
+	}
+	if strings.Contains(errStr, "host unreachable") {
+		return protocol.HostUnreachReply
+	}
+	if strings.Contains(errStr, "connection timed out") ||
+		strings.Contains(errStr, "i/o timeout") {
+		return protocol.TTLExpiredReply
+	}
+	if strings.Contains(errStr, "permission denied") {
+		return protocol.DisallowReply
+	}
+
+	// Default to general failure
+	return protocol.FailReply
 }

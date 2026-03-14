@@ -27,8 +27,7 @@ var DefaultConnectHandler = CommandHandler{
 		}
 		conn2, err := server.GetDialer()(ctx, addr.Network(), addr.String())
 		if err != nil {
-			// TODO: Select reply code depending on err type
-			protocol.Reject(ver, conn, protocol.HostUnreachReply, pool)
+			protocol.Reject(ver, conn, errorToReplyStatus(err), pool)
 			return err
 		}
 		defer func() { _ = conn2.Close() }()

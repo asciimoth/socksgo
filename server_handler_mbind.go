@@ -31,8 +31,7 @@ var DefaultGostMBindHandler = CommandHandler{
 		}
 		listener, err := server.GetListener()(ctx, "tcp", addr.ToHostPort())
 		if err != nil {
-			// TODO: What ReplyCode should we return here?
-			protocol.Reject(ver, conn, protocol.FailReply, pool)
+			protocol.Reject(ver, conn, errorToReplyStatus(err), pool)
 			return err
 		}
 		defer func() { _ = listener.Close() }()

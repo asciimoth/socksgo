@@ -47,8 +47,7 @@ var DefaultGostUDPTUNHandler = CommandHandler{
 			}
 		}
 		if err != nil {
-			// TODO: What ReplyCode should we return here?
-			protocol.Reject(ver, tun, protocol.FailReply, pool)
+			protocol.Reject(ver, tun, errorToReplyStatus(err), pool)
 			return err
 
 		}

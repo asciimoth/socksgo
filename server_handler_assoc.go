@@ -47,15 +47,13 @@ var DefaultUDPAssocHandler = CommandHandler{
 			}
 		}
 		if err != nil {
-			// TODO: What ReplyCode should we return here?
-			protocol.Reject(ver, ctrl, protocol.FailReply, pool)
+			protocol.Reject(ver, ctrl, errorToReplyStatus(err), pool)
 			return err
 		}
 
 		assoc, err := server.ListenForAssoc(ctx, ctrl)
 		if err != nil {
-			// TODO: What ReplyCode should we return here?
-			protocol.Reject(ver, ctrl, protocol.FailReply, pool)
+			protocol.Reject(ver, ctrl, errorToReplyStatus(err), pool)
 			return err
 		}
 

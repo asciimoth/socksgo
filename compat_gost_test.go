@@ -44,6 +44,7 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 	) // buffered so scanners won't block the process quickly
 	errc := make(chan error, 2) // buffer to avoid goroutine leak on send
 	var wg sync.WaitGroup
+	done := make(chan struct{}) // signal to stop scanners
 
 	// scanner goroutine for a reader
 	scan := func(r io.Reader) {
@@ -56,11 +57,20 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 			case lines <- text:
 				// delivered
 			default:
-				// channel full — drop line to avoid blocking (shouldn't happen in normal tests)
+				// channel full — drop line to avoid blocking
+			}
+			// Check if we should stop
+			select {
+			case <-done:
+				return
+			default:
 			}
 		}
 		if err := sc.Err(); err != nil {
-			errc <- fmt.Errorf("scanner error: %w", err)
+			select {
+			case errc <- fmt.Errorf("scanner error: %w", err):
+			default:
+			}
 		}
 	}
 
@@ -71,9 +81,15 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 	// wait for process exit in background
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			errc <- fmt.Errorf("gost exited: %w", err)
+			select {
+			case errc <- fmt.Errorf("gost exited: %w", err):
+			default:
+			}
 		} else {
-			errc <- fmt.Errorf("gost exited")
+			select {
+			case errc <- fmt.Errorf("gost exited"):
+			default:
+			}
 		}
 	}()
 
@@ -132,17 +148,20 @@ func runGost(url, chain string, t *testing.T) (func(), string, error) {
 	for {
 		select {
 		case <-ctx.Done():
+			close(done) // signal scanners to stop
 			_ = cmd.Process.Kill()
 			wg.Wait()
 			return nil, "", ctx.Err()
 		case e := <-errc:
 			// process exited or reader error before we saw "listening on"
+			close(done) // signal scanners to stop
 			wg.Wait()
 			return nil, "", e
 		case l := <-lines:
 			if addr, ok := tryExtract(l); ok {
 				cleanup := func() {
 					// best-effort kill and wait
+					close(done) // signal scanners to stop
 					_ = cmd.Process.Kill()
 					wg.Wait()
 				}
