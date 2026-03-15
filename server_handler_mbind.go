@@ -10,6 +10,64 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// DefaultGostMBindHandler handles the Gost multiplexed BIND command.
+//
+// DefaultGostMBindHandler creates a TCP listener and uses smux to
+// multiplex multiple incoming connections over a single TCP connection
+// to the client.
+//
+// # Protocol Support
+//
+//   - SOCKS4: Yes (Gost extension)
+//   - SOCKS5: Yes (Gost extension)
+//   - TLS: Yes
+//
+// # Behavior
+//
+// 1. Applies default listen host if address is unspecified
+// 2. Validates local address against LaddrFilter
+// 3. Creates TCP listener on requested address
+// 4. Sends success reply with bound address
+// 5. Upgrades connection to smux session
+// 6. Spawns goroutine to accept smux streams (and discard)
+// 7. Accepts incoming connections on listener
+// 8. For each incoming connection:
+//   - Opens new smux stream
+//   - Pipes data between listener connection and stream
+//
+// 9. Continues until listener or session closes
+//
+// # Multiplexing
+//
+// MBIND uses smux (stream multiplexing) to carry multiple independent
+// connections over a single TCP connection.
+//
+// # Reply
+//
+// Sends success reply (0x00) with the listener address.
+//
+// # Errors
+//
+// Returns error and sends appropriate reply status:
+//   - DisallowReply (0x02): Address filtered
+//   - FailReply (0x01): Listen failed
+//
+// # Examples
+//
+//	// Enable on server
+//	server := &socksgo.Server{
+//	    Handlers: socksgo.DefaultCommandHandlers,
+//	    Smux: &smux.Config{
+//	        MaxFrameSize:     65535,
+//	        MaxReceiveBuffer: 4194304,
+//	    },
+//	}
+//
+// # See Also
+//
+//   - github.com/xtaci/smux: Stream multiplexing library
+//   - server_handler_bind.go: Standard BIND handler
+//   - protocol.PipeConn: Connection piping implementation
 var DefaultGostMBindHandler = CommandHandler{
 	Socks4:    true,
 	Socks5:    true,
