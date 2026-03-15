@@ -35,7 +35,6 @@ linters:
     - containedctx
     - contextcheck
     - copyloopvar
-    - dupword
     - durationcheck
     - errchkjson
     - errname
@@ -95,3 +94,5 @@ linters:
     - unused
     - contextcheck
     - tparallel
+    - dupword
+

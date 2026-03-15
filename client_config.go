@@ -1,5 +1,10 @@
 package socksgo
 
+// Client configuration and connection helpers.
+//
+// This file contains the Client configuration struct, URL/ENV parsing,
+// and helper methods for establishing connections to SOCKS proxies.
+
 import (
 	"context"
 	"crypto/tls"
@@ -34,12 +39,55 @@ func (a *wsBufferPoolAdapter) Put(x interface{}) {
 	}
 }
 
+// WebSocketConfig configures WebSocket connections for SOCKS over WS.
+//
+// WebSocketConfig provides options for customizing WebSocket dialing
+// when using SOCKS over WebSocket transport (WebSocketURL is set).
+//
+// # Examples
+//
+//	client := &socksgo.Client{
+//	    SocksVersion:   "5",
+//	    WebSocketURL:   "wss://proxy.example.com/ws",
+//	    WebSocketConfig: &socksgo.WebSocketConfig{
+//	        ReadBufferSize:    32768,
+//	        Subprotocols:      []string{"binary"},
+//	        EnableCompression: true,
+//	        RequestHeader: http.Header{
+//	            "X-Custom-Header": []string{"value"},
+//	        },
+//	    },
+//	}
+//
+// # See Also
+//
+//   - Client.WebSocketURL: Enable WebSocket transport
+//   - github.com/gorilla/websocket: Underlying WebSocket library
 type WebSocketConfig struct {
-	ReadBufferSize    int
-	Subprotocols      []string
+	// ReadBufferSize is the buffer size for WebSocket reads.
+	//
+	// If zero, websocket.DefaultDialer.ReadBufferSize is used.
+	ReadBufferSize int
+
+	// Subprotocols is the list of WebSocket subprotocols to negotiate.
+	//
+	// If nil, websocket.DefaultDialer.Subprotocols is used.
+	Subprotocols []string
+
+	// EnableCompression enables per-message compression (RFC 7692).
+	//
+	// If false, compression is disabled.
+	//
+	// Default: false (websocket.DefaultDialer.EnableCompression)
 	EnableCompression bool
-	Jar               http.CookieJar
-	RequestHeader     http.Header
+
+	// Jar is the cookie jar for HTTP cookies during WebSocket handshake.
+	//
+	// If nil, websocket.DefaultDialer.Jar is used.
+	Jar http.CookieJar
+
+	// RequestHeader contains custom HTTP headers for WebSocket upgrade request.
+	RequestHeader http.Header
 }
 
 func (w *WebSocketConfig) jar() http.CookieJar {
@@ -70,6 +118,13 @@ func (w *WebSocketConfig) enableCompression() bool {
 	return w.EnableCompression
 }
 
+// Version returns the SOCKS protocol version.
+//
+// Returns "5" as default if SocksVersion is empty.
+//
+// # Returns
+//
+// "4", "4a", "5", or "5" (default)
 func (c *Client) Version() string {
 	if c.SocksVersion == "" {
 		return "5"
@@ -77,7 +132,13 @@ func (c *Client) Version() string {
 	return c.SocksVersion
 }
 
-// c.ProxyNet or "tcp"
+// GetNet returns the network type for proxy connections.
+//
+// Returns "tcp" as default if ProxyNet is empty.
+//
+// # Returns
+//
+// ProxyNet or "tcp" (default)
 func (c *Client) GetNet() string {
 	if c == nil {
 		return "tcp"
@@ -88,7 +149,21 @@ func (c *Client) GetNet() string {
 	return c.ProxyNet
 }
 
-// c.ProxyAddr or c.ProxyAddr + ":1080" if no port provided
+// GetAddr returns the proxy server address with default port.
+//
+// If ProxyAddr doesn't contain a port, appends ":1080" (default SOCKS port).
+//
+// # Returns
+//
+// ProxyAddr or ProxyAddr:1080 if no port specified.
+//
+// # Examples
+//
+//	client.ProxyAddr = "proxy.example.com"
+//	addr := client.GetAddr() // Returns "proxy.example.com:1080"
+//
+//	client.ProxyAddr = "proxy.example.com:9050"
+//	addr := client.GetAddr() // Returns "proxy.example.com:9050"
 func (c *Client) GetAddr() string {
 	if !strings.Contains(c.ProxyAddr, ":") {
 		// Default port
@@ -97,17 +172,77 @@ func (c *Client) GetAddr() string {
 	return c.ProxyAddr
 }
 
-// Return true if c.TLS is true or c.WebSocketURL starts with "wss"
+// IsTLS reports whether TLS is enabled for the proxy connection.
+//
+// Returns true if:
+//   - TLS field is true, or
+//   - WebSocketURL starts with "wss"
+//
+// # Examples
+//
+//	client.TLS = true
+//	client.IsTLS() // true
+//
+//	client.WebSocketURL = "wss://proxy.example.com/ws"
+//	client.IsTLS() // true
 func (c *Client) IsTLS() bool {
 	return c.TLS || strings.HasPrefix(c.WebSocketURL, "wss")
 }
 
-// !c.IsTLS() || c.InsecureUDP
+// IsUDPAllowed reports whether UDP operations are permitted.
+//
+// Returns true if:
+//   - TLS is not enabled, or
+//   - InsecureUDP is true (allows plaintext UDP over TLS)
+//
+// # Security Warning
+//
+// When TLS is enabled and InsecureUDP is true, UDP packets are sent
+// unencrypted. This is a security risk!
+//
+// # Examples
+//
+//	client.TLS = false
+//	client.IsUDPAllowed() // true
+//
+//	client.TLS = true
+//	client.InsecureUDP = false
+//	client.IsUDPAllowed() // false (UDP blocked over TLS)
+//
+//	client.TLS = true
+//	client.InsecureUDP = true // NOT RECOMMENDED
+//	client.IsUDPAllowed() // true (but UDP is plaintext!)
 func (c *Client) IsUDPAllowed() bool {
 	return !c.IsTLS() || c.InsecureUDP
 }
 
-// Run c.Filter or LoopbackFilter if c.Filter is nil.
+// DoFilter checks if a connection should bypass the proxy.
+//
+// DoFilter evaluates the Filter function to determine if a connection
+// should use direct dialing instead of going through the proxy.
+//
+// # Parameters
+//
+//   - network: Network type (may be "" if unknown)
+//   - address: Target address (host:port format)
+//
+// # Returns
+//
+//   - true: Use direct connection (bypass proxy)
+//   - false: Use SOCKS proxy
+//
+// # Behavior
+//
+// 1. If IsNoProxy() returns true: Always returns true (all direct)
+// 2. If Filter is nil: Uses LoopbackFilter
+// 3. Otherwise: Calls Filter(network, address)
+//
+// # Examples
+//
+//	client.Filter = socksgo.BuildFilter("localhost,192.168.0.0/16")
+//
+//	client.DoFilter("tcp", "localhost:8080")  // true (direct)
+//	client.DoFilter("tcp", "example.com:80")  // false (proxy)
 func (c *Client) DoFilter(network, address string) bool {
 	if c.IsNoProxy() {
 		// All connections goes directly
@@ -120,7 +255,17 @@ func (c *Client) DoFilter(network, address string) bool {
 	return filter(network, address)
 }
 
-// Return c.DirectListener or default net listener.
+// GetListener returns the TCP listener for direct connections.
+//
+// Returns DirectListener if set, otherwise uses net.ListenConfig.Listen.
+//
+// # Returns
+//
+// Listener function for creating TCP listeners.
+//
+// # See Also
+//
+//   - DirectListener: Custom listener configuration
 func (c *Client) GetListener() Listener {
 	if c.DirectListener == nil {
 		return (&net.ListenConfig{}).Listen
@@ -128,7 +273,18 @@ func (c *Client) GetListener() Listener {
 	return c.DirectListener
 }
 
-// Return c.DirectPacketListener or default net UDP listener.
+// GetPacketListener returns the UDP packet listener for direct connections.
+//
+// Returns DirectPacketListener if set, otherwise creates a UDP listener
+// using net.ListenUDP.
+//
+// # Returns
+//
+// PacketListener function for creating UDP listeners.
+//
+// # See Also
+//
+//   - DirectPacketListener: Custom listener configuration
 func (c *Client) GetPacketListener() PacketListener {
 	if c.DirectPacketListener == nil {
 		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
@@ -139,7 +295,17 @@ func (c *Client) GetPacketListener() PacketListener {
 	return c.DirectPacketListener
 }
 
-// Return c.Dialer or default net dialer.
+// GetDialer returns the dialer for TCP connections.
+//
+// Returns Dialer if set, otherwise uses net.Dialer.DialContext.
+//
+// # Returns
+//
+// Dialer function for establishing TCP connections.
+//
+// # See Also
+//
+//   - Dialer: Custom dialer configuration
 func (c *Client) GetDialer() Dialer {
 	if c.Dialer == nil {
 		return func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -149,7 +315,18 @@ func (c *Client) GetDialer() Dialer {
 	return c.Dialer
 }
 
-// Return c.PacketDialer or default net udp dialer.
+// GetPacketDialer returns the dialer for UDP connections.
+//
+// Returns PacketDialer if set, otherwise creates UDP connections
+// using net.DialUDP.
+//
+// # Returns
+//
+// PacketDialer function for establishing UDP connections.
+//
+// # See Also
+//
+//   - PacketDialer: Custom dialer configuration
 func (c *Client) GetPacketDialer() PacketDialer {
 	if c.Dialer == nil {
 		return func(ctx context.Context, network, raddr string) (PacketConn, error) {
@@ -160,7 +337,18 @@ func (c *Client) GetPacketDialer() PacketDialer {
 	return c.PacketDialer
 }
 
-// Return c.Resolver4 or net.DefaultResolver
+// GetResolver returns the DNS resolver for lookups.
+//
+// Returns Resolver if set, otherwise uses net.DefaultResolver.
+//
+// # Returns
+//
+// Resolver for DNS lookups.
+//
+// # See Also
+//
+//   - Resolver: Custom resolver configuration
+//   - net.DefaultResolver: System default resolver
 func (c *Client) GetResolver() Resolver {
 	if c.Resolver == nil {
 		return net.DefaultResolver
@@ -168,9 +356,41 @@ func (c *Client) GetResolver() Resolver {
 	return c.Resolver
 }
 
-// Build TLS config from c.TLSConfig or default tls.Config{}.
-// If config.ServerName == "", set it to c.GetAddr().
-// If !c.IsTLS() always return nil.
+// GetTLSConfig builds the TLS configuration for secure connections.
+//
+// GetTLSConfig creates a TLS configuration from TLSConfig field or
+// returns a default configuration. If TLS is not enabled, returns nil.
+//
+// # Behavior
+//
+// 1. If !IsTLS(): Returns nil
+// 2. If TLSConfig is nil: Creates default config
+// 3. Clones TLSConfig to avoid mutation
+// 4. Sets ServerName from ProxyAddr if empty
+//
+// # ServerName
+//
+// If TLSConfig.ServerName is empty, extracts the hostname from
+// GetAddr() (removes port).
+//
+// # Returns
+//
+// *tls.Config for TLS connections, or nil if TLS is disabled.
+//
+// # Examples
+//
+//	// Default TLS config
+//	client.TLS = true
+//	config := client.GetTLSConfig()
+//	// config.InsecureSkipVerify = true (default)
+//	// config.ServerName = "proxy.example.com" (from ProxyAddr)
+//
+//	// Custom TLS config
+//	client.TLSConfig = &tls.Config{
+//	    InsecureSkipVerify: false,
+//	    ServerName:         "custom.example.com",
+//	}
+//	config := client.GetTLSConfig()
 func (c *Client) GetTLSConfig() (config *tls.Config) {
 	if !c.IsTLS() {
 		return nil
@@ -192,6 +412,11 @@ func (c *Client) GetTLSConfig() (config *tls.Config) {
 	return config
 }
 
+// GetHandshakeTimeout returns the SOCKS handshake timeout.
+//
+// # Returns
+//
+// HandshakeTimeout duration, or 0 if not set.
 func (c *Client) GetHandshakeTimeout() time.Duration {
 	if c == nil {
 		return 0
@@ -199,9 +424,28 @@ func (c *Client) GetHandshakeTimeout() time.Duration {
 	return c.HandshakeTimeout
 }
 
-// Build webSocket.Dialer from c.WebSocketConfig,
-// c.GetDialer() and c.GetTLSConfig.
-// if c.WebSocketURL == "" always return nil.
+// GetWsDialer builds the WebSocket dialer for SOCKS over WS.
+//
+// GetWsDialer creates a websocket.Dialer configured from WebSocketConfig,
+// GetDialer, and GetTLSConfig. Returns nil if WebSocketURL is empty.
+//
+// # Configuration
+//
+// The dialer is configured with:
+//   - NetDialContext: From GetDialer()
+//   - TLSClientConfig: From GetTLSConfig()
+//   - WriteBufferPool: Uses client's Pool
+//   - HandshakeTimeout: From GetHandshakeTimeout()
+//   - ReadBufferSize, Subprotocols, etc.: From WebSocketConfig
+//
+// # Returns
+//
+// *websocket.Dialer for WebSocket connections, or nil if WebSocketURL is empty.
+//
+// # See Also
+//
+//   - WebSocketConfig: WebSocket configuration options
+//   - github.com/gorilla/websocket: Underlying WebSocket library
 func (c *Client) GetWsDialer() *websocket.Dialer {
 	if c.WebSocketURL == "" {
 		return nil
@@ -220,7 +464,30 @@ func (c *Client) GetWsDialer() *websocket.Dialer {
 	return dialer
 }
 
-// Connect to socks over ws proxy
+// connectWebSocket establishes a WebSocket connection to the proxy.
+//
+// connectWebSocket dials the WebSocket URL and wraps the connection
+// in a wsConn for use with the SOCKS protocol.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//
+// # Returns
+//
+// Established net.Conn over WebSocket or error.
+//
+// # Behavior
+//
+// 1. Gets WebSocket dialer from GetWsDialer()
+// 2. Dials WebSocketURL with optional headers
+// 3. Wraps connection in wsConn
+// 4. Closes response body
+//
+// # See Also
+//
+//   - Connect: High-level connection method
+//   - wsConn: WebSocket connection wrapper
 func (c *Client) connectWebSocket(
 	ctx context.Context,
 ) (conn net.Conn, err error) {
@@ -243,7 +510,55 @@ func (c *Client) connectWebSocket(
 	}, nil
 }
 
-// Connect to proxy server
+// Connect establishes a connection to the SOCKS proxy server.
+//
+// Connect creates a TCP or WebSocket connection to the proxy server
+// and applies TLS if configured. It's used internally by Request()
+// but can be called directly for low-level control.
+//
+// # Returns
+//
+// Established net.Conn to the proxy server or error.
+//
+// # Behavior
+//
+// 1. If WebSocketURL is set: Establishes WebSocket connection
+// 2. Otherwise: Dials ProxyAddr using Dialer
+// 3. If TLS enabled: Wraps connection in TLS
+// 4. Sets handshake timeout deadline
+//
+// # WebSocket
+//
+// When WebSocketURL is set, connects via WebSocket and returns
+// a wrapped connection. ProxyAddr is ignored.
+//
+// # TLS
+//
+// When TLS is true (or WebSocketURL starts with "wss"), wraps
+// the connection in TLS using GetTLSConfig().
+//
+// # Timeout
+//
+// Uses HandshakeTimeout if set, otherwise uses context deadline.
+//
+// # Examples
+//
+//	// Direct connection to proxy
+//	conn, err := client.Connect(ctx)
+//	if err != nil {
+//	    return err
+//	}
+//	defer conn.Close()
+//
+//	// Use with Request for manual control
+//	conn, err := client.Connect(ctx)
+//	// Send custom SOCKS request...
+//
+// # See Also
+//
+//   - Request: High-level SOCKS request
+//   - Dial: High-level TCP connection
+//   - GetTLSConfig: TLS configuration
 func (c *Client) Connect(ctx context.Context) (conn net.Conn, err error) {
 	if c.WebSocketURL != "" {
 		conn, err = c.connectWebSocket(ctx)
@@ -279,6 +594,36 @@ func (c *Client) Connect(ctx context.Context) (conn net.Conn, err error) {
 	return
 }
 
+// CheckNetworkSupport validates network support for the SOCKS version.
+//
+// CheckNetworkSupport checks if the requested network type is supported
+// by the configured SOCKS protocol version.
+//
+// # Parameters
+//
+//   - net: Network type to validate ("tcp", "tcp4", "tcp6", "udp", etc.)
+//
+// # Returns
+//
+// nil if supported, WrongNetworkError if not.
+//
+// # Supported Networks
+//
+// SOCKS5:
+//   - tcp, tcp4, tcp6
+//   - udp, udp4, udp6
+//
+// SOCKS4/4a:
+//   - tcp, tcp4 (UDP not supported)
+//
+// # Examples
+//
+//	err := client.CheckNetworkSupport("tcp")    // nil
+//	err := client.CheckNetworkSupport("udp")    // nil for SOCKS5
+//	err := client.CheckNetworkSupport("unix")   // WrongNetworkError
+//
+//	client.SocksVersion = "4"
+//	err := client.CheckNetworkSupport("udp")    // WrongNetworkError
 func (c *Client) CheckNetworkSupport(net string) error {
 	ver := c.Version()
 	_, ok := supportedNetworks[net]
