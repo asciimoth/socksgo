@@ -908,18 +908,35 @@ func TestClient_Request_Socks4_WithoutIP(t *testing.T) {
 	client := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
+		// Use a resolver that fails to resolve the hostname
+		Resolver: &mockResolver{
+			FnLookupIP: func(ctx context.Context, network, address string) ([]net.IP, error) {
+				if network == "ip4" {
+					// Return error for IPv4 lookup
+					return nil, errors.New("no IPv4 address")
+				}
+				return nil, nil
+			},
+			FnLookupAddr: func(ctx context.Context, address string) ([]string, error) {
+				return nil, errors.New("not implemented")
+			},
+		},
 	}
 
 	// SOCKS4 requires an IP address, not a hostname
-	// This will fail when trying to connect (no real proxy) or during request
+	// With a resolver that fails to resolve, Request should return UnsupportedAddrError
 	_, _, err := client.Request(
 		context.Background(),
 		protocol.CmdConnect,
 		protocol.AddrFromHostPort("example.com:80", "tcp"),
 	)
-	// We expect an error - either connection error or protocol error
+	// We expect an UnsupportedAddrError
 	if err == nil {
 		t.Fatal("Expected error for SOCKS4 with hostname (not IP), got nil")
+	}
+	_, ok := err.(socksgo.UnsupportedAddrError)
+	if !ok {
+		t.Errorf("Expected UnsupportedAddrError, got %T: %v", err, err)
 	}
 }
 

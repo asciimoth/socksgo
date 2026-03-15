@@ -10,6 +10,7 @@ import (
 	"github.com/asciimoth/socksgo/protocol"
 )
 
+// supportedNetworks lists network types that can be used with Dial/Listen.
 var supportedNetworks = map[string]any{
 	"tcp":  nil,
 	"tcp4": nil,
@@ -20,41 +21,56 @@ var supportedNetworks = map[string]any{
 	"udp6": nil,
 }
 
+// PacketConn is a combined interface for UDP packet connections.
+// It embeds both net.PacketConn and net.Conn for full duplex communication.
 type PacketConn interface {
 	net.PacketConn
 	net.Conn
 }
 
+// Dialer is a function type for establishing TCP connections.
+// It matches the signature of net.Dialer.DialContext.
 type Dialer = func(ctx context.Context, network, address string) (net.Conn, error)
 
+// PacketDialer is a function type for establishing UDP packet connections.
 type PacketDialer = func(ctx context.Context, network, address string) (PacketConn, error)
 
+// Listener is a function type for creating TCP listeners.
 type Listener = func(ctx context.Context, network, address string) (net.Listener, error)
 
+// PacketListener is a function type for creating UDP packet listeners.
 type PacketListener = func(ctx context.Context, network, address string) (PacketConn, error)
+
+// Resolver provides DNS lookup capabilities.
+// It matches the interface of net.Resolver.
 type Resolver interface {
 	LookupIP(ctx context.Context, network, address string) ([]net.IP, error)
 	LookupAddr(ctx context.Context, address string) ([]string, error)
 }
 
-// Client side connection filter.
-// Return true if direct Dial/Listen function should be called instead of
-// passing it to proxy.
-// Return false if proxy should be used.
-// network may be "" if it is unknown.
+// Filter determines whether an address should bypass the proxy and use direct connection.
+// Return true to use direct connection, false to route through proxy.
+// network may be "" if unknown.
+//
+// Filters are used with the Client.Filter field and server address filters.
+// Use BuildFilter() to create filters from no_proxy-style strings.
 type Filter = func(network, address string) bool
 
-// Always returns false
+// PassAllFilter is a Filter that always returns false.
+// All connections will use the proxy (none bypass to direct connection).
 func PassAllFilter(_, _ string) bool {
 	return false
 }
 
-// Always returns true
+// MatchAllFilter is a Filter that always returns true.
+// All connections bypass the proxy and use direct connection.
 func MatchAllFilter(_, _ string) bool {
 	return true
 }
 
-// Return true for "localhost" and loopback ip addrs
+// LoopbackFilter returns true for localhost and loopback addresses.
+// Use this filter to route local traffic directly while sending
+// external traffic through the proxy.
 func LoopbackFilter(_, address string) bool {
 	if address == "localhost" {
 		return true
@@ -75,15 +91,24 @@ func LoopbackFilter(_, address string) bool {
 	return false
 }
 
-// Builds new filter from coma delimited entry list as
-// format widely used in no_proxy env var.
-// Each entry can be
-// - host:port
-// - host - for any port on this host
-// - ip
-// - ip/subnet - for any ip in this subnet
+// BuildFilter creates a Filter from a comma-separated string similar to the
+// NO_PROXY environment variable format.
 //
-// In hosts wildcards can be used
+// Each entry can be:
+//   - host:port - matches this host and port combination
+//   - host - matches this host on any port
+//   - ip - matches this exact IP address
+//   - ip/subnet - matches any IP in this CIDR subnet
+//   - Wildcards (*, ?) are supported in host patterns using shell glob matching
+//
+// Examples:
+//   - "localhost,127.0.0.1" - bypass for localhost and IPv4 loopback
+//   - "*.example.com" - bypass for all subdomains of example.com
+//   - "192.168.0.0/16" - bypass for entire 192.168.x.x subnet
+//   - "internal.corp:8080" - bypass for specific host:port
+//
+// The filter is case-insensitive and handles both bracketed IPv6 addresses
+// (e.g., [::1]:8080) and trailing dots in hostnames.
 func BuildFilter(str string) Filter {
 	type hostEntry struct {
 		pattern string // wildcard pattern, lowercased, no trailing dot
@@ -198,9 +223,6 @@ func trimDot(s string) string {
 	return s
 }
 
-// errorToReplyStatus maps network errors to appropriate SOCKS5 reply status codes.
-// For SOCKS4, the status is converted using ReplyStatus.To4().
-// Returns FailReply for unknown errors.
 func errorToReplyStatus(err error) protocol.ReplyStatus {
 	if err == nil {
 		return protocol.SuccReply
