@@ -1,4 +1,4 @@
-# SOCKS Proxy Client Example
+# SOCKS Proxy CONNECT Client Example
 
 A simple CLI client example demonstrating how to use socksgo to make HTTP requests through a SOCKS proxy.
 
