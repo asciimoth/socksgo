@@ -343,6 +343,15 @@ func ClientFromENV(scheme string) (*Client, error) {
 //	    WebSocketURL:   "wss://proxy.example.com/ws",
 //	}
 //
+//	// Tor stream isolation
+//	client := &socksgo.Client{
+//	    SocksVersion: "5",
+//	    ProxyAddr:    "127.0.0.1:9050",
+//	}
+//	isolatedClient := client.WithTorIsolation(nil) // Random isolation
+//	sessionID := "my-session"
+//	isolatedClient = client.WithTorIsolation(&sessionID) // Specific isolation
+//
 // # Thread Safety
 //
 // Client is safe for concurrent use after initialization. Do not modify
@@ -353,6 +362,7 @@ func ClientFromENV(scheme string) (*Client, error) {
 //   - ClientFromURL: Create client from URL string
 //   - ClientFromENV: Create client from environment variables
 //   - ClientNoProxy: Create client that bypasses proxy
+//   - Client.WithTorIsolation: Enable Tor stream isolation
 type Client struct {
 	// SocksVersion specifies the SOCKS protocol version.
 	//

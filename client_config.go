@@ -7,7 +7,10 @@ package socksgo
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -18,19 +21,38 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Tor stream isolation constants.
+// See: https://spec.torproject.org/socks-extensions.html#extended-auth
+const (
+	// torMagicPrefix is the magic sequence indicating Tor extended authentication.
+	// ASCII: <torS0X>
+	torMagicPrefix = "\x3c\x74\x6f\x72\x53\x30\x58\x3e"
+
+	// torFormatType0 is the format type for simple stream isolation.
+	// Format: Username = <torS0X>0, Password = stream isolation parameter
+	torFormatType0 = "0"
+
+	// torMaxPasswordLen is the maximum password length per SOCKS5 spec (RFC 1929).
+	torMaxPasswordLen = 255
+
+	// torRandomIDBytes is the number of random bytes used for generating
+	// stream isolation IDs when none is provided.
+	torRandomIDBytes = 16
+)
+
 // wsBufferPoolAdapter adapts bufpool.Pool to websocket.BufferPool
 type wsBufferPoolAdapter struct {
 	pool bufpool.Pool
 }
 
-func (a *wsBufferPoolAdapter) Get() interface{} {
+func (a *wsBufferPoolAdapter) Get() any {
 	if a.pool == nil {
 		return nil
 	}
 	return bufpool.GetBuffer(a.pool, 0)
 }
 
-func (a *wsBufferPoolAdapter) Put(x interface{}) {
+func (a *wsBufferPoolAdapter) Put(x any) {
 	if a.pool == nil {
 		return
 	}
@@ -640,4 +662,109 @@ func (c *Client) CheckNetworkSupport(net string) error {
 		}
 	}
 	return nil
+}
+
+// WithTorIsolation creates a copy of the Client with Tor stream isolation enabled.
+//
+// WithTorIsolation implements the Tor SOCKS extension for stream isolation
+// as specified in https://spec.torproject.org/socks-extensions.html#extended-auth
+//
+// The method configures the client to use extended authentication with format
+// type 0, where the stream isolation parameter is sent in the password field.
+//
+// # Parameters
+//
+//   - id: Pointer to stream isolation ID string. If nil, a random ID is generated.
+//
+// # Behavior
+//
+// 1. Creates a shallow copy of the Client
+// 2. Generates or uses the provided stream isolation ID
+// 3. Trims the ID if it exceeds the maximum password length (255 bytes)
+// 4. Sets username to "<torS0X>0" (magic prefix + format type 0)
+// 5. Sets password to the stream isolation ID
+// 6. Removes all other authentication methods
+//
+// # Stream Isolation
+//
+// Streams with different isolation IDs will use separate Tor circuits.
+// Streams with the same isolation ID may share a circuit.
+//
+// # Examples
+//
+//	// Client with random stream isolation
+//	client := &socksgo.Client{
+//	    SocksVersion: "5",
+//	    ProxyAddr:    "127.0.0.1:9050",
+//	}
+//	isolatedClient := client.WithTorIsolation(nil)
+//
+//	// Client with specific isolation ID
+//	client := &socksgo.Client{
+//	    SocksVersion: "5",
+//	    ProxyAddr:    "127.0.0.1:9050",
+//	}
+//	sessionID := "user-session-123"
+//	isolatedClient := client.WithTorIsolation(&sessionID)
+//
+//	// Long IDs are automatically trimmed
+//	longID := strings.Repeat("x", 300)
+//	isolatedClient := client.WithTorIsolation(&longID)
+//
+// # Notes
+//
+//   - This method is designed for SOCKS5 clients connecting to Tor
+//   - For SOCKS4 or non-Tor proxies, the credentials are sent as-is
+//     (behavior depends on proxy implementation)
+//   - The original client is not modified; a copy is returned
+func (c *Client) WithTorIsolation(id *string) *Client {
+	if c == nil {
+		return nil
+	}
+
+	// Create a shallow copy of the client
+	clone := *c
+
+	// Generate or use provided isolation ID
+	var isolationID string
+	if id == nil {
+		isolationID = generateTorIsolationID()
+	} else {
+		isolationID = *id
+	}
+
+	// Trim ID if too long (must fit in password field)
+	if len(isolationID) > torMaxPasswordLen {
+		isolationID = isolationID[:torMaxPasswordLen]
+	}
+
+	// Build Tor extended authentication credentials
+	// Format type 0: Username = <torS0X>0, Password = isolation parameter
+	username := torMagicPrefix + torFormatType0
+
+	// Create new auth methods with only PassAuth using Tor credentials
+	clone.Auth = (&protocol.AuthMethods{}).Add(&protocol.PassAuthMethod{
+		User: username,
+		Pass: isolationID,
+	})
+
+	return &clone
+}
+
+// generateTorIsolationID generates a random stream isolation ID.
+//
+// Generates a cryptographically secure random hex string suitable for
+// use as a Tor stream isolation parameter.
+//
+// # Returns
+//
+// A hex-encoded random string of 32 characters (16 bytes).
+func generateTorIsolationID() string {
+	bytes := make([]byte, torRandomIDBytes)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID if random generation fails
+		// This should never happen in practice
+		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
 }
