@@ -10,6 +10,7 @@
 # This script excludes:
 #   - *_internal_test.go files (internal test helpers)
 #   - client_testhooks.go (test-only hook code)
+#   - examples/ directory (example applications)
 
 set -e
 
@@ -29,9 +30,10 @@ echo "  Output: $OUTPUT_FILE"
 TEMP_FILE=$(mktemp)
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-# Filter out internal test files and testhooks
+# Filter out internal test files, testhooks, and examples
 grep -v "client_testhooks.go" "$INPUT_FILE" | \
-  grep -v "_internal_test.go" > "$TEMP_FILE"
+  grep -v "_internal_test.go" | \
+  grep -v "examples/" > "$TEMP_FILE"
 
 mv "$TEMP_FILE" "$OUTPUT_FILE"
 trap - EXIT
