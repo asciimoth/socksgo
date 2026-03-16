@@ -58,10 +58,9 @@ cd ../client
 go run . -proxy socks5+ws://localhost:1082/ws -url http://example.com
 ```
 
-### Tor Proxy
-
+### With gost
+To use gost's "MDBIND" extension add gost url option (must be supported by server):
 ```sh
-# Connect through Tor SOCKS proxy (default port 9050)
-go run . -proxy socks5://localhost:9050 -url http://check.torproject.org
+go run . -proxy socks5://localhost:1080?gost
 ```
 
