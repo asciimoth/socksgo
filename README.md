@@ -1,48 +1,49 @@
 # socksgo
+[![Go Reference](https://pkg.go.dev/badge/github.com/asciimoth/socksgo.svg)](https://pkg.go.dev/github.com/asciimoth/socksgo) [![Coverage Status](https://coveralls.io/repos/github/asciimoth/socksgo/badge.svg?branch=master)](https://coveralls.io/github/asciimoth/socksgo?branch=master)  
 The most complete, compatible, featured and extensible SOCKS library for Go.
 
 ## Features
 
 ### Complete
 - **All versions**
-    - socks4, 
-    - socks4a, 
-    - socks5(h)
+    - [socks4](https://www.openssh.org/txt/socks4.protocol), 
+    - [socks4a](https://www.openssh.org/txt/socks4a.protocol)
+    - [socks5(h)](https://www.rfc-editor.org/rfc/rfc1928)
 - **Both sides**: Client and server implementations
-- **All standard auth methods**: 
+- **All standard auth methods**
     - NoAuth
-    - Username/Password,
-    - GSSAPI (stub)
-- **All commands**: 
+    - [Username/Password](https://www.rfc-editor.org/rfc/rfc1929)
+    - [GSSAPI](https://www.rfc-editor.org/rfc/rfc1961) (stub)
+- **All commands**
     - CONNECT
     - BIND
     - UDP ASSOC
-- **IDENT support** (For socks4 server)
+- **[IDENT](https://www.rfc-editor.org/rfc/rfc1413) support** (For socks4 server)
 
 ### Featured
-- **Tor extensions**:
+- **[Tor extensions](https://spec.torproject.org/socks-extensions)**
     - Resolve
     - ResolvePtr
     - Stream Isolation
-- **Gost extensions**:
+- **[Gost extensions](https://gost.run/en/tutorials/protocols/socks/)**
   - socks over TLS
   - socks over WebSocket
-  - MBIND (Multiplexed Bind)
-  - UDP TUN (UDP tunneling over TCP)
-- **Flexible client configuration**:
+  - [MBIND](https://gost.run/en/tutorials/protocols/socks/#mbind-multiplex-bind) (Multiplexed Bind)
+  - [UDP TUN](https://gost.run/en/tutorials/protocols/socks/#udp-tun-udp-over-tcp-tunnel) (UDP tunneling over TCP)
+- **Flexible client configuration**
   - Explicit Client structure construction
   - Client from URL (full and safe variants)
   - Client from environment variables
 
 ### Extensible
 - Address filtering (both client and server sides)
-- Custom commands
-- Custom auth methods
+- [Custom commands](./examples/custom-cmd)
+- [Custom auth methods](./examples/custom-auth)
 - Hooks
 
 ### Well Tested
-- High test coverage
-- Compatibility tests for curl, Tor, and Gost
+- [High test coverage](https://coveralls.io/github/asciimoth/socksgo)
+- Compatibility tests for [curl](./compat_curl_test.go), [Tor](./compat_tor_test.go), and [Gost](./compat_gost_test.go)
 
 ## Installation
 
@@ -87,7 +88,7 @@ See the [examples](./examples) directory for more usage patterns:
 - [custom-auth](./examples/custom-auth) - Custom authentication method
 - [gss-auth](./examples/gss-auth) - GSSAPI auth implementation example
 - [custom-cmd](./examples/custom-cmd) - Custom command
-- [client-chaining](./examples/client-chaining) - Chained proxy clients
+- [client-chaining](./examples/client-chaining) - Chained proxy clients (aka [onion routing](https://en.wikipedia.org/wiki/Onion_routing))
 - [server-chaining](./examples/server-chaining) - Chained proxy servers
 - [interceptor](./examples/interceptor) - HTTP(S) interceptor proxy
 - [tor-isolation](./examples/tor-isolation) - Tor streams isolation
@@ -96,7 +97,7 @@ See the [examples](./examples) directory for more usage patterns:
 
 
 ## TODO
-- [ ] More tls options in client url support
-- [ ] UDP ASSOC fragmentation support
-- [ ] socks over ws perf improve
+- [ ] Add more tls options to client url scheme
+- [ ] Implement UDP ASSOC fragmentation support
+- [ ] Improve socks over WS perf
 
