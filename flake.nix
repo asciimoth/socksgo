@@ -60,6 +60,7 @@
           golangci-lint
           commitizen
           gopls
+          pkgsite
 
           gost
           curl
