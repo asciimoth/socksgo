@@ -2,6 +2,8 @@ github.com/asciimoth/bufpool v0.3.0 h1:tQMop/kZ3eOLSorM9i0cqtOIpxWQUroGZ6oNk5DTn
 github.com/asciimoth/bufpool v0.3.0/go.mod h1:JV6H4hpj2bCS5Svr0wNqR+XOZFOOkdXfNZxCjm/3QHw=
 github.com/asciimoth/ident v0.2.0 h1:G6qaTnkxTH+idV5YzJ7AvgC2nLQDE/aoV7rPCOtN07I=
 github.com/asciimoth/ident v0.2.0/go.mod h1:JNNFnfM7/hdcXVkFBBOAU/vpJM+0gucYaAYwB694bT0=
+github.com/asciimoth/putback v0.2.0 h1:9HMvPrm5i36LZTfZpitzUt39S65hIsco2SJVKm/lowQ=
+github.com/asciimoth/putback v0.2.0/go.mod h1:CwupVyrAB+jV09wAmxPCApVGxq6HRWxNbUCR8YH60PA=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/xtaci/smux v1.5.44 h1:7T61zLfFX1jokXj6d+lPaxHnVwgYiJ7EN94DAudKqpg=

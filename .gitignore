@@ -34,3 +34,7 @@ go.work.sum
 /.envrc
 /.pre-commit-config.yaml
 /.direnv
+
+/examples/interceptor/ca.crt
+/examples/interceptor/ca.key
+
