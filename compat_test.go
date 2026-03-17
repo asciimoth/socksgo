@@ -1,3 +1,4 @@
+// nolint
 package socksgo_test
 
 import (
@@ -335,7 +336,9 @@ func testListen(c *socksgo.Client, t *testing.T, times int) {
 
 	for i := range times {
 		func() {
-			resp, err := httpClient.Get("http://" + l.Addr().String()) //nolint noctx
+			resp, err := httpClient.Get(
+				"http://" + l.Addr().String(),
+			) //nolint noctx
 			if err != nil {
 				t.Fatalf("error while requesting: %v", err)
 			}

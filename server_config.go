@@ -394,3 +394,9 @@ func (s *Server) ListenForAssoc(
 	}
 	return s.GetPacketListener()(ctx, "udp", net.JoinHostPort(host, "0"))
 }
+
+func (s *Server) closeConn(c net.Conn, err error) {
+	if err != nil || !s.DanglingConnections {
+		_ = c.Close()
+	}
+}

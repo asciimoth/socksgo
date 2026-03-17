@@ -1362,7 +1362,9 @@ func TestAccept4_Success_FullFlow(t *testing.T) {
 // TestAccept4_WithIDENT_Success tests SOCKS4 with successful IDENT verification
 // Skipped - IDENT protocol is complex to mock properly, error paths are tested
 func TestAccept4_WithIDENT_Success(t *testing.T) {
-	t.Skip("IDENT protocol complex to mock - error paths tested in TestCheckIDENT_ErrorPaths")
+	t.Skip(
+		"IDENT protocol complex to mock - error paths tested in TestCheckIDENT_ErrorPaths",
+	)
 }
 
 // TestAccept4_NoTimeout_DoesNotSetDeadline tests that without timeout, SetDeadline is not called
@@ -1382,7 +1384,10 @@ func TestAccept4_NoTimeout_DoesNotSetDeadline(t *testing.T) {
 	}()
 
 	setDeadlineCalled := false
-	wrappedConn := &setDeadlineTracker{Conn: serverPipe, called: &setDeadlineCalled}
+	wrappedConn := &setDeadlineTracker{
+		Conn:   serverPipe,
+		called: &setDeadlineCalled,
+	}
 
 	server := &Server{
 		// No HandshakeTimeout set
@@ -1447,7 +1452,9 @@ func TestAccept5_NoTimeout_DoesNotSetDeadline(t *testing.T) {
 // Skipped - IDENT protocol requires proper server implementation
 // The dialer invocation is tested in TestCheckIDENT_Success_Dialer
 func TestCheckIDENT_Success_FullFlow(t *testing.T) {
-	t.Skip("IDENT protocol requires proper server - dialer tested in TestCheckIDENT_Success_Dialer")
+	t.Skip(
+		"IDENT protocol requires proper server - dialer tested in TestCheckIDENT_Success_Dialer",
+	)
 }
 
 // TestAccept5_UnsupportedCommand_NoAuth tests unsupported command after NoAuth
@@ -1515,7 +1522,12 @@ func TestCheckIDENT_UserMismatch(t *testing.T) {
 		},
 	}
 
-	err = server.checkIDENT(context.Background(), "expecteduser", serverConn, nil)
+	err = server.checkIDENT(
+		context.Background(),
+		"expecteduser",
+		serverConn,
+		nil,
+	)
 	if err == nil {
 		t.Fatal("expected error from user mismatch")
 	}

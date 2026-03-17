@@ -244,6 +244,10 @@ type Server struct {
 	//
 	// Default: net.DefaultResolver
 	Resolver Resolver
+
+	// DanglingConnections disable closing of used connections after handler
+	// returns.
+	DanglingConnections bool
 }
 
 // AcceptWS accepts a SOCKS connection over WebSocket.
@@ -339,24 +343,33 @@ func (s *Server) AcceptWS(
 // # See Also
 //
 //   - AcceptWS: Accept WebSocket connections
-func (s *Server) Accept(ctx context.Context, conn net.Conn, isTLS bool) error {
-	defer func() { _ = conn.Close() }()
+func (s *Server) Accept(
+	ctx context.Context,
+	conn net.Conn,
+	isTLS bool,
+) (err error) {
+	defer func() {
+		s.closeConn(conn, err)
+	}()
 
 	// Read version
 	var ver [1]byte
-	_, err := io.ReadFull(conn, ver[:])
+	_, err = io.ReadFull(conn, ver[:])
 	if err != nil {
-		return err
+		return
 	}
 	if ver[0] == 4 { //nolint
-		return s.accept4(ctx, conn, isTLS)
+		err = s.accept4(ctx, conn, isTLS)
+		return
 	}
 	if ver[0] == 5 { //nolint
-		return s.accept5(ctx, conn, isTLS)
+		err = s.accept5(ctx, conn, isTLS)
+		return
 	}
-	return UnknownSocksVersionError{
+	err = UnknownSocksVersionError{
 		Version: strconv.Itoa(int(ver[0])), //nolint
 	}
+	return
 }
 
 // accept4 handles SOCKS4 and SOCKS4a connections.
