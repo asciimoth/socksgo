@@ -59,6 +59,7 @@
           go
           golangci-lint
           commitizen
+          gopls
 
           gost
           curl
