@@ -24,18 +24,25 @@ import (
 //
 // # Behavior
 //
-// 1. Applies default listen host if address is unspecified
-// 2. Validates local address against LaddrFilter
-// 3. Creates TCP listener on requested address
-// 4. Sends success reply with bound address
-// 5. Upgrades connection to smux session
-// 6. Spawns goroutine to accept smux streams (and discard)
-// 7. Accepts incoming connections on listener
-// 8. For each incoming connection:
-//   - Opens new smux stream
-//   - Pipes data between listener connection and stream
+//  1. Applies default listen host if address is unspecified
 //
-// 9. Continues until listener or session closes
+//  2. Validates local address against LaddrFilter
+//
+//  3. Creates TCP listener on requested address
+//
+//  4. Sends success reply with bound address
+//
+//  5. Upgrades connection to smux session
+//
+//  6. Spawns goroutine to accept smux streams (and discard)
+//
+//  7. Accepts incoming connections on listener
+//
+//  8. For each incoming connection:
+//     - Opens new smux stream
+//     - Pipes data between listener connection and stream
+//
+//  9. Continues until listener or session closes
 //
 // # Multiplexing
 //

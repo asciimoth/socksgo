@@ -22,9 +22,9 @@ import (
 //
 // # Behavior
 //
-// 1. Validates remote address (IP) against RaddrFilter
-// 2. Performs reverse DNS lookup using server's Resolver
-// 3. Sends success reply with resolved hostname
+//  1. Validates remote address (IP) against RaddrFilter
+//  2. Performs reverse DNS lookup using server's Resolver
+//  3. Sends success reply with resolved hostname
 //
 // # Reply
 //

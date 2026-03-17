@@ -255,9 +255,9 @@ func (c *Client) IsUDPAllowed() bool {
 //
 // # Behavior
 //
-// 1. If IsNoProxy() returns true: Always returns true (all direct)
-// 2. If Filter is nil: Uses LoopbackFilter
-// 3. Otherwise: Calls Filter(network, address)
+//  1. If IsNoProxy() returns true: Always returns true (all direct)
+//  2. If Filter is nil: Uses LoopbackFilter
+//  3. Otherwise: Calls Filter(network, address)
 //
 // # Examples
 //
@@ -385,10 +385,10 @@ func (c *Client) GetResolver() Resolver {
 //
 // # Behavior
 //
-// 1. If !IsTLS(): Returns nil
-// 2. If TLSConfig is nil: Creates default config
-// 3. Clones TLSConfig to avoid mutation
-// 4. Sets ServerName from ProxyAddr if empty
+//  1. If !IsTLS(): Returns nil
+//  2. If TLSConfig is nil: Creates default config
+//  3. Clones TLSConfig to avoid mutation
+//  4. Sets ServerName from ProxyAddr if empty
 //
 // # ServerName
 //
@@ -501,10 +501,10 @@ func (c *Client) GetWsDialer() *websocket.Dialer {
 //
 // # Behavior
 //
-// 1. Gets WebSocket dialer from GetWsDialer()
-// 2. Dials WebSocketURL with optional headers
-// 3. Wraps connection in wsConn
-// 4. Closes response body
+//  1. Gets WebSocket dialer from GetWsDialer()
+//  2. Dials WebSocketURL with optional headers
+//  3. Wraps connection in wsConn
+//  4. Closes response body
 //
 // # See Also
 //
@@ -544,10 +544,10 @@ func (c *Client) connectWebSocket(
 //
 // # Behavior
 //
-// 1. If WebSocketURL is set: Establishes WebSocket connection
-// 2. Otherwise: Dials ProxyAddr using Dialer
-// 3. If TLS enabled: Wraps connection in TLS
-// 4. Sets handshake timeout deadline
+//  1. If WebSocketURL is set: Establishes WebSocket connection
+//  2. Otherwise: Dials ProxyAddr using Dialer
+//  3. If TLS enabled: Wraps connection in TLS
+//  4. Sets handshake timeout deadline
 //
 // # WebSocket
 //
@@ -678,12 +678,12 @@ func (c *Client) CheckNetworkSupport(net string) error {
 //
 // # Behavior
 //
-// 1. Creates a shallow copy of the Client
-// 2. Generates or uses the provided stream isolation ID
-// 3. Trims the ID if it exceeds the maximum password length (255 bytes)
-// 4. Sets username to "<torS0X>0" (magic prefix + format type 0)
-// 5. Sets password to the stream isolation ID
-// 6. Removes all other authentication methods
+//  1. Creates a shallow copy of the Client
+//  2. Generates or uses the provided stream isolation ID
+//  3. Trims the ID if it exceeds the maximum password length (255 bytes)
+//  4. Sets username to "<torS0X>0" (magic prefix + format type 0)
+//  5. Sets password to the stream isolation ID
+//  6. Removes all other authentication methods
 //
 // # Stream Isolation
 //

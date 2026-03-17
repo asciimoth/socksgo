@@ -22,12 +22,14 @@ import (
 //
 // # Behavior
 //
-// 1. Validates remote address (hostname) against RaddrFilter
-// 2. Performs DNS lookup using server's Resolver
-// 3. If DoNotPreferIP4 is false (default):
-//   - Prefers IPv4 address if both IPv4 and IPv6 found
+//  1. Validates remote address (hostname) against RaddrFilter
 //
-// 4. Sends success reply with resolved IP address
+//  2. Performs DNS lookup using server's Resolver
+//
+//  3. If DoNotPreferIP4 is false (default):
+//     - Prefers IPv4 address if both IPv4 and IPv6 found
+//
+//  4. Sends success reply with resolved IP address
 //
 // # IPv4 Preference
 //

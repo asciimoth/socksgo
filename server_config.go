@@ -366,9 +366,10 @@ func (s *Server) GetResolver() Resolver {
 // # Behavior
 //
 // If AssocListener is nil:
-// 1. Gets local address from control connection
-// 2. Extracts host from address
-// 3. Creates UDP listener on host:0 (any port)
+//
+//  1. Gets local address from control connection
+//  2. Extracts host from address
+//  3. Creates UDP listener on host:0 (any port)
 //
 // # See Also
 //

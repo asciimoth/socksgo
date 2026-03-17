@@ -645,10 +645,10 @@ func (c *Client) Request(
 //
 // # Behavior
 //
-// 1. Validates network support for the SOCKS version
-// 2. Checks Filter - if true, dials directly
-// 3. Sends CONNECT command through proxy
-// 4. Returns established connection
+//  1. Validates network support for the SOCKS version
+//  2. Checks Filter - if true, dials directly
+//  3. Sends CONNECT command through proxy
+//  4. Returns established connection
 //
 // # UDP Networks
 //
@@ -720,10 +720,10 @@ func (c *Client) Dial(
 //
 // # Behavior
 //
-// 1. Validates network support
-// 2. Checks Filter - if true, dials UDP directly
-// 3. If GostUDPTun enabled: Uses UDP tunnel over TCP
-// 4. Otherwise: Uses standard UDP ASSOCIATE
+//  1. Validates network support
+//  2. Checks Filter - if true, dials UDP directly
+//  3. If GostUDPTun enabled: Uses UDP tunnel over TCP
+//  4. Otherwise: Uses standard UDP ASSOCIATE
 //
 // # Gost UDP Tunnel
 //
@@ -786,10 +786,10 @@ func (c *Client) DialPacket(
 //
 // # Behavior
 //
-// 1. Validates network support
-// 2. Checks Filter - if true, listens directly
-// 3. If GostUDPTun enabled: Uses UDP tunnel over TCP
-// 4. Otherwise: Uses standard UDP ASSOCIATE
+//  1. Validates network support
+//  2. Checks Filter - if true, listens directly
+//  3. If GostUDPTun enabled: Uses UDP tunnel over TCP
+//  4. Otherwise: Uses standard UDP ASSOCIATE
 //
 // # Gost UDP Tunnel
 //
@@ -852,10 +852,10 @@ func (c *Client) ListenPacket(
 //
 // # Behavior
 //
-// 1. Validates network support
-// 2. Checks Filter - if true, listens directly
-// 3. Sends BIND command to proxy
-// 4. Returns listener for incoming connections
+//  1. Validates network support
+//  2. Checks Filter - if true, listens directly
+//  3. Sends BIND command to proxy
+//  4. Returns listener for incoming connections
 //
 // # Examples
 //

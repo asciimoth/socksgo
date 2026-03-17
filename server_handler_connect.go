@@ -21,10 +21,10 @@ import (
 //
 // # Behavior
 //
-// 1. Validates remote address against RaddrFilter
-// 2. Dials target address using server's Dialer
-// 3. Sends success reply with bound address
-// 4. Pipes data bidirectionally until EOF or error
+//  1. Validates remote address against RaddrFilter
+//  2. Dials target address using server's Dialer
+//  3. Sends success reply with bound address
+//  4. Pipes data bidirectionally until EOF or error
 //
 // # Reply
 //

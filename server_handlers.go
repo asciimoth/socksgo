@@ -196,6 +196,7 @@ func (h *CommandHandler) Run(
 // # Behavior
 //
 // Returns false if:
+//
 //   - Handler is nil
 //   - isTLS is true but TLSCompat is false
 //   - ver is "4" or "4a" but Socks4 is false

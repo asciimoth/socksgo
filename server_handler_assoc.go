@@ -21,18 +21,21 @@ import (
 //
 // # Behavior
 //
-// 1. Sets address network type to "udp"
-// 2. If address is unspecified (0.0.0.0:0):
-//   - Creates UDP listener (server mode)
-//   - Validates against LaddrFilter
+//  1. Sets address network type to "udp"
 //
-// 3. If address is specified:
-//   - Creates UDP connection to target (client mode)
-//   - Validates against RaddrFilter
+//  2. If address is unspecified (0.0.0.0:0):
+//     - Creates UDP listener (server mode)
+//     - Validates against LaddrFilter
 //
-// 4. Creates UDP association listener
-// 5. Sends success reply with association address
-// 6. Proxies UDP packets with SOCKS5 UDP headers
+//  3. If address is specified:
+//     - Creates UDP connection to target (client mode)
+//     - Validates against RaddrFilter
+//
+//  4. Creates UDP association listener
+//
+//  5. Sends success reply with association address
+//
+//  6. Proxies UDP packets with SOCKS5 UDP headers
 //
 // # UDP Encapsulation
 //
