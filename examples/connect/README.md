@@ -12,7 +12,6 @@ go run . [options]
 
 - `-proxy`: SOCKS proxy URL (default: `socks5://127.0.0.1:1080`)
 - `-url`: Target URL to fetch (default: `http://example.com`)
-- `-timeout`: Request timeout (default: `30s`)
 
 ## Examples
 

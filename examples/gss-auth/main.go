@@ -8,7 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
-	"strings"
+	"net/http"
 	"sync"
 	"time"
 
@@ -30,19 +30,15 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		runServer(ctx, *serverAddr)
-	}()
+	})
 
 	time.Sleep(500 * time.Millisecond)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		runClient(ctx, *serverAddr, *targetURL)
-	}()
+	wg.Go(func() {
+		runClient(*serverAddr, *targetURL)
+	})
 
 	wg.Wait()
 }
@@ -124,7 +120,7 @@ func preCmdLogger(
 	return 0, nil
 }
 
-func runClient(ctx context.Context, proxyAddr, targetURL string) {
+func runClient(proxyAddr, targetURL string) {
 	log.Printf("Connecting via SOCKS5 with GSS auth to %s", proxyAddr)
 
 	mockGSS := &MockGSSClient{Rounds: *rounds}
@@ -140,63 +136,28 @@ func runClient(ctx context.Context, proxyAddr, targetURL string) {
 		Auth:         authMethods,
 	}
 
-	targetHost, targetPort, err := parseTargetURL(targetURL)
-	if err != nil {
-		log.Fatalf("Failed to parse target URL: %v", err)
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+				return client.Dial(dialCtx, network, addr)
+			},
+		},
 	}
 
-	addr := net.JoinHostPort(targetHost, targetPort)
-	log.Printf("Connecting to %s via GSS-authenticated SOCKS proxy", addr)
+	resp, err := httpClient.Get(targetURL)
 
-	conn, err := client.Dial(ctx, "tcp", addr)
+	// Dial to target host through SOCKS proxy
 	if err != nil {
-		log.Fatalf("Failed to connect through proxy: %v", err)
-	}
-	defer conn.Close()
-
-	log.Printf("GSS authentication successful, sending HTTP request...")
-
-	request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", targetURL, targetHost)
-	if _, err := conn.Write([]byte(request)); err != nil {
-		log.Fatalf("Failed to send request: %v", err)
+		log.Fatalf("failed run request: %v", err)
 	}
 
-	response, err := io.ReadAll(conn)
+	response, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalf("Failed to read response: %v", err)
+		log.Fatalf("failed read body: %v", err)
 	}
 
 	fmt.Println(string(response))
-	log.Printf("Request completed successfully")
-}
-
-func parseTargetURL(url string) (host, port string, err error) {
-	if url == "" {
-		return "", "", fmt.Errorf("empty URL")
-	}
-
-	schemePrefix := "http://"
-	if len(url) > 8 && url[:7] == "https://" {
-		schemePrefix = "https://"
-		port = "443"
-	} else {
-		port = "80"
-	}
-
-	hostPart := url[len(schemePrefix):]
-	if hostPart == "" {
-		return "", "", fmt.Errorf("invalid URL: missing host")
-	}
-
-	if idx := strings.Index(hostPart, "/"); idx != -1 {
-		hostPart = hostPart[:idx]
-	}
-
-	if h, p, err := net.SplitHostPort(hostPart); err == nil {
-		return h, p, nil
-	}
-
-	return hostPart, port, nil
+	log.Printf("request completed successfully")
 }
 
 type MockGSSClient struct {

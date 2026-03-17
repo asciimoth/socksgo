@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -44,7 +45,7 @@ func main() {
 	time.Sleep(500 * time.Millisecond)
 
 	wg.Go(func() {
-		runClient(ctx, *serverAddr, *targetURL, *authToken)
+		runClient(*serverAddr, *targetURL, *authToken)
 	})
 
 	wg.Wait()
@@ -122,7 +123,7 @@ func preCmdLogger(
 	return 0, nil
 }
 
-func runClient(ctx context.Context, proxyAddr, targetURL, token string) {
+func runClient(proxyAddr, targetURL, token string) {
 	log.Printf("Connecting via SOCKS5 with custom auth to %s", proxyAddr)
 
 	authMethods := (&protocol.AuthMethods{}).Add(&CustomAuthMethod{
@@ -135,66 +136,28 @@ func runClient(ctx context.Context, proxyAddr, targetURL, token string) {
 		Auth:         authMethods,
 	}
 
-	targetHost, targetPort, err := parseTargetURL(targetURL)
-	if err != nil {
-		log.Fatalf("Failed to parse target URL: %v", err)
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+				return client.Dial(dialCtx, network, addr)
+			},
+		},
 	}
 
-	addr := net.JoinHostPort(targetHost, targetPort)
-	log.Printf("Connecting to %s via custom-authenticated SOCKS proxy", addr)
+	resp, err := httpClient.Get(targetURL)
 
-	conn, err := client.Dial(ctx, "tcp", addr)
+	// Dial to target host through SOCKS proxy
 	if err != nil {
-		log.Fatalf("Failed to connect through proxy: %v", err)
-	}
-	defer conn.Close()
-
-	log.Printf("Custom authentication successful, sending HTTP request...")
-
-	request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", targetURL, targetHost)
-	if _, err := conn.Write([]byte(request)); err != nil {
-		log.Fatalf("Failed to send request: %v", err)
+		log.Fatalf("failed run request: %v", err)
 	}
 
-	response, err := io.ReadAll(conn)
+	response, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalf("Failed to read response: %v", err)
+		log.Fatalf("failed read body: %v", err)
 	}
 
 	fmt.Println(string(response))
-	log.Printf("Request completed successfully")
-}
-
-func parseTargetURL(url string) (host, port string, err error) {
-	if url == "" {
-		return "", "", fmt.Errorf("empty URL")
-	}
-
-	schemePrefix := "http://"
-	if len(url) > 8 && url[:7] == "https://" {
-		schemePrefix = "https://"
-		port = "443"
-	} else {
-		port = "80"
-	}
-
-	hostPart := url[len(schemePrefix):]
-	if hostPart == "" {
-		return "", "", fmt.Errorf("invalid URL: missing host")
-	}
-
-	for idx := 0; idx < len(hostPart); idx++ {
-		if hostPart[idx] == '/' {
-			hostPart = hostPart[:idx]
-			break
-		}
-	}
-
-	if h, p, err := net.SplitHostPort(hostPart); err == nil {
-		return h, p, nil
-	}
-
-	return hostPart, port, nil
+	log.Printf("request completed successfully")
 }
 
 func hashToken(token string) string {
