@@ -1,6 +1,6 @@
 # socksgo
 [![Go Reference](https://pkg.go.dev/badge/github.com/asciimoth/socksgo.svg)](https://pkg.go.dev/github.com/asciimoth/socksgo) [![Coverage Status](https://coveralls.io/repos/github/asciimoth/socksgo/badge.svg?branch=master)](https://coveralls.io/github/asciimoth/socksgo?branch=master)  
-The most complete, compatible, featured and extensible SOCKS library for Go.
+The most complete, compatible, featured and extensible SOCKS library for Go. Check [comparison](#comparison).
 
 ## Features
 
@@ -44,6 +44,26 @@ The most complete, compatible, featured and extensible SOCKS library for Go.
 ### Well Tested
 - [High test coverage](https://coveralls.io/github/asciimoth/socksgo)
 - Compatibility tests for [curl](./compat_curl_test.go), [Tor](./compat_tor_test.go), and [Gost](./compat_gost_test.go)
+
+## Comparison
+
+| Library | Client | Server | SOCKS4 | SOCKS4a | SOCKS5 | CONNECT | BIND | UDP ASSOC | User/Pass | GSS | IDENT | Gost Ext | Tor Ext |
+|---------|--------|--------|--------|---------|--------|---------|------|-----------|-----------|-----|-------|----------|---------|
+| socksgo | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| socksd (dante) | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| tor | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | * | ✗ | ✗ | ✗ | ✓ |
+| [gost](https://gost.run/en/tutorials/protocols/socks/) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
+| [things-go/go-socks5](https://github.com/things-go/go-socks5) | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [h12w/socks4](https://github.com/h12w/socks) | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [armon/go-socks5](https://github.com/armon/go-socks5) | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [fangdingjun/socks-go](https://github.com/fangdingjun/socks-go) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [ezh0v/socks5](https://github.com/ezh0v/socks5) | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [txthinking/socks5](https://github.com/txthinking/socks5/tree/master) | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [peakedshout/go-socks](https://github.com/peakedshout/go-socks) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [snail007/goproxy](https://github.com/snail007/goproxy) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| [haochen233/socks5](https://github.com/haochen233/socks5) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+
+`*` - user/pass method supported but used for other purpose
 
 ## Installation
 
@@ -90,13 +110,14 @@ See the [examples](./examples) directory for more usage patterns:
 - [custom-cmd](./examples/custom-cmd) - Custom command
 - [client-chaining](./examples/client-chaining) - Chained proxy clients (aka [onion routing](https://en.wikipedia.org/wiki/Onion_routing))
 - [server-chaining](./examples/server-chaining) - Chained proxy servers
-- [interceptor](./examples/interceptor) - HTTP(S) interceptor proxy
+- [interceptor](./examples/interceptor) - MITM for HTTP(S)
 - [tor-isolation](./examples/tor-isolation) - Tor streams isolation
 - [resolve](./examples/resolve) - Tor Resolve extension
 - [resolve-ptr](./examples/resolve-ptr) - Tor ResolvePtr extension
 
 
 ## TODO
+- [ ] Extension auth method for tls encrypted password negotiation
 - [ ] Add more tls options to client url scheme
 - [ ] Implement UDP ASSOC fragmentation support
 - [ ] Improve socks over WS perf
