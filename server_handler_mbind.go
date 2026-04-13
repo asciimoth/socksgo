@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -150,6 +150,6 @@ var DefaultGostMBindHandler = CommandHandler{
 		}
 		wg.Wait()
 
-		return internal.ClosedNetworkErrToNil(err)
+		return helpers.ClosedNetworkErrToNil(err)
 	},
 }

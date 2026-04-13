@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -263,7 +264,7 @@ func TestClient_Listen_UnknownVersion_WithHook(t *testing.T) {
 	client := &Client{
 		SocksVersion: "99",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 	}
 
 	ln, err := client.Listen(context.Background(), "tcp", "127.0.0.1:0")

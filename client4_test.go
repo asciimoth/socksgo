@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asciimoth/gonnect"
 	socksgo "github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -463,7 +464,7 @@ func TestClientListener4_AcceptReadFails(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			// Create conn that succeeds for first 8 bytes, then fails
 			return conn, nil
@@ -497,7 +498,7 @@ func TestClientListener4_AcceptServerRejects(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return &mockConnForClient4{readData: replyData}, nil
 		},
@@ -641,7 +642,7 @@ func TestRequest4_ContextCancelled(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter, // Disable filter to ensure dialer is called
+		Filter:       gonnect.FalseFilter, // Disable filter to ensure dialer is called
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			// Simulate context cancellation check
 			<-ctx.Done()
@@ -786,7 +787,7 @@ func TestRequest4_BindCommand(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return &mockConnForClient4{readData: replyData}, nil
 		},
@@ -988,7 +989,7 @@ func TestClientListener4_AcceptWrongReplyVersion(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return conn, nil
 		},
@@ -1019,7 +1020,7 @@ func TestClientListener4_AcceptClosesConnOnError(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return &mockConnForClient4{
 				readData: replyData,

@@ -5,19 +5,6 @@ import (
 	"strings"
 )
 
-func CheckURLBoolKey(values map[string][]string, key string) (f bool, s bool) {
-	val, ok := values[key]
-	if ok {
-		if len(val) == 0 {
-			return true, true
-		}
-		v := val[0]
-		return v == "true" || v == "yes" || v == "ok" || v == "1" ||
-			v == "", true
-	}
-	return false, false
-}
-
 // base = "4" | "4a" | "5"
 func ParseScheme(scheme string) (base string, tls, ws bool) {
 	parts := strings.Split(strings.TrimSpace(strings.ToLower(scheme)), "+")

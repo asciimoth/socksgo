@@ -3,12 +3,13 @@ package internal_test
 import (
 	"testing"
 
+	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/internal"
 )
 
 func TestCheckURLBoolKey(t *testing.T) {
 	t.Run("absent key", func(t *testing.T) {
-		f, s := internal.CheckURLBoolKey(map[string][]string{}, "nope")
+		f, s := helpers.CheckURLBoolKey(map[string][]string{}, "nope")
 		if f || s {
 			t.Fatalf("expected (false,false), got (%v,%v)", f, s)
 		}
@@ -16,7 +17,7 @@ func TestCheckURLBoolKey(t *testing.T) {
 
 	t.Run("nil slice", func(t *testing.T) {
 		m := map[string][]string{"k": nil}
-		f, s := internal.CheckURLBoolKey(m, "k")
+		f, s := helpers.CheckURLBoolKey(m, "k")
 		if !f || !s {
 			t.Fatalf("expected (true,true) for nil slice, got (%v,%v)", f, s)
 		}
@@ -24,7 +25,7 @@ func TestCheckURLBoolKey(t *testing.T) {
 
 	t.Run("empty slice", func(t *testing.T) {
 		m := map[string][]string{"k": {}}
-		f, s := internal.CheckURLBoolKey(m, "k")
+		f, s := helpers.CheckURLBoolKey(m, "k")
 		if !f || !s {
 			t.Fatalf("expected (true,true) for empty slice, got (%v,%v)", f, s)
 		}
@@ -38,7 +39,7 @@ func TestCheckURLBoolKey(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			m := map[string][]string{"k": {v}}
-			f, s := internal.CheckURLBoolKey(m, "k")
+			f, s := helpers.CheckURLBoolKey(m, "k")
 			if !f || !s {
 				t.Fatalf("expected (true,true) for %q, got (%v,%v)", v, f, s)
 			}
@@ -47,7 +48,7 @@ func TestCheckURLBoolKey(t *testing.T) {
 
 	t.Run("false value", func(t *testing.T) {
 		m := map[string][]string{"k": {"no"}}
-		f, s := internal.CheckURLBoolKey(m, "k")
+		f, s := helpers.CheckURLBoolKey(m, "k")
 		if f || !s {
 			t.Fatalf("expected (false,true) for \"no\", got (%v,%v)", f, s)
 		}

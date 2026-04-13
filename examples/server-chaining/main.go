@@ -12,6 +12,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -43,7 +44,7 @@ func main() {
 	}
 
 	// Configure client to pass all traffic through Server B
-	clientB.Filter = socksgo.PassAllFilter
+	clientB.Filter = gonnect.FalseFilter
 
 	// Set up authentication for both servers if credentials provided
 	var auth *protocol.AuthHandlers = nil

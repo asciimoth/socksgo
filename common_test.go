@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"testing"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 )
 
@@ -116,8 +118,8 @@ func TestConstantFilters(t *testing.T) {
 
 	for _, net := range nets {
 		for _, addr := range addrs {
-			p := socksgo.PassAllFilter(net, addr)
-			m := socksgo.MatchAllFilter(net, addr)
+			p := gonnect.FalseFilter(net, addr)
+			m := gonnect.TrueFilter(net, addr)
 			if p || !m {
 				t.Error(net, addr, p, m)
 			}
@@ -142,7 +144,7 @@ func TestLoopbackFilter(t *testing.T) {
 		{"", false},
 	}
 	for _, tt := range table {
-		got := socksgo.LoopbackFilter("", tt.addr)
+		got := gonnect.LoopbackFilter("", tt.addr)
 		if got != tt.exp {
 			t.Error(tt.addr, tt.exp, got)
 		}
@@ -163,7 +165,7 @@ func (c connWithAaddr) LocalAddr() net.Addr {
 }
 
 type packetConnWithAaddr struct {
-	socksgo.PacketConn
+	gonnect.PacketConn
 	Laddr, Raddr net.Addr
 }
 
@@ -194,8 +196,17 @@ func (c listenerWithAccept) Accept() (net.Conn, error) {
 }
 
 type mockResolver struct {
-	FnLookupIP   func(ctx context.Context, network, address string) ([]net.IP, error)
-	FnLookupAddr func(ctx context.Context, address string) ([]string, error)
+	FnLookupIP     func(ctx context.Context, network, address string) ([]net.IP, error)
+	FnLookupAddr   func(ctx context.Context, address string) ([]string, error)
+	FnLookupIPAddr func(ctx context.Context, host string) ([]net.IPAddr, error)
+	FnLookupNetIP  func(ctx context.Context, network, host string) ([]netip.Addr, error)
+	FnLookupHost   func(ctx context.Context, host string) ([]string, error)
+	FnLookupCNAME  func(ctx context.Context, host string) (string, error)
+	FnLookupPort   func(ctx context.Context, network, service string) (int, error)
+	FnLookupNS     func(ctx context.Context, name string) ([]*net.NS, error)
+	FnLookupMX     func(ctx context.Context, name string) ([]*net.MX, error)
+	FnLookupSRV    func(ctx context.Context, service, proto, name string) (string, []*net.SRV, error)
+	FnLookupTXT    func(ctx context.Context, name string) ([]string, error)
 }
 
 func (m *mockResolver) LookupIP(
@@ -210,6 +221,96 @@ func (m *mockResolver) LookupAddr(
 	address string,
 ) ([]string, error) {
 	return m.FnLookupAddr(ctx, address)
+}
+
+func (m *mockResolver) LookupIPAddr(
+	ctx context.Context,
+	host string,
+) ([]net.IPAddr, error) {
+	if m.FnLookupIPAddr != nil {
+		return m.FnLookupIPAddr(ctx, host)
+	}
+	return nil, nil
+}
+
+func (m *mockResolver) LookupNetIP(
+	ctx context.Context,
+	network, host string,
+) ([]netip.Addr, error) {
+	if m.FnLookupNetIP != nil {
+		return m.FnLookupNetIP(ctx, network, host)
+	}
+	return nil, nil
+}
+
+func (m *mockResolver) LookupHost(
+	ctx context.Context,
+	host string,
+) ([]string, error) {
+	if m.FnLookupHost != nil {
+		return m.FnLookupHost(ctx, host)
+	}
+	return nil, nil
+}
+
+func (m *mockResolver) LookupCNAME(
+	ctx context.Context,
+	host string,
+) (string, error) {
+	if m.FnLookupCNAME != nil {
+		return m.FnLookupCNAME(ctx, host)
+	}
+	return "", nil
+}
+
+func (m *mockResolver) LookupPort(
+	ctx context.Context,
+	network, service string,
+) (int, error) {
+	if m.FnLookupPort != nil {
+		return m.FnLookupPort(ctx, network, service)
+	}
+	return 0, nil
+}
+
+func (m *mockResolver) LookupNS(
+	ctx context.Context,
+	name string,
+) ([]*net.NS, error) {
+	if m.FnLookupNS != nil {
+		return m.FnLookupNS(ctx, name)
+	}
+	return nil, nil
+}
+
+func (m *mockResolver) LookupMX(
+	ctx context.Context,
+	name string,
+) ([]*net.MX, error) {
+	if m.FnLookupMX != nil {
+		return m.FnLookupMX(ctx, name)
+	}
+	return nil, nil
+}
+
+func (m *mockResolver) LookupSRV(
+	ctx context.Context,
+	service, proto, name string,
+) (string, []*net.SRV, error) {
+	if m.FnLookupSRV != nil {
+		return m.FnLookupSRV(ctx, service, proto, name)
+	}
+	return "", nil, nil
+}
+
+func (m *mockResolver) LookupTXT(
+	ctx context.Context,
+	name string,
+) ([]string, error) {
+	if m.FnLookupTXT != nil {
+		return m.FnLookupTXT(ctx, name)
+	}
+	return nil, nil
 }
 
 func TestErrorToReplyStatus(t *testing.T) {

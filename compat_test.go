@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 )
 
@@ -106,7 +107,7 @@ func GetEnvConfig() EnvConfig {
 func buildClient(url string, t *testing.T, pool bufpool.Pool) *socksgo.Client {
 	c, err := socksgo.ClientFromURL(url)
 	c.Pool = pool
-	c.Filter = socksgo.PassAllFilter
+	c.Filter = gonnect.FalseFilter
 	if err != nil {
 		t.Fatalf("failed to create gost socks client: %s %v", url, err)
 	}

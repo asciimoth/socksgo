@@ -68,7 +68,6 @@ import (
 	"net"
 
 	"github.com/asciimoth/bufpool"
-	"github.com/asciimoth/socksgo/internal"
 )
 
 // Static type assertion
@@ -192,11 +191,10 @@ func (m *GSSAuthMethod) RunAuth(
 				byte(len(outToken) >> 8),   //nolint mnd
 				byte(len(outToken) & 0xff), //nolint mnd
 			}
-			if _, err := internal.WriteAllSlices(
-				conn,
-				header,
-				outToken,
-			); err != nil {
+			if _, err := conn.Write(header); err != nil {
+				return conn, info, err
+			}
+			if _, err := conn.Write(outToken); err != nil {
 				return conn, info, err
 			}
 		}

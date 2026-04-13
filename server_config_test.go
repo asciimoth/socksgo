@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
@@ -344,7 +345,7 @@ func TestGetDialerAndPacketDialer_DefaultAndCustom(t *testing.T) {
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return nil, nil //nolint
 		},
-		PacketDialer: func(ctx context.Context, network, raddr string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			return nil, markerErr
 		},
 	}
@@ -371,7 +372,7 @@ func TestListenForAssoc_Behaviors(t *testing.T) {
 	// 1) If AssocListener is provided it should be called
 	sErr := errors.New("assoc marker")
 	s1 := &socksgo.Server{
-		AssocListener: func(ctx context.Context, ctrl net.Conn) (socksgo.PacketConn, error) {
+		AssocListener: func(ctx context.Context, ctrl net.Conn) (gonnect.PacketConn, error) {
 			return nil, sErr
 		},
 	}
@@ -501,7 +502,7 @@ func TestGetPacketListener_Custom(t *testing.T) {
 	markerErr := errors.New("custom packet listener")
 
 	s := &socksgo.Server{
-		PacketListener: func(ctx context.Context, network, laddr string) (socksgo.PacketConn, error) {
+		PacketListener: func(ctx context.Context, network, laddr string) (gonnect.PacketConn, error) {
 			return nil, markerErr
 		},
 	}

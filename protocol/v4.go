@@ -2,12 +2,12 @@ package protocol
 
 import (
 	"encoding/binary"
-	"errors"
 	"io"
 	"net"
+	"slices"
 
 	"github.com/asciimoth/bufpool"
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/gonnect/helpers"
 )
 
 // BuildSocsk4TCPRequest builds a SOCKS4 or SOCKS4a TCP request.
@@ -114,9 +114,9 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 
 	buf := bufpool.GetBuffer(pool, MAX_HEADER_STR_LENGTH)
 	defer bufpool.PutBuffer(pool, buf)
-	user, err = internal.ReadNullTerminatedString(reader, buf)
+	user, err = helpers.ReadNullTerminatedString(reader, buf)
 	if err != nil {
-		if errors.Is(err, internal.ErrTooLongString) {
+		if err.Error() == "string is too long" {
 			err = ErrTooLongUser
 		}
 		return
@@ -125,9 +125,9 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	if resp[3] == 0 && resp[4] == 0 && resp[5] == 0 && resp[6] != 0 {
 		// socks4a extension
 		var fqdn string
-		fqdn, err = internal.ReadNullTerminatedString(reader, buf)
+		fqdn, err = helpers.ReadNullTerminatedString(reader, buf)
 		if err != nil {
-			if errors.Is(err, internal.ErrTooLongString) {
+			if err.Error() == "string is too long" {
 				err = ErrTooLongHost
 			}
 			return
@@ -234,7 +234,7 @@ func ReadSocks4TCPReply(reader io.Reader) (
 	stat = ReplyStatus(resp[1]).To4()
 	if stat.Ok() {
 		addr = AddrFromIP(
-			net.IP(internal.CopyBytes(resp[4:8])),
+			net.IP(slices.Clone(resp[4:8])),
 			binary.BigEndian.Uint16(resp[2:4]),
 			"",
 		)

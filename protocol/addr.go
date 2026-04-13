@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/gonnect/helpers"
 )
 
 // Address type constants for SOCKS protocol.
@@ -152,7 +152,7 @@ func AddrFromHostPort(hostport, network string) Addr {
 			hostport = "0.0.0.0:0"
 		}
 	}
-	host, port := internal.SplitHostPort(network, hostport, 0)
+	host, port := helpers.SplitHostPort(network, hostport, 0)
 	return AddrFromString(host, port, network)
 }
 
@@ -220,7 +220,7 @@ func AddrFromIP(ip net.IP, port uint16, net string) Addr {
 //	addr := protocol.AddrFromFQDN("example.com", 443, "tcp")
 //	addr := protocol.AddrFromFQDN("example.com:8080", 443, "tcp") // Uses port 8080
 func AddrFromFQDN(fqdn string, port uint16, net string) Addr {
-	fqdn, port = internal.SplitHostPort(net, fqdn, port)
+	fqdn, port = helpers.SplitHostPort(net, fqdn, port)
 	return Addr{
 		Type:   FQDNAddr,
 		Host:   []byte(fqdn),
@@ -243,7 +243,7 @@ func AddrFromFQDN(fqdn string, port uint16, net string) Addr {
 //	// FQDN with trailing dot (from DNS response)
 //	addr := protocol.AddrFromFQDNNoDot("example.com.", 443, "tcp") // Trims to "example.com"
 func AddrFromFQDNNoDot(fqdn string, port uint16, net string) Addr {
-	fqdn, port = internal.SplitHostPort(net, fqdn, port)
+	fqdn, port = helpers.SplitHostPort(net, fqdn, port)
 	trimmed := strings.TrimRight(fqdn, ".")
 	if len(trimmed) > 0 {
 		fqdn = trimmed
@@ -606,7 +606,7 @@ func (a Addr) ToHostPort() string {
 func (a Addr) Network() string {
 	net := a.NetTyp
 	if a.Type != FQDNAddr {
-		net = internal.NormalNet(net)
+		net = helpers.NormalNet(net)
 	}
 	if a.NetTyp == "" {
 		net = "tcp"

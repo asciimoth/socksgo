@@ -4,9 +4,9 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"slices"
 
 	"github.com/asciimoth/bufpool"
-	"github.com/asciimoth/socksgo/internal"
 )
 
 // BuildSocks5TCPRequest builds a SOCKS5 TCP request.
@@ -115,7 +115,7 @@ func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 			return
 		}
 		port := binary.BigEndian.Uint16(buf[4:6])
-		addr = AddrFromIP(net.IP(internal.CopyBytes(buf[:4])), port, "")
+		addr = AddrFromIP(net.IP(slices.Clone(buf[:4])), port, "")
 		return
 	case IP6Addr:
 		_, err = io.ReadFull(reader, buf[:18])
@@ -123,7 +123,7 @@ func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 			return
 		}
 		port := binary.BigEndian.Uint16(buf[16:18])
-		addr = AddrFromIP(net.IP(internal.CopyBytes(buf[:16])), port, "")
+		addr = AddrFromIP(net.IP(slices.Clone(buf[:16])), port, "")
 		return
 	case FQDNAddr:
 		_, err = io.ReadFull(reader, buf[:1])

@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -37,7 +38,7 @@ func TestAssocHandlerAddrBlocked(t *testing.T) {
 func TestAssocHandlerListenFail(t *testing.T) {
 	errstr := "mock dialer error"
 	server := socksgo.Server{
-		AssocListener: func(ctx context.Context, ctrl net.Conn) (assoc socksgo.PacketConn, err error) {
+		AssocListener: func(ctx context.Context, ctrl net.Conn) (assoc gonnect.PacketConn, err error) {
 			return nil, errors.New(errstr)
 		},
 	}
@@ -58,7 +59,7 @@ func TestAssocHandlerListenFail(t *testing.T) {
 
 func TestAssocHandlerReplyFail(t *testing.T) {
 	server := socksgo.Server{
-		AssocListener: func(ctx context.Context, ctrl net.Conn) (assoc socksgo.PacketConn, err error) {
+		AssocListener: func(ctx context.Context, ctrl net.Conn) (assoc gonnect.PacketConn, err error) {
 			return packetConnWithAaddr{
 				PacketConn: &net.UDPConn{},
 				Laddr:      protocol.AddrFromFQDN("example.com", 8080, ""),

@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -515,7 +516,7 @@ func TestClient_Dial_FilterPath(t *testing.T) {
 
 	client := &socksgo.Client{
 		ProxyAddr: "127.0.0.1:1080",
-		Filter:    socksgo.MatchAllFilter, // Always use direct connection
+		Filter:    gonnect.TrueFilter, // Always use direct connection
 		Dialer:    mockDialerFunc,
 	}
 
@@ -568,14 +569,14 @@ func TestClient_DialPacket_FilterPath(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	mockPacketDialerFunc := func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+	mockPacketDialerFunc := func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 		called = true
 		return &mockPacketConn{}, nil
 	}
 
 	client := &socksgo.Client{
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.MatchAllFilter,
+		Filter:       gonnect.TrueFilter,
 		Dialer:       func(ctx context.Context, network, address string) (net.Conn, error) { return nil, nil },
 		PacketDialer: mockPacketDialerFunc,
 		GostUDPTun:   false, // Disable GostUDPTun to use standard path
@@ -615,14 +616,14 @@ func TestClient_ListenPacket_FilterPath(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	mockPacketListenerFunc := func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+	mockPacketListenerFunc := func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 		called = true
 		return &mockPacketConn{}, nil
 	}
 
 	client := &socksgo.Client{
 		ProxyAddr:            "127.0.0.1:1080",
-		Filter:               socksgo.MatchAllFilter,
+		Filter:               gonnect.TrueFilter,
 		Dialer:               func(ctx context.Context, network, address string) (net.Conn, error) { return nil, nil },
 		DirectPacketListener: mockPacketListenerFunc,
 		GostUDPTun:           false, // Disable GostUDPTun to use standard path
@@ -666,7 +667,7 @@ func TestClient_Listen_FilterPath(t *testing.T) {
 
 	client := &socksgo.Client{
 		ProxyAddr:      "127.0.0.1:1080",
-		Filter:         socksgo.MatchAllFilter,
+		Filter:         gonnect.TrueFilter,
 		DirectListener: mockListenerFunc,
 	}
 
@@ -752,7 +753,7 @@ func TestClient_LookupIP_FilterPath(t *testing.T) {
 	client := &socksgo.Client{
 		ProxyAddr: "127.0.0.1:1080",
 		TorLookup: true,
-		Filter:    socksgo.MatchAllFilter,
+		Filter:    gonnect.TrueFilter,
 		Resolver:  mockResolver,
 	}
 
@@ -804,7 +805,7 @@ func TestClient_LookupAddr_FilterPath(t *testing.T) {
 	client := &socksgo.Client{
 		ProxyAddr: "127.0.0.1:1080",
 		TorLookup: true,
-		Filter:    socksgo.MatchAllFilter,
+		Filter:    gonnect.TrueFilter,
 		Resolver:  mockResolver,
 	}
 
@@ -827,7 +828,7 @@ func TestClient_LookupAddr_RequestFails(t *testing.T) {
 	client := &socksgo.Client{
 		ProxyAddr: "127.0.0.1:1080",
 		TorLookup: true,
-		Filter:    socksgo.PassAllFilter, // Force proxy path
+		Filter:    gonnect.FalseFilter, // Force proxy path
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return nil, dialErr
 		},
@@ -947,7 +948,7 @@ func TestClient_Request_Socks4_IPv6Only(t *testing.T) {
 	client := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter, // Use proxy path
+		Filter:       gonnect.FalseFilter, // Use proxy path
 		// Use a resolver that returns error for IPv4 lookup
 		Resolver: &mockResolver{
 			FnLookupIP: func(ctx context.Context, network, address string) ([]net.IP, error) {
@@ -1004,7 +1005,7 @@ func TestClient_Listen_Socks4(t *testing.T) {
 	client := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.MatchAllFilter,
+		Filter:       gonnect.TrueFilter,
 		DirectListener: func(ctx context.Context, network, address string) (net.Listener, error) {
 			return &mockListener{
 				addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0},
@@ -1055,7 +1056,7 @@ func TestClient_LookupIP_NilIPResponse(t *testing.T) {
 	client := &socksgo.Client{
 		ProxyAddr: "127.0.0.1:1080",
 		TorLookup: true,
-		Filter:    socksgo.PassAllFilter, // Use proxy path
+		Filter:    gonnect.FalseFilter, // Use proxy path
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return nil, errors.New("connection refused")
 		},
@@ -1079,7 +1080,7 @@ func TestClient_Listen_GostMbindSmuxError(t *testing.T) {
 		ProxyAddr:    "127.0.0.1:1080",
 		GostMbind:    true,
 		Smux:         nil, // nil config might cause issues
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			// Return a mock connection that will cause smux to fail
 			return &mockConn{deadlineErr: true}, nil

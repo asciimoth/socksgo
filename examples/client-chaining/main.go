@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 )
 
@@ -43,8 +44,8 @@ func main() {
 		return proxy1.Dial(ctx, network, address)
 	}
 
-	proxy1.Filter = socksgo.PassAllFilter
-	proxy2.Filter = socksgo.PassAllFilter
+	proxy1.Filter = gonnect.FalseFilter
+	proxy2.Filter = gonnect.FalseFilter
 
 	httpClient := &http.Client{
 		Transport: &http.Transport{

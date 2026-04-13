@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"net"
+	"slices"
 	"time"
-
-	"github.com/asciimoth/socksgo/internal"
 )
 
 // Static type assertion.
@@ -84,7 +83,7 @@ func (c *MockPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 func (c *MockPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	packet := Packet{
 		Addr:    addr,
-		Payload: internal.CopyBytes(p),
+		Payload: slices.Clone(p),
 	}
 	c.Packets = append(c.Packets, packet)
 	return len(p), nil

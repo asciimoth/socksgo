@@ -54,11 +54,13 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/internal"
 )
 
@@ -225,7 +227,7 @@ loop:
 		if err != nil {
 			return
 		}
-		if (checkAddr != nil && !internal.AddrsSameHost(checkAddr, incAddr)) ||
+		if (checkAddr != nil && !helpers.AddrsSameHost(checkAddr, incAddr)) ||
 			// Packet is too small to contain any meaningful socks5 header
 			n < 8 ||
 			// RSV is not 0
@@ -246,7 +248,7 @@ loop:
 			start = 10
 
 			if !skipAddr {
-				ip := net.IP(internal.CopyBytes(buf[4:8]))
+				ip := net.IP(slices.Clone(buf[4:8]))
 				port := binary.BigEndian.Uint16(buf[8:10])
 				addr = AddrFromIP(ip, port, conn.LocalAddr().Network())
 			}
@@ -258,7 +260,7 @@ loop:
 			start = 22
 
 			if !skipAddr {
-				ip := net.IP(internal.CopyBytes(buf[4:20]))
+				ip := net.IP(slices.Clone(buf[4:20]))
 				port := binary.BigEndian.Uint16(buf[20:22])
 				addr = AddrFromIP(ip, port, conn.LocalAddr().Network())
 			}
@@ -798,7 +800,7 @@ func ProxySocks5UDPAssoc(
 			}
 			// It was first packet from client
 			if clientUDPAddr == nil {
-				if !internal.AddrsSameHost(incAddr, ctrlAddr) {
+				if !helpers.AddrsSameHost(incAddr, ctrlAddr) {
 					// Packet is not from our client
 					continue
 				}
@@ -849,11 +851,11 @@ func ProxySocks5UDPAssoc(
 		}
 	}()
 
-	internal.WaitForClose(ctrl)
+	helpers.ReadUntilClose(ctrl)
 	_ = assoc.Close()
 	_ = proxy.Close()
 
-	return internal.JoinNetErrors(<-done, <-done)
+	return JoinNetErrors(<-done, <-done)
 }
 
 // ProxySocks5UDPTun proxies UDP packets between a Gost UDP Tunnel client
@@ -942,5 +944,5 @@ func ProxySocks5UDPTun(
 	_ = tun.Close()
 	_ = proxy.Close()
 
-	return internal.JoinNetErrors(err, <-done)
+	return JoinNetErrors(err, <-done)
 }

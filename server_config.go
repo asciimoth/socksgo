@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -269,7 +270,7 @@ func (s *Server) GetSmux() *smux.Config {
 // # See Also
 //
 //   - Listener: Server configuration field
-func (s *Server) GetListener() Listener {
+func (s *Server) GetListener() gonnect.Listen {
 	if s == nil || s.Listener == nil {
 		return (&net.ListenConfig{}).Listen
 	}
@@ -285,9 +286,9 @@ func (s *Server) GetListener() Listener {
 // # See Also
 //
 //   - PacketListener: Server configuration field
-func (s *Server) GetPacketListener() PacketListener {
+func (s *Server) GetPacketListener() gonnect.PacketListen {
 	if s == nil || s.PacketListener == nil {
-		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
+		return func(ctx context.Context, network, laddr string) (gonnect.PacketConn, error) {
 			addr := protocol.AddrFromHostPort(laddr, network)
 			udpAddr := addr.ToUDP()
 			return net.ListenUDP(network, udpAddr)
@@ -305,7 +306,7 @@ func (s *Server) GetPacketListener() PacketListener {
 // # See Also
 //
 //   - Dialer: Server configuration field
-func (s *Server) GetDialer() Dialer {
+func (s *Server) GetDialer() gonnect.Dial {
 	if s == nil || s.Dialer == nil {
 		return func(ctx context.Context, network, address string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, address)
@@ -323,9 +324,9 @@ func (s *Server) GetDialer() Dialer {
 // # See Also
 //
 //   - PacketDialer: Server configuration field
-func (s *Server) GetPacketDialer() PacketDialer {
+func (s *Server) GetPacketDialer() gonnect.PacketDial {
 	if s == nil || s.Dialer == nil {
-		return func(ctx context.Context, network, raddr string) (PacketConn, error) {
+		return func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(raddr, network).ToUDP()
 			return net.DialUDP(network, nil, udpAddr)
 		}
@@ -342,7 +343,7 @@ func (s *Server) GetPacketDialer() PacketDialer {
 // # See Also
 //
 //   - Resolver: Server configuration field
-func (s *Server) GetResolver() Resolver {
+func (s *Server) GetResolver() gonnect.Resolver {
 	if s == nil || s.Resolver == nil {
 		return net.DefaultResolver
 	}
@@ -378,7 +379,7 @@ func (s *Server) GetResolver() Resolver {
 func (s *Server) ListenForAssoc(
 	ctx context.Context,
 	ctrl net.Conn,
-) (assoc PacketConn, err error) {
+) (assoc gonnect.PacketConn, err error) {
 	if s != nil && s.AssocListener != nil {
 		return s.AssocListener(ctx, ctrl)
 	}

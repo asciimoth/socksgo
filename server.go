@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/ident"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/gorilla/websocket"
@@ -212,24 +213,24 @@ type Server struct {
 	// CONNECT and other commands requiring TCP dialing.
 	//
 	// Default: net.Dialer.DialContext
-	Dialer Dialer
+	Dialer gonnect.Dial
 
 	// PacketDialer is used to establish outgoing UDP connections for
 	// UDP ASSOC and Gost UDPTun commands.
 	//
 	// Default: net.DialUDP
-	PacketDialer PacketDialer
+	PacketDialer gonnect.PacketDial
 
 	// Listener is used to create TCP listeners for BIND and MBIND commands.
 	//
 	// Default: net.ListenConfig.Listen
-	Listener Listener
+	Listener gonnect.Listen
 
 	// PacketListener is used to create UDP listeners for UDP ASSOC
 	// and Gost UDPTun commands.
 	//
 	// Default: net.ListenUDP
-	PacketListener PacketListener
+	PacketListener gonnect.PacketListen
 
 	// AssocListener creates UDP listeners for UDP ASSOC commands.
 	//
@@ -238,12 +239,12 @@ type Server struct {
 	//
 	// This allows custom UDP association handling, such as using a
 	// specific port range or interface.
-	AssocListener func(ctx context.Context, ctrl net.Conn) (assoc PacketConn, err error)
+	AssocListener func(ctx context.Context, ctrl net.Conn) (assoc gonnect.PacketConn, err error)
 
 	// Resolver is used for DNS lookups in Tor Resolve commands.
 	//
 	// Default: net.DefaultResolver
-	Resolver Resolver
+	Resolver gonnect.Resolver
 
 	// DanglingConnections disable closing of used connections after handler
 	// returns.

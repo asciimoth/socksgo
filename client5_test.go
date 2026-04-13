@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	socksgo "github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -483,7 +484,7 @@ func TestRequest5_ContextCancelled(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "5",
 		ProxyAddr:    "127.0.0.1:1080",
-		Filter:       socksgo.PassAllFilter,
+		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -518,7 +519,7 @@ func (m *mockAuthMethod) RunAuth(
 	return conn, protocol.AuthInfo{}, m.err
 }
 
-// mockPacketConn implements socksgo.PacketConn for testing.
+// mockPacketConn implements gonnect.PacketConn for testing.
 type mockPacketConn struct {
 	localAddr  net.Addr
 	remoteAddr net.Addr
@@ -633,7 +634,7 @@ func TestDialPacket5_PacketDialerFails(t *testing.T) {
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return &mockConnForClient5{readData: replyData}, nil
 		},
-		PacketDialer: func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 			return nil, packetDialErr
 		},
 	}
@@ -715,7 +716,7 @@ func TestSetupUDPTun5_SplitHostPortFails(t *testing.T) {
 				remoteAddr: &mockAddr{str: "malformed-no-port"},
 			}, nil
 		},
-		PacketDialer: func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 			return &mockPacketConn{
 				localAddr:  &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0},
 				remoteAddr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0},
@@ -764,7 +765,7 @@ func TestSetupUDPTun5_UnspecifiedAddr(t *testing.T) {
 				remoteAddr: remoteAddr,
 			}, nil
 		},
-		PacketDialer: func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 			return &mockPacketConn{
 				localAddr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0},
 				remoteAddr: &net.UDPAddr{
@@ -1385,7 +1386,7 @@ func TestDialPacket5_NoProbber(t *testing.T) {
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return &mockConnForClient5{readData: replyData}, nil
 		},
-		PacketDialer: func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 			return &mockPacketConn{
 				localAddr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0},
 				remoteAddr: &net.UDPAddr{
@@ -1420,7 +1421,7 @@ func TestSetupUDPTun5_SpecifiedAddr(t *testing.T) {
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return &mockConnForClient5{readData: replyData}, nil
 		},
-		PacketDialer: func(ctx context.Context, network, address string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
 			return &mockPacketConn{
 				localAddr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0},
 				remoteAddr: &net.UDPAddr{

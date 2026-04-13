@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -73,7 +74,7 @@ var DefaultGostUDPTUNHandler = CommandHandler{
 		addr.NetTyp = "udp"
 		pool := server.GetPool()
 
-		var proxy PacketConn
+		var proxy gonnect.PacketConn
 
 		binded := false
 		if addr.IsUnspecified() {

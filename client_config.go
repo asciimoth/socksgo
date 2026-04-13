@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/gorilla/websocket"
 )
@@ -138,6 +139,43 @@ func (w *WebSocketConfig) enableCompression() bool {
 		return websocket.DefaultDialer.EnableCompression
 	}
 	return w.EnableCompression
+}
+
+// Network is a subset of gonnect.Network.
+type Network interface {
+	Dial(
+		ctx context.Context,
+		network, address string,
+	) (net.Conn, error)
+
+	Listen(
+		ctx context.Context,
+		network, address string,
+	) (net.Listener, error)
+
+	DialUDP(
+		ctx context.Context,
+		network, laddr, raddr string,
+	) (gonnect.UDPConn, error)
+
+	ListenPacket(
+		ctx context.Context,
+		network, address string,
+	) (gonnect.PacketConn, error)
+}
+
+func (c *Client) WithNetwork(network Network) {
+	if network == nil {
+		return
+	}
+	c.Dialer = network.Dial
+	c.DirectListener = network.Listen
+	c.PacketDialer = func(
+		ctx context.Context, n, raddr string,
+	) (gonnect.PacketConn, error) {
+		return network.DialUDP(ctx, n, "", raddr)
+	}
+	c.DirectPacketListener = network.ListenPacket
 }
 
 // Version returns the SOCKS protocol version.
@@ -270,7 +308,7 @@ func (c *Client) DoFilter(network, address string) bool {
 		// All connections goes directly
 		return true
 	}
-	filter := LoopbackFilter
+	filter := gonnect.LoopbackFilter
 	if c.Filter != nil {
 		filter = c.Filter
 	}
@@ -288,7 +326,7 @@ func (c *Client) DoFilter(network, address string) bool {
 // # See Also
 //
 //   - DirectListener: Custom listener configuration
-func (c *Client) GetListener() Listener {
+func (c *Client) GetListener() gonnect.Listen {
 	if c.DirectListener == nil {
 		return (&net.ListenConfig{}).Listen
 	}
@@ -307,9 +345,9 @@ func (c *Client) GetListener() Listener {
 // # See Also
 //
 //   - DirectPacketListener: Custom listener configuration
-func (c *Client) GetPacketListener() PacketListener {
+func (c *Client) GetPacketListener() gonnect.PacketListen {
 	if c.DirectPacketListener == nil {
-		return func(ctx context.Context, network, laddr string) (PacketConn, error) {
+		return func(ctx context.Context, network, laddr string) (gonnect.PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(laddr, network).ToUDP()
 			return net.ListenUDP(network, udpAddr)
 		}
@@ -328,7 +366,7 @@ func (c *Client) GetPacketListener() PacketListener {
 // # See Also
 //
 //   - Dialer: Custom dialer configuration
-func (c *Client) GetDialer() Dialer {
+func (c *Client) GetDialer() gonnect.Dial {
 	if c.Dialer == nil {
 		return func(ctx context.Context, network, address string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, address)
@@ -349,9 +387,9 @@ func (c *Client) GetDialer() Dialer {
 // # See Also
 //
 //   - PacketDialer: Custom dialer configuration
-func (c *Client) GetPacketDialer() PacketDialer {
+func (c *Client) GetPacketDialer() gonnect.PacketDial {
 	if c.Dialer == nil {
-		return func(ctx context.Context, network, raddr string) (PacketConn, error) {
+		return func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(raddr, network).ToUDP()
 			return net.DialUDP(network, nil, udpAddr)
 		}
@@ -371,7 +409,7 @@ func (c *Client) GetPacketDialer() PacketDialer {
 //
 //   - Resolver: Custom resolver configuration
 //   - net.DefaultResolver: System default resolver
-func (c *Client) GetResolver() Resolver {
+func (c *Client) GetResolver() gonnect.Resolver {
 	if c.Resolver == nil {
 		return net.DefaultResolver
 	}

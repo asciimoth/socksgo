@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
+	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
@@ -17,7 +19,7 @@ import (
 // ClientNoProxy returns a Client that bypasses any proxy.
 //
 // This client passes all connections directly without using a proxy.
-// It's equivalent to setting Filter to MatchAllFilter.
+// It's equivalent to setting Filter to gonnect.TrueFilter.
 //
 // # Examples
 //
@@ -28,10 +30,10 @@ import (
 //
 // # See Also
 //
-//   - MatchAllFilter: Filter that always returns true
+//   - gonnect.TrueFilter: Filter that always returns true
 func ClientNoProxy() *Client {
 	return &Client{
-		Filter:     MatchAllFilter,
+		Filter:     gonnect.TrueFilter,
 		GostMbind:  true,
 		GostUDPTun: true,
 		TorLookup:  true,
@@ -118,12 +120,12 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 
 	q := u.Query()
 
-	if f, s := internal.CheckURLBoolKey(q, "gost"); s {
+	if f, s := helpers.CheckURLBoolKey(q, "gost"); s {
 		client.GostMbind = f
 		client.GostUDPTun = f
 	}
 
-	if f, s := internal.CheckURLBoolKey(q, "tor"); s {
+	if f, s := helpers.CheckURLBoolKey(q, "tor"); s {
 		client.TorLookup = f
 	}
 
@@ -138,15 +140,15 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 		})
 	}
 
-	if f, s := internal.CheckURLBoolKey(q, "pass"); s && f {
-		client.Filter = PassAllFilter
+	if f, s := helpers.CheckURLBoolKey(q, "pass"); s && f {
+		client.Filter = gonnect.FalseFilter
 	}
 
 	client.TLSConfig = &tls.Config{
 		InsecureSkipVerify: true, //nolint
 	}
 	// In safe constructor we can enable it but not disable
-	if f, s := internal.CheckURLBoolKey(q, "secure"); s && f {
+	if f, s := helpers.CheckURLBoolKey(q, "secure"); s && f {
 		client.TLSConfig.InsecureSkipVerify = false
 	}
 	return client
@@ -248,13 +250,13 @@ func ClientFromURLObj(u *url.URL) *Client {
 	client := ClientFromURLObjSafe(u)
 
 	q := u.Query()
-	if f, s := internal.CheckURLBoolKey(q, "insecureudp"); s {
+	if f, s := helpers.CheckURLBoolKey(q, "insecureudp"); s {
 		client.InsecureUDP = f
 	}
-	if f, s := internal.CheckURLBoolKey(q, "assocprob"); s {
+	if f, s := helpers.CheckURLBoolKey(q, "assocprob"); s {
 		client.DoNotSpawnUDPAsocProbber = !f
 	}
-	if f, s := internal.CheckURLBoolKey(q, "secure"); s {
+	if f, s := helpers.CheckURLBoolKey(q, "secure"); s {
 		client.TLSConfig.InsecureSkipVerify = !f
 	}
 
@@ -451,38 +453,38 @@ type Client struct {
 	// When Filter returns true, connections use direct dialing instead
 	// of going through the proxy. Commonly used for NO_PROXY-style rules.
 	//
-	// Default: LoopbackFilter (bypasses localhost and loopback addresses)
+	// Default: gonnect.LoopbackFilter (bypasses localhost and loopback addresses)
 	//
 	// Examples:
 	//
-	//	client.Filter = socksgo.BuildFilter("localhost,192.168.0.0/16")
-	Filter Filter
+	//	client.Filter = gonnect.FilterFromString("localhost,192.168.0.0/16").Filter
+	Filter gonnect.Filter
 
 	// Dialer is used to establish TCP connections to the proxy.
 	//
 	// Also used for direct connections when Filter returns true.
 	//
 	// Default: net.Dialer.DialContext
-	Dialer Dialer
+	Dialer gonnect.Dial
 
 	// PacketDialer is used to establish UDP connections for proxy operations.
 	//
 	// Also used for direct UDP when Filter returns true.
 	//
 	// Default: net.DialUDP
-	PacketDialer PacketDialer
+	PacketDialer gonnect.PacketDial
 
 	// DirectListener is used for direct TCP listening (BIND) when
 	// Filter returns true.
 	//
 	// Default: net.ListenConfig.Listen
-	DirectListener Listener
+	DirectListener gonnect.Listen
 
 	// DirectPacketListener is used for direct UDP listening when
 	// Filter returns true.
 	//
 	// Default: net.ListenUDP
-	DirectPacketListener PacketListener
+	DirectPacketListener gonnect.PacketListen
 
 	// Resolver is used for DNS lookups.
 	//
@@ -490,7 +492,7 @@ type Client struct {
 	// requests when Filter returns true.
 	//
 	// Default: net.DefaultResolver
-	Resolver Resolver
+	Resolver gonnect.Resolver
 
 	// HandshakeTimeout specifies the timeout for SOCKS handshake.
 	//
@@ -749,7 +751,7 @@ func (c *Client) Dial(
 func (c *Client) DialPacket(
 	ctx context.Context,
 	network, address string,
-) (PacketConn, error) {
+) (gonnect.PacketConn, error) {
 	err := c.CheckNetworkSupport(network)
 	if err != nil {
 		return nil, err
@@ -819,7 +821,7 @@ func (c *Client) DialPacket(
 func (c *Client) ListenPacket(
 	ctx context.Context,
 	network, address string,
-) (PacketConn, error) {
+) (gonnect.PacketConn, error) {
 	err := c.CheckNetworkSupport(network)
 	if err != nil {
 		return nil, err

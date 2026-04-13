@@ -3,11 +3,12 @@ package socksgo
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 
 	"github.com/asciimoth/bufpool"
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -195,7 +196,17 @@ func (l *clientListener5mux) Addr() net.Addr {
 }
 
 func (l *clientListener5mux) Close() error {
-	return internal.JoinNetErrors(l.session.Close(), l.conn.Close())
+	err1 := helpers.ClosedNetworkErrToNil(l.session.Close())
+	err2 := helpers.ClosedNetworkErrToNil(l.conn.Close())
+	switch {
+	case err1 != nil && err2 == nil:
+		return err1
+	case err2 != nil && err1 == nil:
+		return err2
+	case err1 != nil && err2 != nil:
+		return errors.Join(err1, err2)
+	}
+	return nil
 }
 
 func (l *clientListener5mux) Accept() (net.Conn, error) {

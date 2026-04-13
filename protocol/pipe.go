@@ -6,11 +6,27 @@ package protocol
 // between network connections, commonly used in proxy implementations.
 
 import (
+	"errors"
 	"io"
 	"net"
 
-	"github.com/asciimoth/socksgo/internal"
+	"github.com/asciimoth/gonnect/helpers"
 )
+
+// joinNetErrors joins two errors, treating closed network connection errors as nil.
+func JoinNetErrors(a, b error) (err error) {
+	a = helpers.ClosedNetworkErrToNil(a)
+	b = helpers.ClosedNetworkErrToNil(b)
+	switch {
+	case a != nil && b == nil:
+		err = a
+	case b != nil && a == nil:
+		err = b
+	case a != nil && b != nil:
+		err = errors.Join(a, b)
+	}
+	return
+}
 
 // PipeConn copies data bidirectionally between two connections.
 //
@@ -56,12 +72,12 @@ func PipeConn(inc, out net.Conn) (err error) {
 		_, err := io.Copy(inc, out)
 		_ = inc.Close()
 		_ = out.Close()
-		done <- internal.ClosedNetworkErrToNil(err)
+		done <- helpers.ClosedNetworkErrToNil(err)
 	}()
 
 	_, err = io.Copy(out, inc)
 	_ = inc.Close()
 	_ = out.Close()
 
-	return internal.JoinNetErrors(err, <-done)
+	return JoinNetErrors(err, <-done)
 }

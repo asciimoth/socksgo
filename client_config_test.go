@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/asciimoth/gonnect"
 	socksgo "github.com/asciimoth/socksgo"
 )
 
@@ -409,7 +411,7 @@ func TestDoFilter_CustomAndDefault(t *testing.T) {
 
 	// Default (nil) Filter - compare against LoopbackFilter directly so test stays stable
 	c = &socksgo.Client{}
-	expected := socksgo.LoopbackFilter("tcp", "127.0.0.1:123")
+	expected := gonnect.LoopbackFilter("tcp", "127.0.0.1:123")
 	if got := c.DoFilter("tcp", "127.0.0.1:123"); got != expected {
 		t.Fatalf("DoFilter(default) expected %v, got %v", expected, got)
 	}
@@ -443,7 +445,7 @@ func TestGetPacketListener_DirectPacketListener(t *testing.T) {
 	ctx := context.Background()
 	called := false
 	c := &socksgo.Client{
-		DirectPacketListener: func(ctx context.Context, network, laddr string) (socksgo.PacketConn, error) {
+		DirectPacketListener: func(ctx context.Context, network, laddr string) (gonnect.PacketConn, error) {
 			called = true
 			udpAddr, err := net.ResolveUDPAddr(network, laddr)
 			if err != nil {
@@ -484,7 +486,7 @@ func TestGetPacketDialer_WhenDialerNonNil_UsesPacketDialer(t *testing.T) {
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			return nil, nil //nolint
 		},
-		PacketDialer: func(ctx context.Context, network, raddr string) (socksgo.PacketConn, error) {
+		PacketDialer: func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			called = true
 			ra, err := net.ResolveUDPAddr(network, raddr)
 			if err != nil {
@@ -520,6 +522,69 @@ func (f fakeResolver) LookupAddr(
 	address string,
 ) ([]string, error) {
 	return []string{"host.test"}, nil
+}
+
+func (f fakeResolver) LookupIPAddr(
+	ctx context.Context,
+	host string,
+) ([]net.IPAddr, error) {
+	return nil, nil
+}
+
+func (f fakeResolver) LookupNetIP(
+	ctx context.Context,
+	network, host string,
+) ([]netip.Addr, error) {
+	return nil, nil
+}
+
+func (f fakeResolver) LookupHost(
+	ctx context.Context,
+	host string,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (f fakeResolver) LookupCNAME(
+	ctx context.Context,
+	host string,
+) (string, error) {
+	return "", nil
+}
+
+func (f fakeResolver) LookupPort(
+	ctx context.Context,
+	network, service string,
+) (int, error) {
+	return 0, nil
+}
+
+func (f fakeResolver) LookupNS(
+	ctx context.Context,
+	name string,
+) ([]*net.NS, error) {
+	return nil, nil
+}
+
+func (f fakeResolver) LookupMX(
+	ctx context.Context,
+	name string,
+) ([]*net.MX, error) {
+	return nil, nil
+}
+
+func (f fakeResolver) LookupSRV(
+	ctx context.Context,
+	service, proto, name string,
+) (string, []*net.SRV, error) {
+	return "", nil, nil
+}
+
+func (f fakeResolver) LookupTXT(
+	ctx context.Context,
+	name string,
+) ([]string, error) {
+	return nil, nil
 }
 
 // Test GetResolver when user provided a Resolver instance.
