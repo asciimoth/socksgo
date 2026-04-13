@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"time"
 
@@ -14,6 +15,24 @@ import (
 	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
+)
+
+// Static type assertions
+var (
+	_ gonnect.Network      = &Client{}
+	_ gonnect.Dial         = (&Client{}).Dial
+	_ gonnect.PacketDial   = (&Client{}).PacketDial
+	_ gonnect.Listen       = (&Client{}).Listen
+	_ gonnect.PacketListen = (&Client{}).ListenPacket
+	_ gonnect.LookupIP     = (&Client{}).LookupIP
+	_ gonnect.LookupIPAddr = (&Client{}).LookupIPAddr
+	_ gonnect.LookupNetIP  = (&Client{}).LookupNetIP
+	_ gonnect.LookupHost   = (&Client{}).LookupHost
+	_ gonnect.LookupAddr   = (&Client{}).LookupAddr
+	_ gonnect.DialTCP      = (&Client{}).DialTCP
+	_ gonnect.ListenTCP    = (&Client{}).ListenTCP
+	_ gonnect.DialUDP      = (&Client{}).DialUDP
+	_ gonnect.ListenUDP    = (&Client{}).ListenUDP
 )
 
 // ClientNoProxy returns a Client that bypasses any proxy.
@@ -685,7 +704,7 @@ func (c *Client) Dial(
 	network, address string,
 ) (net.Conn, error) {
 	if network == "udp" || network == "udp4" || network == "udp6" {
-		return c.DialPacket(ctx, network, address)
+		return c.PacketDial(ctx, network, address)
 	}
 	err := c.CheckNetworkSupport(network)
 	if err != nil {
@@ -705,9 +724,9 @@ func (c *Client) Dial(
 	return conn, nil
 }
 
-// DialPacket establishes a UDP connection through the SOCKS proxy.
+// PacketDial establishes a UDP connection through the SOCKS proxy.
 //
-// DialPacket creates a PacketConn for UDP communication through the proxy.
+// PacketDial creates a PacketConn for UDP communication through the proxy.
 // It supports both standard UDP ASSOCIATE and Gost UDP Tunnel extensions.
 //
 // # Parameters
@@ -734,7 +753,7 @@ func (c *Client) Dial(
 // # Examples
 //
 //	// DNS query through proxy
-//	conn, err := client.DialPacket(ctx, "udp", "8.8.8.8:53")
+//	conn, err := client.PacketDial(ctx, "udp", "8.8.8.8:53")
 //	if err == nil {
 //	    _, err := conn.Write(dnsQuery)
 //	    _, err = conn.Read(response)
@@ -742,13 +761,13 @@ func (c *Client) Dial(
 //
 //	// Gost UDP tunnel
 //	client.GostUDPTun = true
-//	conn, err := client.DialPacket(ctx, "udp", "target:123")
+//	conn, err := client.PacketDial(ctx, "udp", "target:123")
 //
 // # See Also
 //
 //   - ListenPacket: Listen for UDP packets
 //   - Dial: TCP connections
-func (c *Client) DialPacket(
+func (c *Client) PacketDial(
 	ctx context.Context,
 	network, address string,
 ) (gonnect.PacketConn, error) {
@@ -1065,6 +1084,302 @@ func (c *Client) LookupAddr(
 	_ = proxy.Close()
 
 	return c.lookupAddrWithHook(ctx, addr)
+}
+
+// LookupIPAddr performs a DNS lookup through the SOCKS proxy and returns IPAddr structs.
+//
+// LookupIPAddr wraps LookupIP to return []net.IPAddr instead of []net.IP.
+// This provides compatibility with net.Resolver.LookupIPAddr.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - host: Hostname to resolve
+//
+// # Returns
+//
+// Slice of net.IPAddr containing resolved IP addresses and their network type.
+//
+// # Requirements
+//
+// TorLookup must be enabled. Returns ErrResolveDisabled if not set.
+//
+// # Examples
+//
+//	client.TorLookup = true
+//	addrs, err := client.LookupIPAddr(ctx, "example.com")
+//	if err == nil && len(addrs) > 0 {
+//	    fmt.Printf("Resolved to: %v\n", addrs[0].IP)
+//	}
+//
+// # See Also
+//
+//   - LookupIP: Returns []net.IP
+//   - net.Resolver.LookupIPAddr: Standard DNS lookup
+func (c *Client) LookupIPAddr(
+	ctx context.Context,
+	host string,
+) ([]net.IPAddr, error) {
+	ips, err := c.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]net.IPAddr, len(ips))
+	for i, ip := range ips {
+		addrs[i] = net.IPAddr{IP: ip}
+	}
+	return addrs, nil
+}
+
+// LookupNetIP performs a DNS lookup through the SOCKS proxy and returns netip.Addr structs.
+//
+// LookupNetIP wraps LookupIP to return []netip.Addr instead of []net.IP.
+// This provides compatibility with net.Resolver.LookupNetIP.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - network: Network type ("ip", "ip4", "ip6")
+//   - host: Hostname to resolve
+//
+// # Returns
+//
+// Slice of netip.Addr containing resolved IP addresses.
+//
+// # Requirements
+//
+// TorLookup must be enabled. Returns ErrResolveDisabled if not set.
+//
+// # Examples
+//
+//	client.TorLookup = true
+//	addrs, err := client.LookupNetIP(ctx, "ip4", "example.com")
+//	if err == nil && len(addrs) > 0 {
+//	    fmt.Printf("Resolved to: %v\n", addrs[0])
+//	}
+//
+// # See Also
+//
+//   - LookupIP: Returns []net.IP
+//   - net.Resolver.LookupNetIP: Standard DNS lookup
+func (c *Client) LookupNetIP(
+	ctx context.Context,
+	network, host string,
+) ([]netip.Addr, error) {
+	ips, err := c.LookupIP(ctx, network, host)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]netip.Addr, 0, len(ips))
+	for _, ip := range ips {
+		addr, ok := netip.AddrFromSlice(ip)
+		if ok {
+			addrs = append(addrs, addr)
+		}
+	}
+	return addrs, nil
+}
+
+// LookupHost performs a DNS lookup through the SOCKS proxy and returns address strings.
+//
+// LookupHost wraps LookupIP to return []string instead of []net.IP.
+// This provides compatibility with net.Resolver.LookupHost.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - host: Hostname to resolve
+//
+// # Returns
+//
+// Slice of IP address strings.
+//
+// # Requirements
+//
+// TorLookup must be enabled. Returns ErrResolveDisabled if not set.
+//
+// # Examples
+//
+//	client.TorLookup = true
+//	addrs, err := client.LookupHost(ctx, "example.com")
+//	if err == nil && len(addrs) > 0 {
+//	    fmt.Printf("Resolved to: %s\n", addrs[0])
+//	}
+//
+// # See Also
+//
+//   - LookupIP: Returns []net.IP
+//   - net.Resolver.LookupHost: Standard DNS lookup
+func (c *Client) LookupHost(
+	ctx context.Context,
+	host string,
+) ([]string, error) {
+	ips, err := c.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]string, len(ips))
+	for i, ip := range ips {
+		addrs[i] = ip.String()
+	}
+	return addrs, nil
+}
+
+// DialTCP establishes a TCP connection through the SOCKS proxy with
+// explicit local and remote addresses.
+//
+// DialTCP is similar to Dial but returns a gonnect.TCPConn instead of
+// net.Conn. The laddr parameter is ignored as SOCKS proxies don't
+// support binding to specific local addresses.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - network: Network type ("tcp", "tcp4", "tcp6")
+//   - laddr: Local address (ignored)
+//   - raddr: Remote address in host:port format
+//
+// # Returns
+//
+// gonnect.TCPConn or error.
+//
+// # Examples
+//
+//	conn, err := client.DialTCP(ctx, "tcp", "", "example.com:80")
+//
+// # See Also
+//
+//   - Dial: TCP connections without TCPConn interface
+//   - ListenTCP: TCP listener
+func (c *Client) DialTCP(
+	ctx context.Context,
+	network, laddr, raddr string,
+) (gonnect.TCPConn, error) {
+	conn, err := c.Dial(ctx, network, raddr)
+	if err != nil {
+		return nil, err
+	}
+	if tcpConn, ok := conn.(gonnect.TCPConn); ok {
+		return tcpConn, nil
+	}
+	return &tcpConnWrapper{conn}, nil
+}
+
+// ListenTCP establishes a TCP listener through the SOCKS proxy.
+//
+// ListenTCP uses the SOCKS BIND command to create a listener on the
+// proxy server.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - network: Network type ("tcp", "tcp4", "tcp6")
+//   - laddr: Local address to bind (ignored, use "0.0.0.0:0")
+//
+// # Returns
+//
+// gonnect.TCPListener or error.
+//
+// # Examples
+//
+//	listener, err := client.ListenTCP(ctx, "tcp", "", "0.0.0.0:0")
+//
+// # See Also
+//
+//   - Listen: TCP listener without TCPListener interface
+//   - DialTCP: TCP connections
+func (c *Client) ListenTCP(
+	ctx context.Context,
+	network, laddr string,
+) (gonnect.TCPListener, error) {
+	listener, err := c.Listen(ctx, network, laddr)
+	if err != nil {
+		return nil, err
+	}
+	if tcpListener, ok := listener.(gonnect.TCPListener); ok {
+		return tcpListener, nil
+	}
+	// This should not happen as our listener types already implement TCPListener
+	return nil, fmt.Errorf("listener does not implement gonnect.TCPListener")
+}
+
+// DialUDP establishes a UDP connection through the SOCKS proxy with
+// explicit local and remote addresses.
+//
+// DialUDP is similar to PacketDial but returns a gonnect.UDPConn
+// instead of gonnect.PacketConn. The laddr parameter is ignored.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - network: Network type ("udp", "udp4", "udp6")
+//   - laddr: Local address (ignored)
+//   - raddr: Remote address in host:port format
+//
+// # Returns
+//
+// gonnect.UDPConn or error.
+//
+// # Examples
+//
+//	conn, err := client.DialUDP(ctx, "udp", "", "8.8.8.8:53")
+//
+// # See Also
+//
+//   - PacketDial: UDP connections without UDPConn interface
+//   - ListenUDP: UDP listener
+func (c *Client) DialUDP(
+	ctx context.Context,
+	network, laddr, raddr string,
+) (gonnect.UDPConn, error) {
+	conn, err := c.PacketDial(ctx, network, raddr)
+	if err != nil {
+		return nil, err
+	}
+	if udpConn, ok := conn.(gonnect.UDPConn); ok {
+		return udpConn, nil
+	}
+	// This should not happen as our UDP client types already implement UDPConn
+	return nil, fmt.Errorf("connection does not implement gonnect.UDPConn")
+}
+
+// ListenUDP establishes a UDP listener through the SOCKS proxy.
+//
+// ListenUDP creates a UDP listener that receives packets through the
+// SOCKS proxy. The laddr parameter determines the local binding
+// address.
+//
+// # Parameters
+//
+//   - ctx: Context for cancellation and timeouts
+//   - network: Network type ("udp", "udp4", "udp6")
+//   - laddr: Local address to listen on (use "0.0.0.0:0" for any)
+//
+// # Returns
+//
+// gonnect.UDPConn or error.
+//
+// # Examples
+//
+//	conn, err := client.ListenUDP(ctx, "udp", "0.0.0.0:0")
+//
+// # See Also
+//
+//   - ListenPacket: UDP listener without UDPConn interface
+//   - DialUDP: UDP connections
+func (c *Client) ListenUDP(
+	ctx context.Context,
+	network, laddr string,
+) (gonnect.UDPConn, error) {
+	conn, err := c.ListenPacket(ctx, network, laddr)
+	if err != nil {
+		return nil, err
+	}
+	if udpConn, ok := conn.(gonnect.UDPConn); ok {
+		return udpConn, nil
+	}
+	// This should not happen as our UDP client types already implement UDPConn
+	return nil, fmt.Errorf("connection does not implement gonnect.UDPConn")
 }
 
 func (c *Client) request(

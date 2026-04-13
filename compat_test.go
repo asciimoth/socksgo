@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -395,6 +396,7 @@ func testLookup(
 		}
 	)
 
+	// Test LookupIP
 	for _, addr := range pairs {
 		var resp []net.IP
 		resp, err = c.LookupIP(t.Context(), "ip", addr.Host)
@@ -407,9 +409,49 @@ func testLookup(
 	}
 
 	if err != nil {
-		t.Fatalf("failed to lookup with client %T: %v", c, err)
+		t.Fatalf("failed to LookupIP with client %T: %v", c, err)
 	}
 
+	// Test LookupIPAddr
+	for _, addr := range pairs {
+		var resp []net.IPAddr
+		resp, err = c.LookupIPAddr(t.Context(), addr.Host)
+		if err == nil && len(resp) > 0 {
+			break
+		}
+	}
+
+	if err != nil {
+		t.Fatalf("failed to LookupIPAddr with client %T: %v", c, err)
+	}
+
+	// Test LookupNetIP
+	for _, addr := range pairs {
+		var resp []netip.Addr
+		resp, err = c.LookupNetIP(t.Context(), "ip", addr.Host)
+		if err == nil && len(resp) > 0 {
+			break
+		}
+	}
+
+	if err != nil {
+		t.Fatalf("failed to LookupNetIP with client %T: %v", c, err)
+	}
+
+	// Test LookupHost
+	for _, addr := range pairs {
+		var resp []string
+		resp, err = c.LookupHost(t.Context(), addr.Host)
+		if err == nil && len(resp) > 0 {
+			break
+		}
+	}
+
+	if err != nil {
+		t.Fatalf("failed to LookupHost with client %T: %v", c, err)
+	}
+
+	// Test LookupAddr (reverse DNS)
 	if lookupAddr {
 		for _, ip := range ips {
 			_, err = c.LookupAddr(t.Context(), ip)

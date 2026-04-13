@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -128,7 +129,7 @@ func TestAppendSocks5UDPHeader(t *testing.T) {
 func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 	tests := []struct {
 		name      string
-		setupConn func() protocol.PacketConn
+		setupConn func() gonnect.PacketConn
 		skipAddr  bool
 		wantN     int
 		wantAddr  protocol.Addr
@@ -137,7 +138,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 	}{
 		{
 			name: "packetconn-ipv4-standard",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				// Create a standard SOCKS5 UDP packet with IPv4
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)    // RSV=0
@@ -165,7 +166,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "packetconn-ipv6-standard",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0) // RSV=0
 				buf = append(buf, 0)                        // FRAG=0
@@ -210,7 +211,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "packetconn-fqdn-standard",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)  // RSV=0
 				buf = append(buf, 0)                         // FRAG=0
@@ -236,7 +237,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "packetconn-skip-addr",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)    // RSV=0
 				buf = append(buf, 0)                           // FRAG=0
@@ -260,7 +261,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "packetconn-fragmented-skip",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				// First packet with FRAG != 0 (should be skipped)
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
@@ -307,7 +308,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "packetconn-rsv-not-zero-skip",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				// First packet with RSV != 0 (should be skipped)
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(
@@ -354,7 +355,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "too-short-ipv4-addr",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
 				buf1 = append(buf1, 0)                        // FRAG=0
@@ -392,7 +393,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "too-short-ipv6-addr",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
 				buf1 = append(buf1, 0)                        // FRAG=0
@@ -431,7 +432,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "too-short-fqdn-addr",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				buf1 := make([]byte, 0, 1024)
 				buf1 = binary.BigEndian.AppendUint16(buf1, 0) // RSV=0
 				buf1 = append(buf1, 0)                        // FRAG=0
@@ -470,7 +471,7 @@ func TestReadSocks5UDPPacketAssoc(t *testing.T) {
 		},
 		{
 			name: "packetconn-unknown-packet-type",
-			setupConn: func() protocol.PacketConn {
+			setupConn: func() gonnect.PacketConn {
 				// Create a standard SOCKS5 UDP packet with IPv4
 				buf := make([]byte, 0, 1024)
 				buf = binary.BigEndian.AppendUint16(buf, 0)    // RSV=0
@@ -2438,7 +2439,7 @@ func TestProxySocks5UDPAssoc_Binded(t *testing.T) {
 }
 
 type deadlineErrPacketConn struct {
-	protocol.PacketConn
+	gonnect.PacketConn
 }
 
 func (d deadlineErrPacketConn) SetReadDeadline(t time.Time) error {
@@ -2488,7 +2489,7 @@ func (t timeoutError) Temporary() bool {
 }
 
 type timeoutPacketConn struct {
-	protocol.PacketConn
+	gonnect.PacketConn
 }
 
 func (t timeoutPacketConn) ReadFrom(_ []byte) (int, net.Addr, error) {
@@ -2524,7 +2525,7 @@ func TestProxySocks5UDPAssoc_ReadTimeoutErr(t *testing.T) {
 }
 
 type writeErrPacketConn struct {
-	protocol.PacketConn
+	gonnect.PacketConn
 }
 
 func (w writeErrPacketConn) Write([]byte) (int, error) {

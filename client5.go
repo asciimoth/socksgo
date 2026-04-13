@@ -6,11 +6,18 @@ import (
 	"errors"
 	"io"
 	"net"
+	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
+)
+
+var (
+	_ gonnect.TCPListener = &clientListener5{}
+	_ gonnect.TCPListener = &clientListener5mux{}
 )
 
 // resolveUnspecifiedAddr resolves an unspecified address using the proxy's remote address.
@@ -185,6 +192,23 @@ func (l *clientListener5) Accept() (net.Conn, error) {
 	return l.conn, err
 }
 
+// TCPListener interface implementations
+
+func (l *clientListener5) AcceptTCP() (gonnect.TCPConn, error) {
+	conn, err := l.Accept()
+	if err != nil {
+		return nil, err
+	}
+	if tcpConn, ok := conn.(gonnect.TCPConn); ok {
+		return tcpConn, nil
+	}
+	return &tcpConnWrapper{conn}, nil
+}
+
+func (l *clientListener5) SetDeadline(t time.Time) error {
+	return l.conn.SetDeadline(t)
+}
+
 type clientListener5mux struct {
 	addr    net.Addr
 	conn    net.Conn
@@ -211,4 +235,21 @@ func (l *clientListener5mux) Close() error {
 
 func (l *clientListener5mux) Accept() (net.Conn, error) {
 	return l.session.AcceptStream()
+}
+
+// TCPListener interface implementations
+
+func (l *clientListener5mux) AcceptTCP() (gonnect.TCPConn, error) {
+	conn, err := l.Accept()
+	if err != nil {
+		return nil, err
+	}
+	if tcpConn, ok := conn.(gonnect.TCPConn); ok {
+		return tcpConn, nil
+	}
+	return &tcpConnWrapper{conn}, nil
+}
+
+func (l *clientListener5mux) SetDeadline(t time.Time) error {
+	return l.session.SetDeadline(t)
 }

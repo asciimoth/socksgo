@@ -141,6 +141,8 @@ func (w *WebSocketConfig) enableCompression() bool {
 	return w.EnableCompression
 }
 
+var _ Network = &Client{}
+
 // Network is a subset of gonnect.Network.
 type Network interface {
 	Dial(
@@ -153,10 +155,10 @@ type Network interface {
 		network, address string,
 	) (net.Listener, error)
 
-	DialUDP(
+	PacketDial(
 		ctx context.Context,
-		network, laddr, raddr string,
-	) (gonnect.UDPConn, error)
+		network, address string,
+	) (gonnect.PacketConn, error)
 
 	ListenPacket(
 		ctx context.Context,
@@ -170,11 +172,7 @@ func (c *Client) WithNetwork(network Network) {
 	}
 	c.Dialer = network.Dial
 	c.DirectListener = network.Listen
-	c.PacketDialer = func(
-		ctx context.Context, n, raddr string,
-	) (gonnect.PacketConn, error) {
-		return network.DialUDP(ctx, n, "", raddr)
-	}
+	c.PacketDialer = network.PacketDial
 	c.DirectPacketListener = network.ListenPacket
 }
 

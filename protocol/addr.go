@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -297,6 +298,28 @@ func AddrFromTCPAddr(t *net.TCPAddr) Addr {
 		port = uint16(t.Port)
 	}
 	a = AddrFromIP(t.IP, port, "tcp")
+	return a
+}
+
+// AddrFromNetIPAddrPort converts a netip.AddrPort to protocol Addr.
+//
+// A zero value input yields the zero Addr. The NetTyp is set based
+// on the network parameter.
+//
+// # Examples
+//
+//	addrPort := netip.MustParseAddrPort("192.168.1.1:8080")
+//	addr := protocol.AddrFromNetIPAddrPort(addrPort)
+func AddrFromNetIPAddrPort(addrPort netip.AddrPort, network ...string) Addr {
+	var a Addr
+	if !addrPort.IsValid() {
+		return a
+	}
+	netTyp := "udp"
+	if len(network) > 0 && network[0] != "" {
+		netTyp = network[0]
+	}
+	a = AddrFromIP(addrPort.Addr().AsSlice(), addrPort.Port(), netTyp)
 	return a
 }
 

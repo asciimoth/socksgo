@@ -54,12 +54,14 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/asciimoth/bufpool"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/internal"
 )
@@ -76,28 +78,37 @@ import (
 //   - Read/Write: Stream-oriented I/O (uses default remote address)
 //   - ReadFrom/WriteTo: Packet-oriented I/O with explicit addresses
 //   - ReadFromUDP/WriteToUDP: UDP-specific packet I/O
+//   - ReadFromUDPAddrPort/WriteToUDPAddrPort: AddrPort-based I/O
+//   - ReadMsgUDP/WriteMsgUDP: UDP messages with out-of-band data
 //   - WriteToIpPort: Write to a specific IP and port
 type Socks5UDPClient interface {
-	net.Conn
-	net.PacketConn
+	gonnect.UDPConn
 
 	WriteToIpPort(p []byte, ip net.IP, port uint16) (n int, err error)
 
 	ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error)
 	WriteToUDP(b []byte, addr *net.UDPAddr) (int, error)
+
+	ReadFromUDPAddrPort(b []byte) (n int, addr netip.AddrPort, err error)
+	WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (int, error)
+
+	ReadMsgUDP(b, oob []byte) (n, oobn, flags int,
+		addr *net.UDPAddr, err error)
+	ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int,
+		addr netip.AddrPort, err error)
+	WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int, err error)
+	WriteMsgUDPAddrPort(b, oob []byte, addr netip.AddrPort) (n, oobn int,
+		err error)
 }
 
 var (
+	_ gonnect.UDPConn = &Socks5UDPClientAssoc{}
+	_ gonnect.UDPConn = &Socks5UDPClientTUN{}
 	_ Socks5UDPClient = &Socks5UDPClientAssoc{}
 	_ Socks5UDPClient = &Socks5UDPClientTUN{}
 )
 
-type PacketConn interface {
-	net.Conn
-	net.PacketConn
-}
-
-func WriteToAddrUDP(conn PacketConn, addr Addr, b []byte) (err error) {
+func WriteToAddrUDP(conn gonnect.PacketConn, addr Addr, b []byte) (err error) {
 	if udpProxy, ok := conn.(*net.UDPConn); ok {
 		// For some fucking reason net.UDPConn.WriteTo just crashing on any
 		// net.Addr that is not *net.UDPAddr so we handling it individually
@@ -163,7 +174,7 @@ func AppendSocks5UDPHeader(
 // Builds and writes socks5 UDP Assoc packet to conn
 func WriteSocksAssoc5UDPPacket(
 	pool bufpool.Pool,
-	conn PacketConn,
+	conn gonnect.PacketConn,
 	peerAddr net.Addr,
 	addr Addr,
 	data []byte,
@@ -405,7 +416,7 @@ func ReadSocks5TunUDPPacket(
 //	// Receive UDP packet
 //	n, addr, err := client.ReadFromUDP(buf)
 type Socks5UDPClientAssoc struct {
-	PacketConn
+	gonnect.PacketConn
 	DefaultHeader []byte // For binded UDP connections (ones with fixed raddr)
 	Pool          bufpool.Pool
 	Raddr         net.Addr
@@ -425,7 +436,7 @@ type Socks5UDPClientAssoc struct {
 //
 // A new Socks5UDPClientAssoc instance.
 func NewSocks5UDPClientAssoc(
-	conn PacketConn, addr *Addr, pool bufpool.Pool, onc func(),
+	conn gonnect.PacketConn, addr *Addr, pool bufpool.Pool, onc func(),
 ) *Socks5UDPClientAssoc {
 	raddr := AddrFromHostPort("0.0.0.0:0", "udp").WithDefaultAddr(addr)
 
@@ -546,6 +557,115 @@ func (uc *Socks5UDPClientAssoc) WriteToIpPort(
 	return WriteSocksAssoc5UDPPacket(
 		uc.Pool, uc.PacketConn, nil, AddrFromIP(ip, port, "udp"), p,
 	)
+}
+
+// UDPConn interface implementations (gonnect.UDPConn)
+
+func (uc *Socks5UDPClientAssoc) ReadFromUDPAddrPort(
+	b []byte,
+) (n int, addr netip.AddrPort, err error) {
+	for {
+		var ad Addr
+		n, ad, _, err = ReadSocks5AssocUDPPacket(
+			uc.Pool,
+			uc.PacketConn,
+			b,
+			false,
+			nil,
+		)
+		if err != nil {
+			return
+		}
+		udpAddr := ad.ToUDP()
+		if udpAddr != nil {
+			addr = udpAddr.AddrPort()
+			return
+		}
+	}
+}
+
+func (uc *Socks5UDPClientAssoc) WriteToUDPAddrPort(
+	b []byte,
+	addr netip.AddrPort,
+) (int, error) {
+	return WriteSocksAssoc5UDPPacket(
+		uc.Pool, uc.PacketConn, nil, AddrFromNetIPAddrPort(addr), b,
+	)
+}
+
+func (uc *Socks5UDPClientAssoc) ReadMsgUDP(
+	b, oob []byte,
+) (n, oobn, flags int, addr *net.UDPAddr, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP
+	oobn = 0
+	flags = 0
+	for {
+		var ad Addr
+		n, ad, _, err = ReadSocks5AssocUDPPacket(
+			uc.Pool,
+			uc.PacketConn,
+			b,
+			false,
+			nil,
+		)
+		if err != nil {
+			return
+		}
+		addr = ad.ToUDP()
+		if addr != nil {
+			return
+		}
+	}
+}
+
+func (uc *Socks5UDPClientAssoc) ReadMsgUDPAddrPort(
+	b, oob []byte,
+) (n, oobn, flags int, addr netip.AddrPort, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP
+	oobn = 0
+	flags = 0
+	for {
+		var ad Addr
+		n, ad, _, err = ReadSocks5AssocUDPPacket(
+			uc.Pool,
+			uc.PacketConn,
+			b,
+			false,
+			nil,
+		)
+		if err != nil {
+			return
+		}
+		udpAddr := ad.ToUDP()
+		if udpAddr != nil {
+			addr = udpAddr.AddrPort()
+			return
+		}
+	}
+}
+
+func (uc *Socks5UDPClientAssoc) WriteMsgUDP(
+	b, oob []byte,
+	addr *net.UDPAddr,
+) (n, oobn int, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP
+	oobn = 0
+	if addr == nil {
+		n, err = uc.Write(b)
+	} else {
+		n, err = uc.WriteToUDP(b, addr)
+	}
+	return
+}
+
+func (uc *Socks5UDPClientAssoc) WriteMsgUDPAddrPort(
+	b, oob []byte,
+	addr netip.AddrPort,
+) (n, oobn int, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP
+	oobn = 0
+	n, err = uc.WriteToUDPAddrPort(b, addr)
+	return
 }
 
 // Socks5UDPClientTUN implements Gost's UDP Tunnel extension.
@@ -715,6 +835,97 @@ func (uc *Socks5UDPClientTUN) WriteToIpPort(
 	)
 }
 
+// UDPConn interface implementations (gonnect.UDPConn)
+
+func (uc *Socks5UDPClientTUN) ReadFromUDPAddrPort(
+	b []byte,
+) (n int, addr netip.AddrPort, err error) {
+	for {
+		var ad Addr
+		n, ad, err = ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, b, false)
+		if err != nil {
+			return
+		}
+		udpAddr := ad.ToUDP()
+		if udpAddr != nil {
+			addr = udpAddr.AddrPort()
+			return
+		}
+	}
+}
+
+func (uc *Socks5UDPClientTUN) WriteToUDPAddrPort(
+	b []byte,
+	addr netip.AddrPort,
+) (int, error) {
+	return WriteSocks5TUNUDPPacket(
+		uc.Pool, uc.Conn, AddrFromNetIPAddrPort(addr), b,
+	)
+}
+
+func (uc *Socks5UDPClientTUN) ReadMsgUDP(
+	b, oob []byte,
+) (n, oobn, flags int, addr *net.UDPAddr, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP TUN
+	oobn = 0
+	flags = 0
+	for {
+		var ad Addr
+		n, ad, err = ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, b, false)
+		if err != nil {
+			return
+		}
+		addr = ad.ToUDP()
+		if addr != nil {
+			return
+		}
+	}
+}
+
+func (uc *Socks5UDPClientTUN) ReadMsgUDPAddrPort(
+	b, oob []byte,
+) (n, oobn, flags int, addr netip.AddrPort, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP TUN
+	oobn = 0
+	flags = 0
+	for {
+		var ad Addr
+		n, ad, err = ReadSocks5TunUDPPacket(uc.Pool, uc.Conn, b, false)
+		if err != nil {
+			return
+		}
+		udpAddr := ad.ToUDP()
+		if udpAddr != nil {
+			addr = udpAddr.AddrPort()
+			return
+		}
+	}
+}
+
+func (uc *Socks5UDPClientTUN) WriteMsgUDP(
+	b, oob []byte,
+	addr *net.UDPAddr,
+) (n, oobn int, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP TUN
+	oobn = 0
+	if addr == nil {
+		n, err = uc.Write(b)
+	} else {
+		n, err = uc.WriteToUDP(b, addr)
+	}
+	return
+}
+
+func (uc *Socks5UDPClientTUN) WriteMsgUDPAddrPort(
+	b, oob []byte,
+	addr netip.AddrPort,
+) (n, oobn int, err error) {
+	// Out-of-band data not supported in SOCKS5 UDP TUN
+	oobn = 0
+	n, err = uc.WriteToUDPAddrPort(b, addr)
+	return
+}
+
 // ProxySocks5UDPAssoc proxies UDP packets between a SOCKS5 client and a
 // target UDP server using standard UDP ASSOCIATE.
 //
@@ -744,7 +955,7 @@ func (uc *Socks5UDPClientTUN) WriteToIpPort(
 //
 // This function spawns goroutines and blocks until all connections close.
 func ProxySocks5UDPAssoc(
-	assoc, proxy PacketConn, ctrl net.Conn,
+	assoc, proxy gonnect.PacketConn, ctrl net.Conn,
 	binded bool,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool bufpool.Pool, bufSize int,
@@ -886,7 +1097,7 @@ func ProxySocks5UDPAssoc(
 //
 // This function spawns goroutines and blocks until all connections close.
 func ProxySocks5UDPTun(
-	tun net.Conn, proxy PacketConn,
+	tun net.Conn, proxy gonnect.PacketConn,
 	binded bool,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool bufpool.Pool, bufSize int,

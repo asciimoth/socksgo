@@ -587,7 +587,7 @@ func TestClient_DialPacket_FilterPath(t *testing.T) {
 		t.Fatal("Filter should return true for MatchAllFilter")
 	}
 
-	conn, err := client.DialPacket(context.Background(), "udp", "127.0.0.1:53")
+	conn, err := client.PacketDial(context.Background(), "udp", "127.0.0.1:53")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -606,7 +606,7 @@ func TestClient_DialPacket_UnsupportedNetwork(t *testing.T) {
 		ProxyAddr: "127.0.0.1:1080",
 	}
 
-	_, err := client.DialPacket(context.Background(), "unix", "/tmp/socket")
+	_, err := client.PacketDial(context.Background(), "unix", "/tmp/socket")
 	if err == nil {
 		t.Fatal("Expected error for unsupported network, got nil")
 	}
