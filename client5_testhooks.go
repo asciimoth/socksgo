@@ -16,3 +16,7 @@ func TestResolveUnspecifiedAddr(
 ) protocol.Addr {
 	return resolveUnspecifiedAddr(proxy, naddr)
 }
+
+// TestClientListener5 is an exported version of clientListener5 for testing.
+// This is only available with the "testhooks" build tag.
+type TestClientListener5 = clientListener5

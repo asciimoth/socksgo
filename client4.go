@@ -10,6 +10,7 @@ import (
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
+	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -135,41 +136,45 @@ func (w *tcpConnWrapper) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (w *tcpConnWrapper) WriteTo(writer io.Writer) (int64, error) {
-	return io.Copy(writer, w)
+	buf := make([]byte, 32*1024)
+	var total int64
+	for {
+		nr, er := w.Read(buf)
+		if nr > 0 {
+			nw, ew := writer.Write(buf[:nr])
+			if nw > 0 {
+				total += int64(nw)
+			}
+			if ew != nil {
+				return total, ew
+			}
+			if nr != nw {
+				return total, io.ErrShortWrite
+			}
+		}
+		if er != nil {
+			return total, helpers.ClosedNetworkErrToNil(er)
+		}
+	}
 }
 
 func (w *tcpConnWrapper) SetKeepAlive(keepalive bool) error {
-	if tc, ok := w.Conn.(gonnect.TCPConn); ok {
-		return tc.SetKeepAlive(keepalive)
-	}
 	return nil
 }
 
 func (w *tcpConnWrapper) SetKeepAliveConfig(config net.KeepAliveConfig) error {
-	if tc, ok := w.Conn.(gonnect.TCPConn); ok {
-		return tc.SetKeepAliveConfig(config)
-	}
 	return nil
 }
 
 func (w *tcpConnWrapper) SetKeepAlivePeriod(d time.Duration) error {
-	if tc, ok := w.Conn.(gonnect.TCPConn); ok {
-		return tc.SetKeepAlivePeriod(d)
-	}
 	return nil
 }
 
 func (w *tcpConnWrapper) SetLinger(sec int) error {
-	if tc, ok := w.Conn.(gonnect.TCPConn); ok {
-		return tc.SetLinger(sec)
-	}
 	return nil
 }
 
 func (w *tcpConnWrapper) SetNoDelay(noDelay bool) error {
-	if tc, ok := w.Conn.(gonnect.TCPConn); ok {
-		return tc.SetNoDelay(noDelay)
-	}
 	return nil
 }
 

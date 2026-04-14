@@ -1,3 +1,4 @@
+// nolint
 package protocol_test
 
 import (
@@ -5,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"reflect"
 	"strconv"
 	"testing"
@@ -669,4 +671,706 @@ func TestResolveToIP4(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAddrFromNetIPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid IPv4 AddrPort with default network", func(t *testing.T) {
+		t.Parallel()
+		addrPort := netip.MustParseAddrPort("192.168.1.1:8080")
+		addr := protocol.AddrFromNetIPAddrPort(addrPort)
+
+		if addr.Type != protocol.IP4Addr {
+			t.Fatalf("expected IP4Addr, got %v", addr.Type)
+		}
+		if addr.Port != 8080 {
+			t.Fatalf("expected port 8080, got %d", addr.Port)
+		}
+		if addr.NetTyp != "udp" {
+			t.Fatalf("expected default NetTyp 'udp', got %q", addr.NetTyp)
+		}
+		expectedIP := net.ParseIP("192.168.1.1").To4()
+		if !net.IP(addr.Host).Equal(expectedIP) {
+			t.Fatalf(
+				"IP mismatch: got %v, want %v",
+				net.IP(addr.Host),
+				expectedIP,
+			)
+		}
+	})
+
+	t.Run("valid IPv6 AddrPort with custom network", func(t *testing.T) {
+		t.Parallel()
+		addrPort := netip.MustParseAddrPort("[::1]:443")
+		addr := protocol.AddrFromNetIPAddrPort(addrPort, "tcp")
+
+		if addr.Type != protocol.IP6Addr {
+			t.Fatalf("expected IP6Addr, got %v", addr.Type)
+		}
+		if addr.Port != 443 {
+			t.Fatalf("expected port 443, got %d", addr.Port)
+		}
+		if addr.NetTyp != "tcp" {
+			t.Fatalf("expected NetTyp 'tcp', got %q", addr.NetTyp)
+		}
+	})
+
+	t.Run("invalid zero AddrPort returns zero Addr", func(t *testing.T) {
+		t.Parallel()
+		var zeroAddrPort netip.AddrPort
+		addr := protocol.AddrFromNetIPAddrPort(zeroAddrPort)
+
+		if addr.Type != 0 {
+			t.Fatalf("expected zero AddrType, got %v", addr.Type)
+		}
+		if addr.Host != nil {
+			t.Fatalf("expected nil Host, got %v", addr.Host)
+		}
+		if addr.Port != 0 {
+			t.Fatalf("expected zero Port, got %d", addr.Port)
+		}
+		if addr.NetTyp != "" {
+			t.Fatalf("expected empty NetTyp, got %q", addr.NetTyp)
+		}
+	})
+
+	t.Run(
+		"valid AddrPort with empty network string uses udp default",
+		func(t *testing.T) {
+			t.Parallel()
+			addrPort := netip.MustParseAddrPort("10.0.0.1:53")
+			addr := protocol.AddrFromNetIPAddrPort(addrPort, "")
+
+			if addr.NetTyp != "udp" {
+				t.Fatalf(
+					"expected NetTyp 'udp' for empty string, got %q",
+					addr.NetTyp,
+				)
+			}
+		},
+	)
+
+	t.Run("valid AddrPort with tcp4 network", func(t *testing.T) {
+		t.Parallel()
+		addrPort := netip.MustParseAddrPort("172.16.0.1:80")
+		addr := protocol.AddrFromNetIPAddrPort(addrPort, "tcp4")
+
+		if addr.NetTyp != "tcp4" {
+			t.Fatalf("expected NetTyp 'tcp4', got %q", addr.NetTyp)
+		}
+		if addr.Type != protocol.IP4Addr {
+			t.Fatalf("expected IP4Addr, got %v", addr.Type)
+		}
+	})
+}
+
+func TestAddrFromFQDNNoDotEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FQDN with multiple trailing dots", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDNNoDot("example.com...", 443, "tcp")
+		if addr.ToFQDN() != "example.com" {
+			t.Fatalf("expected 'example.com', got %q", addr.ToFQDN())
+		}
+	})
+
+	t.Run("FQDN with port and trailing dot", func(t *testing.T) {
+		t.Parallel()
+		// Note: AddrFromFQDNNoDot trims the dot from "8080." -> "8080" which is not a valid port
+		// So SplitHostPort will treat "example.com:8080." as host="example.com:8080." with no port
+		// After trimming: "example.com:8080" which then becomes the host string
+		addr := protocol.AddrFromFQDNNoDot("example.com.", 8080, "tcp")
+		if addr.Port != 8080 {
+			t.Fatalf("expected port 8080, got %d", addr.Port)
+		}
+		if addr.ToFQDN() != "example.com" {
+			t.Fatalf("expected 'example.com', got %q", addr.ToFQDN())
+		}
+	})
+
+	t.Run("single dot FQDN", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDNNoDot(".", 80, "tcp")
+		if addr.ToFQDN() != "." {
+			t.Fatalf("expected '.', got %q", addr.ToFQDN())
+		}
+	})
+
+	t.Run("empty FQDN", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDNNoDot("", 80, "tcp")
+		if addr.ToFQDN() != "" {
+			t.Fatalf("expected empty string, got %q", addr.ToFQDN())
+		}
+	})
+}
+
+func TestAddrCopyEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("copy with nil Host", func(t *testing.T) {
+		t.Parallel()
+		original := protocol.Addr{
+			Type:   protocol.IP4Addr,
+			Host:   nil,
+			Port:   80,
+			NetTyp: "tcp",
+		}
+		copied := original.Copy()
+
+		if copied.Host != nil {
+			t.Fatalf("expected nil Host in copy, got %v", copied.Host)
+		}
+		if copied.Port != original.Port {
+			t.Fatalf(
+				"port mismatch: got %d, want %d",
+				copied.Port,
+				original.Port,
+			)
+		}
+	})
+
+	t.Run("copy preserves all fields", func(t *testing.T) {
+		t.Parallel()
+		original := protocol.AddrFromFQDN("example.com", 443, "tcp")
+		copied := original.Copy()
+
+		if copied.Type != original.Type {
+			t.Fatalf(
+				"Type mismatch: got %v, want %v",
+				copied.Type,
+				original.Type,
+			)
+		}
+		if copied.Port != original.Port {
+			t.Fatalf(
+				"Port mismatch: got %d, want %d",
+				copied.Port,
+				original.Port,
+			)
+		}
+		if copied.NetTyp != original.NetTyp {
+			t.Fatalf(
+				"NetTyp mismatch: got %q, want %q",
+				copied.NetTyp,
+				original.NetTyp,
+			)
+		}
+		if !bytes.Equal(copied.Host, original.Host) {
+			t.Fatalf("Host mismatch")
+		}
+	})
+}
+
+func TestAddrLenEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unknown AddrType returns len of Host", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{
+			Type: protocol.AddrType(0x99),
+			Host: []byte("test"),
+		}
+		if addr.Len() != 4 {
+			t.Fatalf("expected len 4, got %d", addr.Len())
+		}
+	})
+
+	t.Run("FQDN with empty Host", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{
+			Type: protocol.FQDNAddr,
+			Host: []byte{},
+		}
+		if addr.Len() != 0 {
+			t.Fatalf("expected len 0, got %d", addr.Len())
+		}
+	})
+}
+
+func TestAddrWithDefaultHostEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("specified address ignores default host", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("192.168.1.1", 80, "tcp")
+		result := addr.WithDefaultHost("10.0.0.1")
+
+		if result.ToFQDN() != "192.168.1.1" {
+			t.Fatalf("expected '192.168.1.1', got %q", result.ToFQDN())
+		}
+		if result.Port != 80 {
+			t.Fatalf("expected port 80, got %d", result.Port)
+		}
+	})
+
+	t.Run("unspecified with empty default uses 0.0.0.0", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{}
+		result := addr.WithDefaultHost("")
+
+		if result.ToFQDN() != "0.0.0.0" {
+			t.Fatalf("expected '0.0.0.0', got %q", result.ToFQDN())
+		}
+	})
+}
+
+func TestAddrWithDefaultAddrEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run(
+		"specified address returns itself even with non-nil default",
+		func(t *testing.T) {
+			t.Parallel()
+			addr := protocol.AddrFromString("192.168.1.1", 80, "tcp")
+			def := protocol.AddrFromString("10.0.0.1", 0, "tcp")
+			result := addr.WithDefaultAddr(&def)
+
+			if result.ToFQDN() != "192.168.1.1" {
+				t.Fatalf("expected '192.168.1.1', got %q", result.ToFQDN())
+			}
+		},
+	)
+
+	t.Run("unspecified with nil default returns itself", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{}
+		result := addr.WithDefaultAddr(nil)
+
+		if !result.IsUnspecified() {
+			t.Fatalf("expected unspecified address")
+		}
+	})
+
+	t.Run(
+		"unspecified with non-nil default returns deep copy",
+		func(t *testing.T) {
+			t.Parallel()
+			addr := protocol.Addr{}
+			def := protocol.AddrFromString("127.0.0.1", 8080, "tcp")
+			result := addr.WithDefaultAddr(&def)
+
+			if result.ToFQDN() != "127.0.0.1" {
+				t.Fatalf("expected '127.0.0.1', got %q", result.ToFQDN())
+			}
+			if result.Port != 8080 {
+				t.Fatalf("expected port 8080, got %d", result.Port)
+			}
+			// Ensure it's a deep copy
+			result.Port = 9999
+			if def.Port != 8080 {
+				t.Fatalf("modification affected original default address")
+			}
+		},
+	)
+}
+
+func TestAddrToIPEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FQDN returns nil", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDN("example.com", 80, "tcp")
+		if addr.ToIP() != nil {
+			t.Fatalf("expected nil for FQDN, got %v", addr.ToIP())
+		}
+	})
+}
+
+func TestAddrToUDPEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FQDN returns nil", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDN("example.com", 53, "udp")
+		if addr.ToUDP() != nil {
+			t.Fatalf("expected nil for FQDN, got %v", addr.ToUDP())
+		}
+	})
+}
+
+func TestAddrToTCPEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FQDN returns nil", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDN("example.com", 80, "tcp")
+		if addr.ToTCP() != nil {
+			t.Fatalf("expected nil for FQDN, got %v", addr.ToTCP())
+		}
+	})
+}
+
+func TestAddrToUnspecifiedEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPv4 to unspecified", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("192.168.1.1", 80, "tcp")
+		result := addr.ToUnspecified()
+
+		if !result.IsUnspecified() {
+			t.Fatalf("expected unspecified address")
+		}
+		if result.Type != protocol.IP4Addr {
+			t.Fatalf("expected IP4Addr type, got %v", result.Type)
+		}
+		if result.Port != 0 {
+			t.Fatalf("expected zero port, got %d", result.Port)
+		}
+	})
+
+	t.Run("FQDN to unspecified", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDN("example.com", 443, "tcp")
+		result := addr.ToUnspecified()
+
+		if result.Type != protocol.FQDNAddr {
+			t.Fatalf("expected FQDNAddr type, got %v", result.Type)
+		}
+		if len(result.Host) != 0 {
+			t.Fatalf(
+				"expected empty Host for FQDN unspecified, got %v",
+				result.Host,
+			)
+		}
+	})
+}
+
+func TestAddrNetworkEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty NetTyp defaults to tcp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{
+			Type:   protocol.FQDNAddr,
+			Host:   []byte("example.com"),
+			NetTyp: "",
+		}
+		if addr.Network() != "tcp" {
+			t.Fatalf("expected 'tcp', got %q", addr.Network())
+		}
+	})
+
+	t.Run("IPv4 with empty NetTyp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{
+			Type:   protocol.IP4Addr,
+			Host:   net.ParseIP("192.168.1.1").To4(),
+			NetTyp: "",
+		}
+		if addr.Network() != "tcp4" {
+			t.Fatalf("expected 'tcp4', got %q", addr.Network())
+		}
+	})
+
+	t.Run("IPv6 with empty NetTyp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{
+			Type:   protocol.IP6Addr,
+			Host:   net.ParseIP("::1").To16(),
+			NetTyp: "",
+		}
+		if addr.Network() != "tcp6" {
+			t.Fatalf("expected 'tcp6', got %q", addr.Network())
+		}
+	})
+}
+
+func TestAddrIpNetworkEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ip NetTyp returns ip", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "ip"}
+		if addr.IpNetwork() != "ip" {
+			t.Fatalf("expected 'ip', got %q", addr.IpNetwork())
+		}
+	})
+
+	t.Run("ip4 NetTyp returns ip4", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "ip4"}
+		if addr.IpNetwork() != "ip4" {
+			t.Fatalf("expected 'ip4', got %q", addr.IpNetwork())
+		}
+	})
+
+	t.Run("ip6 NetTyp returns ip6", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "ip6"}
+		if addr.IpNetwork() != "ip6" {
+			t.Fatalf("expected 'ip6', got %q", addr.IpNetwork())
+		}
+	})
+
+	t.Run("unknown NetTyp returns itself", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "weird"}
+		if addr.IpNetwork() != "weird" {
+			t.Fatalf("expected 'weird', got %q", addr.IpNetwork())
+		}
+	})
+}
+
+func TestAddrStringEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero port returns ToFQDN", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("192.168.1.1", 0, "tcp")
+		if addr.String() != "192.168.1.1" {
+			t.Fatalf("expected '192.168.1.1', got %q", addr.String())
+		}
+	})
+
+	t.Run("non-zero port returns ToHostPort", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("192.168.1.1", 80, "tcp")
+		expected := "192.168.1.1:80"
+		if addr.String() != expected {
+			t.Fatalf("expected %q, got %q", expected, addr.String())
+		}
+	})
+}
+
+func TestAddrFromTCPAndUDPAddrEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("TCPAddr with negative port clamps to zero", func(t *testing.T) {
+		t.Parallel()
+		tcpAddr := &net.TCPAddr{
+			IP:   net.ParseIP("192.168.1.1"),
+			Port: -1,
+		}
+		addr := protocol.AddrFromTCPAddr(tcpAddr)
+		if addr.Port != 0 {
+			t.Fatalf("expected port 0, got %d", addr.Port)
+		}
+	})
+
+	t.Run("UDPAddr with negative port clamps to zero", func(t *testing.T) {
+		t.Parallel()
+		udpAddr := &net.UDPAddr{
+			IP:   net.ParseIP("8.8.8.8"),
+			Port: -100,
+		}
+		addr := protocol.AddrFromUDPAddr(udpAddr)
+		if addr.Port != 0 {
+			t.Fatalf("expected port 0, got %d", addr.Port)
+		}
+	})
+
+	t.Run("TCPAddr with valid port", func(t *testing.T) {
+		t.Parallel()
+		tcpAddr := &net.TCPAddr{
+			IP:   net.ParseIP("10.0.0.1"),
+			Port: 65535,
+		}
+		addr := protocol.AddrFromTCPAddr(tcpAddr)
+		if addr.Port != 65535 {
+			t.Fatalf("expected port 65535, got %d", addr.Port)
+		}
+	})
+
+	t.Run("UDPAddr with valid port", func(t *testing.T) {
+		t.Parallel()
+		udpAddr := &net.UDPAddr{
+			IP:   net.ParseIP("8.8.4.4"),
+			Port: 53,
+		}
+		addr := protocol.AddrFromUDPAddr(udpAddr)
+		if addr.Port != 53 {
+			t.Fatalf("expected port 53, got %d", addr.Port)
+		}
+	})
+}
+
+func TestAddrFromHostPortEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty hostport with tcp6", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromHostPort("", "tcp6")
+		if addr.ToHostPort() != "[::]:0" {
+			t.Fatalf("expected '[::]:0', got %q", addr.ToHostPort())
+		}
+	})
+
+	t.Run("empty hostport with udp6", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromHostPort("", "udp6")
+		if addr.ToHostPort() != "[::]:0" {
+			t.Fatalf("expected '[::]:0', got %q", addr.ToHostPort())
+		}
+	})
+
+	t.Run("empty hostport with tcp4", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromHostPort("", "tcp4")
+		if addr.ToHostPort() != "0.0.0.0:0" {
+			t.Fatalf("expected '0.0.0.0:0', got %q", addr.ToHostPort())
+		}
+	})
+
+	t.Run("empty hostport with udp4", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromHostPort("", "udp4")
+		if addr.ToHostPort() != "0.0.0.0:0" {
+			t.Fatalf("expected '0.0.0.0:0', got %q", addr.ToHostPort())
+		}
+	})
+}
+
+func TestAddrFromStringEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPv4 address", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("10.0.0.1", 80, "tcp")
+		if addr.Type != protocol.IP4Addr {
+			t.Fatalf("expected IP4Addr, got %v", addr.Type)
+		}
+	})
+
+	t.Run("IPv6 address", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("2001:db8::1", 443, "tcp")
+		if addr.Type != protocol.IP6Addr {
+			t.Fatalf("expected IP6Addr, got %v", addr.Type)
+		}
+	})
+
+	t.Run("domain name", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromString("example.com", 80, "tcp")
+		if addr.Type != protocol.FQDNAddr {
+			t.Fatalf("expected FQDNAddr, got %v", addr.Type)
+		}
+	})
+}
+
+func TestAddrTypeStringUnknown(t *testing.T) {
+	t.Parallel()
+
+	unknownType := protocol.AddrType(0x99)
+	result := unknownType.String()
+	expected := "addr type no153"
+	if result != expected {
+		t.Fatalf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestAddrFromFQDNEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FQDN without port uses provided port", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDN("example.com", 443, "tcp")
+		if addr.Port != 443 {
+			t.Fatalf("expected port 443, got %d", addr.Port)
+		}
+	})
+
+	t.Run("FQDN with embedded port overrides", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.AddrFromFQDN("example.com:9999", 443, "tcp")
+		if addr.Port != 9999 {
+			t.Fatalf("expected port 9999, got %d", addr.Port)
+		}
+	})
+}
+
+func TestAddrFromNetAddrCustomFallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("custom net.Addr with tcp6 network", func(t *testing.T) {
+		t.Parallel()
+		customAddr := fakeAddr("[::1]:8080")
+		addr := protocol.AddrFromNetAddr(customAddr)
+
+		if addr.Type != protocol.IP6Addr {
+			t.Fatalf("expected IP6Addr, got %v", addr.Type)
+		}
+		if addr.Port != 8080 {
+			t.Fatalf("expected port 8080, got %d", addr.Port)
+		}
+	})
+}
+
+func TestAddrWithNetTypEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes tcp4 to tcp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "tcp4"}
+		result := addr.WithNetTyp("tcp4")
+		if result.NetTyp != "tcp" {
+			t.Fatalf("expected 'tcp', got %q", result.NetTyp)
+		}
+	})
+
+	t.Run("normalizes tcp6 to tcp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "tcp6"}
+		result := addr.WithNetTyp("tcp6")
+		if result.NetTyp != "tcp" {
+			t.Fatalf("expected 'tcp', got %q", result.NetTyp)
+		}
+	})
+
+	t.Run("normalizes udp4 to udp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "udp4"}
+		result := addr.WithNetTyp("udp4")
+		if result.NetTyp != "udp" {
+			t.Fatalf("expected 'udp', got %q", result.NetTyp)
+		}
+	})
+
+	t.Run("normalizes udp6 to udp", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "udp6"}
+		result := addr.WithNetTyp("udp6")
+		if result.NetTyp != "udp" {
+			t.Fatalf("expected 'udp', got %q", result.NetTyp)
+		}
+	})
+
+	t.Run("preserves unknown network", func(t *testing.T) {
+		t.Parallel()
+		addr := protocol.Addr{NetTyp: "custom"}
+		result := addr.WithNetTyp("custom")
+		if result.NetTyp != "custom" {
+			t.Fatalf("expected 'custom', got %q", result.NetTyp)
+		}
+	})
+}
+
+func TestResolveToIP4EdgeCases(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run(
+		"IPv6 address returns nil without calling lookup",
+		func(t *testing.T) {
+			t.Parallel()
+			addr := protocol.AddrFromString("::1", 80, "tcp6")
+			lookupCalled := false
+			lookup := func(context.Context, string, string) ([]net.IP, error) {
+				lookupCalled = true
+				return nil, nil
+			}
+
+			result := addr.ResolveToIP4(ctx, lookup)
+			if result != nil {
+				t.Fatalf("expected nil for IPv6, got %+v", result)
+			}
+			if lookupCalled {
+				t.Fatalf("lookup should not be called for IPv6")
+			}
+		},
+	)
 }

@@ -1,11 +1,14 @@
+// nolint
 package protocol_test
 
 import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -2712,5 +2715,1026 @@ func TestProxySocks5UDPTun_ErrWriteTun(t *testing.T) {
 	err := <-errCh
 	if err.Error() != "mock write error" {
 		t.Fatal(err)
+	}
+}
+
+// Tests for Socks5UDPClientAssoc AddrPort methods (gonnect.UDPConn interface)
+
+func TestSocks5UDPClientAssoc_ReadFromUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	a, b := newPacketConnPair()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(a, &addr, nil, nil)
+	defer uc.Close()
+
+	// Push a valid SOCKS5 UDP packet into the underlying conn
+	payload := []byte("addrport-read")
+	header := protocol.AppendSocks5UDPHeader(
+		nil,
+		0,
+		protocol.AddrFromIP(net.ParseIP("192.168.1.100"), 8080, "udp"),
+	)
+	a.in <- pkt{data: append(header, payload...), from: a.local}
+
+	readBuf := make([]byte, 1024)
+	n, addrPort, err := uc.ReadFromUDPAddrPort(readBuf)
+	if err != nil {
+		t.Fatalf("ReadFromUDPAddrPort error: %v", err)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"ReadFromUDPAddrPort length mismatch: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("ReadFromUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadFromUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientAssoc_ReadFromUDPAddrPort_FQDN_Retry(t *testing.T) {
+	t.Parallel()
+
+	// Create a mock PacketConn that returns an FQDN address packet first,
+	// then a valid IP address packet
+	conn := &MockPacketConn{
+		Packets: []Packet{
+			{
+				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+				Payload: append(
+					protocol.AppendSocks5UDPHeader(
+						nil,
+						0,
+						protocol.AddrFromFQDN("example.com:80", 80, "udp"),
+					),
+					[]byte("fqdn-packet")...,
+				),
+			},
+			{
+				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+				Payload: append(
+					protocol.AppendSocks5UDPHeader(
+						nil,
+						0,
+						protocol.AddrFromIP(
+							net.ParseIP("192.168.1.100"),
+							8080,
+							"udp",
+						),
+					),
+					[]byte("ip-packet")...,
+				),
+			},
+		},
+		Local:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+		Remote: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10001},
+	}
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(conn, &addr, nil, nil)
+	defer uc.Close()
+
+	readBuf := make([]byte, 1024)
+	n, addrPort, err := uc.ReadFromUDPAddrPort(readBuf)
+	if err != nil {
+		t.Fatalf("ReadFromUDPAddrPort error: %v", err)
+	}
+	// Should have skipped FQDN packet and returned IP packet
+	if n != len("ip-packet") {
+		t.Fatalf(
+			"ReadFromUDPAddrPort length mismatch: want %d got %d",
+			len("ip-packet"),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != "ip-packet" {
+		t.Fatalf("ReadFromUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadFromUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientAssoc_ReadMsgUDP_FQDN_Retry(t *testing.T) {
+	t.Parallel()
+
+	conn := &MockPacketConn{
+		Packets: []Packet{
+			{
+				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+				Payload: append(
+					protocol.AppendSocks5UDPHeader(
+						nil,
+						0,
+						protocol.AddrFromFQDN("example.com:80", 80, "udp"),
+					),
+					[]byte("fqdn-packet")...,
+				),
+			},
+			{
+				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+				Payload: append(
+					protocol.AppendSocks5UDPHeader(
+						nil,
+						0,
+						protocol.AddrFromIP(
+							net.ParseIP("1.2.3.4"),
+							1234,
+							"udp",
+						),
+					),
+					[]byte("ip-packet")...,
+				),
+			},
+		},
+		Local:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+		Remote: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10001},
+	}
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(conn, &addr, nil, nil)
+	defer uc.Close()
+
+	readBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	n, oobn, flags, udpAddr, err := uc.ReadMsgUDP(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDP error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero flags: %d", flags)
+	}
+	// Should have skipped FQDN packet
+	if n != len("ip-packet") {
+		t.Fatalf(
+			"ReadMsgUDP length mismatch: want %d got %d",
+			len("ip-packet"),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != "ip-packet" {
+		t.Fatalf("ReadMsgUDP payload mismatch: got %q", readBuf[:n])
+	}
+	if udpAddr == nil {
+		t.Fatalf("ReadMsgUDP returned nil UDP addr")
+	}
+}
+
+func TestSocks5UDPClientAssoc_ReadMsgUDPAddrPort_FQDN_Retry(t *testing.T) {
+	t.Parallel()
+
+	conn := &MockPacketConn{
+		Packets: []Packet{
+			{
+				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+				Payload: append(
+					protocol.AppendSocks5UDPHeader(
+						nil,
+						0,
+						protocol.AddrFromFQDN("example.com:80", 80, "udp"),
+					),
+					[]byte("fqdn-packet")...,
+				),
+			},
+			{
+				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+				Payload: append(
+					protocol.AppendSocks5UDPHeader(
+						nil,
+						0,
+						protocol.AddrFromIP(
+							net.ParseIP("5.6.7.8"),
+							5678,
+							"udp",
+						),
+					),
+					[]byte("ip-packet")...,
+				),
+			},
+		},
+		Local:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
+		Remote: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10001},
+	}
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(conn, &addr, nil, nil)
+	defer uc.Close()
+
+	readBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	n, oobn, flags, addrPort, err := uc.ReadMsgUDPAddrPort(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDPAddrPort error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero flags: %d", flags)
+	}
+	if n != len("ip-packet") {
+		t.Fatalf(
+			"ReadMsgUDPAddrPort length mismatch: want %d got %d",
+			len("ip-packet"),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != "ip-packet" {
+		t.Fatalf("ReadMsgUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadMsgUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientAssoc_WriteToUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	a, b := newPacketConnPair()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(a, &addr, nil, nil)
+	defer uc.Close()
+
+	targetAddr := netip.MustParseAddrPort("8.8.8.8:53")
+	payload := []byte("write-addrport")
+	n, err := uc.WriteToUDPAddrPort(payload, targetAddr)
+	if err != nil {
+		t.Fatalf("WriteToUDPAddrPort error: %v", err)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"WriteToUDPAddrPort returned wrong n: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+
+	// Verify packet was delivered to peer
+	out := make([]byte, 1024)
+	nout, _, _, err := protocol.ReadSocks5AssocUDPPacket(
+		nil,
+		b,
+		out,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ReadSocks5AssocUDPPacket error: %v", err)
+	}
+	if nout != len(payload) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload), nout)
+	}
+}
+
+func TestSocks5UDPClientAssoc_ReadMsgUDP(t *testing.T) {
+	t.Parallel()
+
+	a, b := newPacketConnPair()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(a, &addr, nil, nil)
+	defer uc.Close()
+
+	// Push a valid SOCKS5 UDP packet
+	payload := []byte("read-msg-udp")
+	header := protocol.AppendSocks5UDPHeader(
+		nil,
+		0,
+		protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 1234, "udp"),
+	)
+	a.in <- pkt{data: append(header, payload...), from: a.local}
+
+	readBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	n, oobn, flags, udpAddr, err := uc.ReadMsgUDP(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDP error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero flags: %d", flags)
+	}
+	if n != len(payload) {
+		t.Fatalf("ReadMsgUDP length mismatch: want %d got %d", len(payload), n)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("ReadMsgUDP payload mismatch: got %q", readBuf[:n])
+	}
+	if udpAddr == nil {
+		t.Fatalf("ReadMsgUDP returned nil UDP addr")
+	}
+}
+
+func TestSocks5UDPClientAssoc_ReadMsgUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	a, b := newPacketConnPair()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(a, &addr, nil, nil)
+	defer uc.Close()
+
+	// Push a valid SOCKS5 UDP packet
+	payload := []byte("read-msg-addrport")
+	header := protocol.AppendSocks5UDPHeader(
+		nil,
+		0,
+		protocol.AddrFromIP(net.ParseIP("5.6.7.8"), 5678, "udp"),
+	)
+	a.in <- pkt{data: append(header, payload...), from: a.local}
+
+	readBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	n, oobn, flags, addrPort, err := uc.ReadMsgUDPAddrPort(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDPAddrPort error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero flags: %d", flags)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"ReadMsgUDPAddrPort length mismatch: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("ReadMsgUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadMsgUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientAssoc_WriteMsgUDP(t *testing.T) {
+	t.Parallel()
+
+	a, b := newPacketConnPair()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(a, &addr, nil, nil)
+	defer uc.Close()
+
+	// Test with nil addr (should use Write)
+	payload := []byte("write-msg-nil")
+	oob := make([]byte, 0) // OOB not supported
+	n, oobn, err := uc.WriteMsgUDP(payload, oob, nil)
+	if err != nil {
+		t.Fatalf("WriteMsgUDP (nil addr) error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("WriteMsgUDP returned non-zero oobn: %d", oobn)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"WriteMsgUDP returned wrong n: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+
+	// Verify packet delivered
+	out := make([]byte, 1024)
+	nout, _, _, err := protocol.ReadSocks5AssocUDPPacket(
+		nil,
+		b,
+		out,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ReadSocks5AssocUDPPacket error: %v", err)
+	}
+	if nout != len(payload) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload), nout)
+	}
+
+	// Test with non-nil UDP addr (should use WriteToUDP)
+	payload2 := []byte("write-msg-udp")
+	udpAddr := &net.UDPAddr{IP: net.ParseIP("9.9.9.9"), Port: 9999}
+	n2, oobn2, err := uc.WriteMsgUDP(payload2, oob, udpAddr)
+	if err != nil {
+		t.Fatalf("WriteMsgUDP (UDP addr) error: %v", err)
+	}
+	if oobn2 != 0 {
+		t.Fatalf("WriteMsgUDP returned non-zero oobn: %d", oobn2)
+	}
+	if n2 != len(payload2) {
+		t.Fatalf(
+			"WriteMsgUDP returned wrong n: want %d got %d",
+			len(payload2),
+			n2,
+		)
+	}
+}
+
+func TestSocks5UDPClientAssoc_WriteMsgUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	a, b := newPacketConnPair()
+	defer func() {
+		_ = a.Close()
+		_ = b.Close()
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(a, &addr, nil, nil)
+	defer uc.Close()
+
+	targetAddr := netip.MustParseAddrPort("8.8.4.4:443")
+	payload := []byte("write-msg-addrport")
+	oob := make([]byte, 0)
+	n, oobn, err := uc.WriteMsgUDPAddrPort(payload, oob, targetAddr)
+	if err != nil {
+		t.Fatalf("WriteMsgUDPAddrPort error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("WriteMsgUDPAddrPort returned non-zero oobn: %d", oobn)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"WriteMsgUDPAddrPort returned wrong n: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+
+	// Verify packet delivered
+	out := make([]byte, 1024)
+	nout, _, _, err := protocol.ReadSocks5AssocUDPPacket(
+		nil,
+		b,
+		out,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ReadSocks5AssocUDPPacket error: %v", err)
+	}
+	if nout != len(payload) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload), nout)
+	}
+}
+
+// Tests for Socks5UDPClientTUN AddrPort methods (gonnect.UDPConn interface)
+
+func TestSocks5UDPClientTUN_ReadFromUDPAddrPort_FQDN_Retry(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	// Write FQDN packet first, then IP packet
+	fqdnPayload := []byte("fqdn-tun-packet")
+	fqdnHeader := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(fqdnPayload)), //nolint
+		protocol.AddrFromFQDN("example.com:80", 80, "udp"),
+	)
+
+	ipPayload := []byte("ip-tun-packet")
+	ipHeader := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(ipPayload)), //nolint
+		protocol.AddrFromIP(net.ParseIP("192.168.1.200"), 9090, "udp"),
+	)
+
+	// Write both packets (FQDN first will be skipped)
+	go func() {
+		_, _ = c2.Write(append(fqdnHeader, fqdnPayload...))
+		_, _ = c2.Write(append(ipHeader, ipPayload...))
+	}()
+
+	readBuf := make([]byte, 2048)
+	n, addrPort, err := tun.ReadFromUDPAddrPort(readBuf)
+	if err != nil {
+		t.Fatalf("ReadFromUDPAddrPort error: %v", err)
+	}
+	// Should have skipped FQDN packet and returned IP packet
+	if n != len(ipPayload) {
+		t.Fatalf(
+			"ReadFromUDPAddrPort length mismatch: want %d got %d",
+			len(ipPayload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(ipPayload) {
+		t.Fatalf("ReadFromUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadFromUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientTUN_ReadMsgUDP_FQDN_Retry(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	fqdnPayload := []byte("fqdn-tun-msg-packet")
+	fqdnHeader := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(fqdnPayload)), //nolint
+		protocol.AddrFromFQDN("example.com:80", 80, "udp"),
+	)
+
+	ipPayload := []byte("ip-tun-msg-packet")
+	ipHeader := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(ipPayload)), //nolint
+		protocol.AddrFromIP(net.ParseIP("10.20.30.40"), 2020, "udp"),
+	)
+
+	go func() {
+		_, _ = c2.Write(append(fqdnHeader, fqdnPayload...))
+		_, _ = c2.Write(append(ipHeader, ipPayload...))
+	}()
+
+	readBuf := make([]byte, 2048)
+	oob := make([]byte, 1024)
+	n, oobn, flags, udpAddr, err := tun.ReadMsgUDP(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDP error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero flags: %d", flags)
+	}
+	if n != len(ipPayload) {
+		t.Fatalf(
+			"ReadMsgUDP length mismatch: want %d got %d",
+			len(ipPayload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(ipPayload) {
+		t.Fatalf("ReadMsgUDP payload mismatch: got %q", readBuf[:n])
+	}
+	if udpAddr == nil {
+		t.Fatalf("ReadMsgUDP returned nil UDP addr")
+	}
+}
+
+func TestSocks5UDPClientTUN_ReadMsgUDPAddrPort_FQDN_Retry(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	fqdnPayload := []byte("fqdn-tun-addrport-packet")
+	fqdnHeader := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(fqdnPayload)), //nolint
+		protocol.AddrFromFQDN("example.com:80", 80, "udp"),
+	)
+
+	ipPayload := []byte("ip-tun-addrport-packet")
+	ipHeader := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(ipPayload)), //nolint
+		protocol.AddrFromIP(net.ParseIP("50.60.70.80"), 3030, "udp"),
+	)
+
+	go func() {
+		_, _ = c2.Write(append(fqdnHeader, fqdnPayload...))
+		_, _ = c2.Write(append(ipHeader, ipPayload...))
+	}()
+
+	readBuf := make([]byte, 2048)
+	oob := make([]byte, 1024)
+	n, oobn, flags, addrPort, err := tun.ReadMsgUDPAddrPort(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDPAddrPort error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero flags: %d", flags)
+	}
+	if n != len(ipPayload) {
+		t.Fatalf(
+			"ReadMsgUDPAddrPort length mismatch: want %d got %d",
+			len(ipPayload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(ipPayload) {
+		t.Fatalf("ReadMsgUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadMsgUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientTUN_ReadFromUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	// Write a TUN packet from the other side
+	payload := []byte("tun-addrport-read")
+	header := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(payload)), //nolint
+		protocol.AddrFromIP(net.ParseIP("192.168.1.200"), 9090, "udp"),
+	)
+	go func() {
+		_, _ = c2.Write(append(header, payload...))
+	}()
+
+	readBuf := make([]byte, 1024)
+	n, addrPort, err := tun.ReadFromUDPAddrPort(readBuf)
+	if err != nil {
+		t.Fatalf("ReadFromUDPAddrPort error: %v", err)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"ReadFromUDPAddrPort length mismatch: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("ReadFromUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadFromUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientTUN_WriteToUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	targetAddr := netip.MustParseAddrPort("1.1.1.1:53")
+	payload := []byte("tun-write-addrport")
+
+	// Write in a goroutine, read in main thread
+	errChan := make(chan error, 1)
+	go func() {
+		_, err := tun.WriteToUDPAddrPort(payload, targetAddr)
+		errChan <- err
+	}()
+
+	// Read back using ReadSocks5TunUDPPacket
+	readBuf := make([]byte, 2048)
+	n, _, err := protocol.ReadSocks5TunUDPPacket(nil, c2, readBuf, true)
+	if err != nil {
+		t.Fatalf("ReadSocks5TunUDPPacket error: %v", err)
+	}
+
+	// Check write completed without error
+	writeErr := <-errChan
+	if writeErr != nil {
+		t.Fatalf("WriteToUDPAddrPort error: %v", writeErr)
+	}
+
+	if n != len(payload) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload), n)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("Payload content mismatch: got %q", readBuf[:n])
+	}
+}
+
+func TestSocks5UDPClientTUN_ReadMsgUDP(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	// Write a TUN packet
+	payload := []byte("tun-read-msg-udp")
+	header := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(payload)), //nolint
+		protocol.AddrFromIP(net.ParseIP("10.20.30.40"), 2020, "udp"),
+	)
+	go func() {
+		_, _ = c2.Write(append(header, payload...))
+	}()
+
+	readBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	n, oobn, flags, udpAddr, err := tun.ReadMsgUDP(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDP error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDP returned non-zero flags: %d", flags)
+	}
+	if n != len(payload) {
+		t.Fatalf("ReadMsgUDP length mismatch: want %d got %d", len(payload), n)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("ReadMsgUDP payload mismatch: got %q", readBuf[:n])
+	}
+	if udpAddr == nil {
+		t.Fatalf("ReadMsgUDP returned nil UDP addr")
+	}
+}
+
+func TestSocks5UDPClientTUN_ReadMsgUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	// Write a TUN packet
+	payload := []byte("tun-read-msg-addrport")
+	header := protocol.AppendSocks5UDPHeader(
+		nil,
+		uint16(len(payload)), //nolint
+		protocol.AddrFromIP(net.ParseIP("50.60.70.80"), 3030, "udp"),
+	)
+	go func() {
+		_, _ = c2.Write(append(header, payload...))
+	}()
+
+	readBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	n, oobn, flags, addrPort, err := tun.ReadMsgUDPAddrPort(readBuf, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUDPAddrPort error: %v", err)
+	}
+	if oobn != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero oobn: %d", oobn)
+	}
+	if flags != 0 {
+		t.Fatalf("ReadMsgUDPAddrPort returned non-zero flags: %d", flags)
+	}
+	if n != len(payload) {
+		t.Fatalf(
+			"ReadMsgUDPAddrPort length mismatch: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("ReadMsgUDPAddrPort payload mismatch: got %q", readBuf[:n])
+	}
+	if !addrPort.Addr().IsGlobalUnicast() {
+		t.Fatalf("ReadMsgUDPAddrPort returned invalid addr: %v", addrPort)
+	}
+}
+
+func TestSocks5UDPClientTUN_WriteMsgUDP(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	oob := make([]byte, 0)
+
+	// Test with nil addr (should use Write)
+	payload := []byte("tun-write-msg-nil")
+
+	errChan := make(chan error, 1)
+	wnChan := make(chan int, 1)
+	go func() {
+		n, oobn, err := tun.WriteMsgUDP(payload, oob, nil)
+		errChan <- err
+		wnChan <- n
+		if oobn != 0 {
+			panic(fmt.Sprintf("WriteMsgUDP returned non-zero oobn: %d", oobn))
+		}
+	}()
+
+	// Read back
+	readBuf := make([]byte, 2048)
+	n, _, err := protocol.ReadSocks5TunUDPPacket(nil, c2, readBuf, true)
+	if err != nil {
+		t.Fatalf("ReadSocks5TunUDPPacket error: %v", err)
+	}
+
+	writeErr := <-errChan
+	wn := <-wnChan
+	if writeErr != nil {
+		t.Fatalf("WriteMsgUDP (nil addr) error: %v", writeErr)
+	}
+	if wn != len(payload) {
+		t.Fatalf(
+			"WriteMsgUDP returned wrong n: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+	if n != len(payload) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload), n)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("Payload content mismatch: got %q", readBuf[:n])
+	}
+
+	// Test with non-nil UDP addr (should use WriteToUDP)
+	payload2 := []byte("tun-write-msg-udp")
+	udpAddr := &net.UDPAddr{IP: net.ParseIP("100.100.100.100"), Port: 8080}
+
+	errChan2 := make(chan error, 1)
+	wnChan2 := make(chan int, 1)
+	go func() {
+		n, oobn, err := tun.WriteMsgUDP(payload2, oob, udpAddr)
+		errChan2 <- err
+		wnChan2 <- n
+		if oobn != 0 {
+			panic(fmt.Sprintf("WriteMsgUDP returned non-zero oobn: %d", oobn))
+		}
+	}()
+
+	readBuf2 := make([]byte, 2048)
+	n2, _, err := protocol.ReadSocks5TunUDPPacket(nil, c2, readBuf2, true)
+	if err != nil {
+		t.Fatalf("ReadSocks5TunUDPPacket error: %v", err)
+	}
+
+	writeErr2 := <-errChan2
+	wn2 := <-wnChan2
+	if writeErr2 != nil {
+		t.Fatalf("WriteMsgUDP (UDP addr) error: %v", writeErr2)
+	}
+	if wn2 != len(payload2) {
+		t.Fatalf(
+			"WriteMsgUDP returned wrong n: want %d got %d",
+			len(payload2),
+			n2,
+		)
+	}
+	if n2 != len(payload2) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload2), n2)
+	}
+	if string(readBuf2[:n2]) != string(payload2) {
+		t.Fatalf("Payload content mismatch: got %q", readBuf2[:n2])
+	}
+}
+
+func TestSocks5UDPClientTUN_WriteMsgUDPAddrPort(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	laddr := protocol.AddrFromHostPort("1.1.1.1:1111", "udp")
+	raddr := protocol.AddrFromHostPort("2.2.2.2:2222", "udp")
+	tun := protocol.NewSocks5UDPClientTUN(c1, laddr, &raddr, nil)
+	defer tun.Close()
+
+	targetAddr := netip.MustParseAddrPort("200.200.200.200:443")
+	payload := []byte("tun-write-msg-addrport")
+	oob := make([]byte, 0)
+
+	// Write in a goroutine, read in main thread
+	errChan := make(chan error, 1)
+	wnChan := make(chan int, 1)
+	go func() {
+		n, oobn, err := tun.WriteMsgUDPAddrPort(payload, oob, targetAddr)
+		errChan <- err
+		wnChan <- n
+		if oobn != 0 {
+			panic(
+				fmt.Sprintf(
+					"WriteMsgUDPAddrPort returned non-zero oobn: %d",
+					oobn,
+				),
+			)
+		}
+	}()
+
+	// Read back using ReadSocks5TunUDPPacket
+	readBuf := make([]byte, 2048)
+	n, _, err := protocol.ReadSocks5TunUDPPacket(nil, c2, readBuf, true)
+	if err != nil {
+		t.Fatalf("ReadSocks5TunUDPPacket error: %v", err)
+	}
+
+	writeErr := <-errChan
+	wn := <-wnChan
+	if writeErr != nil {
+		t.Fatalf("WriteMsgUDPAddrPort error: %v", writeErr)
+	}
+	if wn != len(payload) {
+		t.Fatalf(
+			"WriteMsgUDPAddrPort returned wrong n: want %d got %d",
+			len(payload),
+			n,
+		)
+	}
+	if n != len(payload) {
+		t.Fatalf("Payload mismatch: want %d got %d", len(payload), n)
+	}
+	if string(readBuf[:n]) != string(payload) {
+		t.Fatalf("Payload content mismatch: got %q", readBuf[:n])
 	}
 }
