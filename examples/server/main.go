@@ -28,9 +28,13 @@ import (
 )
 
 var (
-	tcpAddr  = flag.String("tcp-addr", "127.0.0.1:1080", "TCP listen address")
-	tlsAddr  = flag.String("tls-addr", "127.0.0.1:1081", "TLS listen address")
-	wsAddr   = flag.String("ws-addr", "127.0.0.1:1082", "WebSocket listen address")
+	tcpAddr = flag.String("tcp-addr", "127.0.0.1:1080", "TCP listen address")
+	tlsAddr = flag.String("tls-addr", "127.0.0.1:1081", "TLS listen address")
+	wsAddr  = flag.String(
+		"ws-addr",
+		"127.0.0.1:1082",
+		"WebSocket listen address",
+	)
 	username = flag.String("user", "", "Username for authentication")
 	password = flag.String("pass", "", "Password for authentication")
 )
@@ -39,7 +43,8 @@ func main() {
 	flag.Parse()
 
 	var auth *protocol.AuthHandlers = nil
-	if username != nil && password != nil && *username != "" && *password != "" {
+	if username != nil && password != nil && *username != "" &&
+		*password != "" {
 		(&protocol.AuthHandlers{}).
 			Add(&protocol.NoAuthHandler{}).
 			Add(&protocol.PassAuthHandler{
@@ -176,9 +181,16 @@ func startTCPListener(
 			defer func() { _ = c.Close() }()
 			log.Printf("TCP connection from %s", c.RemoteAddr())
 			if err := server.Accept(ctx, c, false); err != nil {
-				log.Printf("TCP connection from %s closed with error: %v", c.RemoteAddr(), err)
+				log.Printf(
+					"TCP connection from %s closed with error: %v",
+					c.RemoteAddr(),
+					err,
+				)
 			} else {
-				log.Printf("TCP connection from %s closed normally", c.RemoteAddr())
+				log.Printf(
+					"TCP connection from %s closed normally",
+					c.RemoteAddr(),
+				)
 			}
 		}(conn)
 	}
@@ -228,9 +240,16 @@ func startTLSListener(
 			defer func() { _ = c.Close() }()
 			log.Printf("TLS connection from %s", c.RemoteAddr())
 			if err := server.Accept(ctx, c, true); err != nil {
-				log.Printf("TLS connection from %s closed with error: %v", c.RemoteAddr(), err)
+				log.Printf(
+					"TLS connection from %s closed with error: %v",
+					c.RemoteAddr(),
+					err,
+				)
 			} else {
-				log.Printf("TLS connection from %s closed normally", c.RemoteAddr())
+				log.Printf(
+					"TLS connection from %s closed normally",
+					c.RemoteAddr(),
+				)
 			}
 		}(conn)
 	}
@@ -283,7 +302,13 @@ func startWSListener(
 	_ = listener.Close()
 }
 
-func handleWS(ctx context.Context, server *socksgo.Server, w http.ResponseWriter, r *http.Request, isTLS bool) {
+func handleWS(
+	ctx context.Context,
+	server *socksgo.Server,
+	w http.ResponseWriter,
+	r *http.Request,
+	isTLS bool,
+) {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -302,9 +327,16 @@ func handleWS(ctx context.Context, server *socksgo.Server, w http.ResponseWriter
 
 	log.Printf("WebSocket connection from %s", conn.RemoteAddr())
 	if err := server.AcceptWS(ctx, conn, isTLS); err != nil {
-		log.Printf("WebSocket connection from %s closed with error: %v", conn.RemoteAddr(), err)
+		log.Printf(
+			"WebSocket connection from %s closed with error: %v",
+			conn.RemoteAddr(),
+			err,
+		)
 	} else {
-		log.Printf("WebSocket connection from %s closed normally", conn.RemoteAddr())
+		log.Printf(
+			"WebSocket connection from %s closed normally",
+			conn.RemoteAddr(),
+		)
 	}
 }
 
@@ -319,9 +351,15 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 	notBefore := time.Now()
 	notAfter := notBefore.Add(365 * 24 * time.Hour) // Valid for 1 year
 
-	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serialNumber, err := rand.Int(
+		rand.Reader,
+		new(big.Int).Lsh(big.NewInt(1), 128),
+	)
 	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("serial generation failed: %w", err)
+		return tls.Certificate{}, fmt.Errorf(
+			"serial generation failed: %w",
+			err,
+		)
 	}
 
 	template := x509.Certificate{
@@ -343,9 +381,18 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 	}
 
 	// Create certificate
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	derBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&template,
+		&template,
+		&priv.PublicKey,
+		priv,
+	)
 	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("certificate creation failed: %w", err)
+		return tls.Certificate{}, fmt.Errorf(
+			"certificate creation failed: %w",
+			err,
+		)
 	}
 
 	// Encode certificate to PEM

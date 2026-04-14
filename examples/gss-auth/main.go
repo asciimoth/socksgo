@@ -17,9 +17,17 @@ import (
 )
 
 var (
-	serverAddr = flag.String("addr", "127.0.0.1:1080", "SOCKS server listen address")
-	targetURL  = flag.String("target", "http://example.com", "Target URL to fetch")
-	rounds     = flag.Int("rounds", 2, "Number of GSS token exchange rounds")
+	serverAddr = flag.String(
+		"addr",
+		"127.0.0.1:1080",
+		"SOCKS server listen address",
+	)
+	targetURL = flag.String(
+		"target",
+		"http://example.com",
+		"Target URL to fetch",
+	)
+	rounds = flag.Int("rounds", 2, "Number of GSS token exchange rounds")
 )
 
 func main() {
@@ -88,13 +96,21 @@ func runServer(ctx context.Context, addr string) {
 	}
 }
 
-func handleConnection(ctx context.Context, server *socksgo.Server, conn net.Conn) {
+func handleConnection(
+	ctx context.Context,
+	server *socksgo.Server,
+	conn net.Conn,
+) {
 	defer conn.Close()
 
 	log.Printf("New connection from %s", conn.RemoteAddr())
 
 	if err := server.Accept(ctx, conn, false); err != nil {
-		log.Printf("Connection from %s closed with error: %v", conn.RemoteAddr(), err)
+		log.Printf(
+			"Connection from %s closed with error: %v",
+			conn.RemoteAddr(),
+			err,
+		)
 	} else {
 		log.Printf("Connection from %s closed normally", conn.RemoteAddr())
 	}

@@ -16,11 +16,27 @@ import (
 )
 
 var (
-	proxyURL     = flag.String("proxy", "socks5://127.0.0.1:9050", "Tor SOCKS proxy URL")
-	numStreams   = flag.Int("streams", 3, "Number of isolated streams to test")
-	targetURL    = flag.String("url", "https://api.ipify.org?format=json", "URL to check IP address")
-	timeout      = flag.Duration("timeout", 30*time.Second, "Request timeout per stream")
-	dedicatedIDs = flag.Bool("dedicated", false, "Use dedicated isolation IDs for each stream (vs random)")
+	proxyURL = flag.String(
+		"proxy",
+		"socks5://127.0.0.1:9050",
+		"Tor SOCKS proxy URL",
+	)
+	numStreams = flag.Int("streams", 3, "Number of isolated streams to test")
+	targetURL  = flag.String(
+		"url",
+		"https://api.ipify.org?format=json",
+		"URL to check IP address",
+	)
+	timeout = flag.Duration(
+		"timeout",
+		30*time.Second,
+		"Request timeout per stream",
+	)
+	dedicatedIDs = flag.Bool(
+		"dedicated",
+		false,
+		"Use dedicated isolation IDs for each stream (vs random)",
+	)
 )
 
 type IPResponse struct {
@@ -52,7 +68,11 @@ func main() {
 			if *dedicatedIDs {
 				id := fmt.Sprintf("stream-%d", streamID)
 				isolationID = &id
-				log.Printf("stream %d: using dedicated isolation ID: %s", streamID, id)
+				log.Printf(
+					"stream %d: using dedicated isolation ID: %s",
+					streamID,
+					id,
+				)
 			} else {
 				log.Printf("stream %d: using random isolation ID", streamID)
 			}
@@ -106,7 +126,9 @@ func main() {
 	}
 
 	if allSame {
-		log.Println("All streams resolved to the same IP (isolation may not be working)")
+		log.Println(
+			"All streams resolved to the same IP (isolation may not be working)",
+		)
 	} else {
 		log.Println("Streams resolved to different IPs (isolation is working)")
 	}
@@ -116,7 +138,11 @@ func main() {
 	}
 }
 
-func fetchIP(client *socksgo.Client, targetURL string, timeout time.Duration) (string, error) {
+func fetchIP(
+	client *socksgo.Client,
+	targetURL string,
+	timeout time.Duration,
+) (string, error) {
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(dialCtx context.Context, network, addr string) (net.Conn, error) {

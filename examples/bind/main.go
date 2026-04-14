@@ -17,7 +17,11 @@ import (
 )
 
 var (
-	proxyURL = flag.String("proxy", "socks5://127.0.0.1:1080", "SOCKS proxy URL")
+	proxyURL = flag.String(
+		"proxy",
+		"socks5://127.0.0.1:1080",
+		"SOCKS proxy URL",
+	)
 )
 
 func main() {

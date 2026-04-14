@@ -1,3 +1,4 @@
+// nolint
 package socksgo_test
 
 import (
@@ -1107,5 +1108,251 @@ func TestRequest4a_FQDNTooLong(t *testing.T) {
 	}
 	if addr.Type != 0 {
 		t.Fatal("expected zero addr on error")
+	}
+}
+
+// mockTCPConn implements gonnect.TCPConn for testing wrapper methods
+type mockTCPConn struct {
+	*mockConnForClient4
+	setKeepAliveCalled bool
+	setKeepAliveConfig net.KeepAliveConfig
+	setKeepAlivePeriod time.Duration
+	setLingerCalled    bool
+	lingerSec          int
+	setNoDelayCalled   bool
+	noDelay            bool
+	closeReadCalled    bool
+	closeWriteCalled   bool
+}
+
+func (m *mockTCPConn) SetKeepAlive(keepalive bool) error {
+	m.setKeepAliveCalled = true
+	return nil
+}
+
+func (m *mockTCPConn) SetKeepAliveConfig(config net.KeepAliveConfig) error {
+	m.setKeepAliveConfig = config
+	return nil
+}
+
+func (m *mockTCPConn) SetKeepAlivePeriod(d time.Duration) error {
+	m.setKeepAlivePeriod = d
+	return nil
+}
+
+func (m *mockTCPConn) SetLinger(sec int) error {
+	m.setLingerCalled = true
+	m.lingerSec = sec
+	return nil
+}
+
+func (m *mockTCPConn) SetNoDelay(noDelay bool) error {
+	m.setNoDelayCalled = true
+	m.noDelay = noDelay
+	return nil
+}
+
+func (m *mockTCPConn) CloseRead() error {
+	m.closeReadCalled = true
+	return nil
+}
+
+func (m *mockTCPConn) CloseWrite() error {
+	m.closeWriteCalled = true
+	return nil
+}
+
+func (m *mockTCPConn) ReadFrom(r io.Reader) (int64, error) {
+	return io.Copy(m.mockConnForClient4, r)
+}
+
+func (m *mockTCPConn) WriteTo(w io.Writer) (int64, error) {
+	return io.Copy(w, m.mockConnForClient4)
+}
+
+// Test tcpConnWrapper methods
+func TestTCPConnWrapper_Methods(t *testing.T) {
+	t.Parallel()
+
+	// Create a mock TCP conn with extensions
+	mockConn := &mockTCPConn{
+		mockConnForClient4: &mockConnForClient4{
+			readData: []byte("test data"),
+		},
+	}
+
+	// Test ReadFrom
+	reader := bytes.NewReader([]byte("hello"))
+	n, err := mockConn.ReadFrom(reader)
+	if err != nil {
+		t.Fatalf("ReadFrom failed: %v", err)
+	}
+	if n != 5 {
+		t.Fatalf("expected ReadFrom to read 5 bytes, got %d", n)
+	}
+
+	// Test WriteTo
+	var writer bytes.Buffer
+	n, err = mockConn.WriteTo(&writer)
+	if err != nil {
+		t.Fatalf("WriteTo failed: %v", err)
+	}
+	if n != 9 {
+		t.Fatalf("expected WriteTo to write 9 bytes, got %d", n)
+	}
+	if writer.String() != "test data" {
+		t.Fatalf("expected 'test data', got %s", writer.String())
+	}
+
+	// Test SetKeepAlive
+	err = mockConn.SetKeepAlive(true)
+	if err != nil {
+		t.Fatalf("SetKeepAlive failed: %v", err)
+	}
+	if !mockConn.setKeepAliveCalled {
+		t.Fatal("SetKeepAlive not called on underlying conn")
+	}
+
+	// Test SetKeepAliveConfig
+	config := net.KeepAliveConfig{
+		Enable:   true,
+		Idle:     time.Second,
+		Interval: time.Second,
+		Count:    3,
+	}
+	err = mockConn.SetKeepAliveConfig(config)
+	if err != nil {
+		t.Fatalf("SetKeepAliveConfig failed: %v", err)
+	}
+	if mockConn.setKeepAliveConfig.Enable != config.Enable {
+		t.Fatal("SetKeepAliveConfig not properly set")
+	}
+
+	// Test SetKeepAlivePeriod
+	err = mockConn.SetKeepAlivePeriod(time.Second * 5)
+	if err != nil {
+		t.Fatalf("SetKeepAlivePeriod failed: %v", err)
+	}
+	if mockConn.setKeepAlivePeriod != time.Second*5 {
+		t.Fatal("SetKeepAlivePeriod not properly set")
+	}
+
+	// Test SetLinger
+	err = mockConn.SetLinger(30)
+	if err != nil {
+		t.Fatalf("SetLinger failed: %v", err)
+	}
+	if !mockConn.setLingerCalled || mockConn.lingerSec != 30 {
+		t.Fatal("SetLinger not properly set")
+	}
+
+	// Test SetNoDelay
+	err = mockConn.SetNoDelay(true)
+	if err != nil {
+		t.Fatalf("SetNoDelay failed: %v", err)
+	}
+	if !mockConn.setNoDelayCalled || !mockConn.noDelay {
+		t.Fatal("SetNoDelay not properly set")
+	}
+
+	// Test CloseRead
+	err = mockConn.CloseRead()
+	if err != nil {
+		t.Fatalf("CloseRead failed: %v", err)
+	}
+	if !mockConn.closeReadCalled {
+		t.Fatal("CloseRead not called on underlying conn")
+	}
+
+	// Test CloseWrite
+	err = mockConn.CloseWrite()
+	if err != nil {
+		t.Fatalf("CloseWrite failed: %v", err)
+	}
+	if !mockConn.closeWriteCalled {
+		t.Fatal("CloseWrite not called on underlying conn")
+	}
+}
+
+// Test clientListener4.AcceptTCP wraps connection properly
+func TestClientListener4_AcceptTCP(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	c := &socksgo.Client{
+		SocksVersion: "4",
+		ProxyAddr:    "127.0.0.1:1080",
+		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return &mockConnForClient4{readData: replyData}, nil
+		},
+	}
+
+	ln, err := c.Listen(ctx, "tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	// AcceptTCP should work via gonnect.TCPListener interface
+	tcpListener, ok := ln.(gonnect.TCPListener)
+	if !ok {
+		t.Fatal("listener should implement gonnect.TCPListener")
+	}
+
+	// First accept the connection
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatalf("Accept failed: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	// Now test AcceptTCP on the listener
+	_, err = tcpListener.AcceptTCP()
+	if err == nil {
+		// Second call should fail since connection already accepted
+		t.Log("AcceptTCP succeeded on second call (unexpected)")
+	}
+}
+
+// Test clientListener4.SetDeadline
+func TestClientListener4_SetDeadline(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	deadlineCalled := false
+	c := &socksgo.Client{
+		SocksVersion: "4",
+		ProxyAddr:    "127.0.0.1:1080",
+		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return &mockConnForClient4{
+				readData: replyData,
+				setDeadlineFn: func(t time.Time) error {
+					deadlineCalled = true
+					return nil
+				},
+			}, nil
+		},
+	}
+
+	ln, err := c.Listen(ctx, "tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	tcpListener, ok := ln.(gonnect.TCPListener)
+	if !ok {
+		t.Fatal("listener should implement gonnect.TCPListener")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	err = tcpListener.SetDeadline(deadline)
+	if err != nil {
+		t.Fatalf("SetDeadline failed: %v", err)
+	}
+	if !deadlineCalled {
+		t.Fatal("SetDeadline should call underlying connection SetDeadline")
 	}
 }

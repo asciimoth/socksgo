@@ -14,7 +14,11 @@ import (
 )
 
 var (
-	proxyURL  = flag.String("proxy", "socks5://127.0.0.1:1080", "SOCKS proxy URL")
+	proxyURL = flag.String(
+		"proxy",
+		"socks5://127.0.0.1:1080",
+		"SOCKS proxy URL",
+	)
 	targetURL = flag.String("url", "http://example.com", "Target URL to fetch")
 )
 

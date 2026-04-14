@@ -32,6 +32,7 @@ trap 'rm -f "$TEMP_FILE"' EXIT
 
 # Filter out internal test files, testhooks, and examples
 grep -v "client_testhooks.go" "$INPUT_FILE" | \
+  grep -v "client5_testhooks.go" | \
   grep -v "_internal_test.go" | \
   grep -v "examples/" > "$TEMP_FILE"
 

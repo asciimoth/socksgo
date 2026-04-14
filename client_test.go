@@ -1,3 +1,5 @@
+//go:build testhooks
+
 // nolint
 package socksgo_test
 
@@ -1092,5 +1094,24 @@ func TestClient_Listen_GostMbindSmuxError(t *testing.T) {
 	// We expect an error either from smux or from the connection
 	if err == nil {
 		t.Log("Listen succeeded (smux may have accepted the connection)")
+	}
+}
+
+// Test client.go DialUDP error path
+func TestClient_DialUDP_ErrorPath(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := &socksgo.Client{
+		SocksVersion: "5",
+		ProxyAddr:    "127.0.0.1:1080",
+		PacketDialer: func(ctx context.Context, network, address string) (gonnect.PacketConn, error) {
+			return nil, errors.New("packet dial failed")
+		},
+	}
+
+	_, err := c.DialUDP(ctx, "udp", "", "8.8.8.8:53")
+	if err == nil {
+		t.Fatal("expected error when PacketDialer fails")
 	}
 }

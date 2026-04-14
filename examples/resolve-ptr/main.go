@@ -11,9 +11,17 @@ import (
 )
 
 var (
-	proxyURL = flag.String("proxy", "socks5://127.0.0.1:1080?tor", "SOCKS proxy URL")
-	ipAddr   = flag.String("ip", "8.8.8.8", "IP address to resolve (reverse lookup)")
-	timeout  = flag.Duration("timeout", 30*time.Second, "Operation timeout")
+	proxyURL = flag.String(
+		"proxy",
+		"socks5://127.0.0.1:1080?tor",
+		"SOCKS proxy URL",
+	)
+	ipAddr = flag.String(
+		"ip",
+		"8.8.8.8",
+		"IP address to resolve (reverse lookup)",
+	)
+	timeout = flag.Duration("timeout", 30*time.Second, "Operation timeout")
 )
 
 func main() {

@@ -254,7 +254,10 @@ func TestClient_Listen_UnknownVersion_WithHook(t *testing.T) {
 		address protocol.Addr,
 	) (net.Conn, protocol.Addr, bool) {
 		if cmd == protocol.CmdBind {
-			return mockConn, protocol.AddrFromHostPort("127.0.0.1:0", "tcp"), true
+			return mockConn, protocol.AddrFromHostPort(
+				"127.0.0.1:0",
+				"tcp",
+			), true
 		}
 		return nil, protocol.Addr{}, false
 	}
@@ -282,5 +285,121 @@ func TestClient_Listen_UnknownVersion_WithHook(t *testing.T) {
 	// Verify connection was closed via hook
 	if !mockConn.closed {
 		t.Error("Expected connection to be closed on unknown version error")
+	}
+}
+
+// Test hooks setter/getter functions
+// NOTE: Not parallel - modifies global test hooks state
+func TestTestHooks_SetAndGet(t *testing.T) {
+	// Test SetTestLookupIPHook / GetTestLookupIPHook
+	hook := func(addr protocol.Addr) protocol.Addr {
+		return addr
+	}
+
+	oldHook := GetTestLookupIPHook()
+	SetTestLookupIPHook(hook)
+	if GetTestLookupIPHook() == nil {
+		t.Fatal("GetTestLookupIPHook should return set hook")
+	}
+
+	// Restore
+	SetTestLookupIPHook(oldHook)
+
+	// Test SetTestLookupAddrHook / GetTestLookupAddrHook
+	addrHook := func(addr protocol.Addr) protocol.Addr {
+		return addr
+	}
+	oldAddrHook := GetTestLookupAddrHook()
+	SetTestLookupAddrHook(addrHook)
+	if GetTestLookupAddrHook() == nil {
+		t.Fatal("GetTestLookupAddrHook should return set hook")
+	}
+	SetTestLookupAddrHook(oldAddrHook)
+
+	// Test SetTestListenSmuxHook / GetTestListenSmuxHook
+	smuxHook := func() error { return nil }
+	oldSmuxHook := GetTestListenSmuxHook()
+	SetTestListenSmuxHook(smuxHook)
+	if GetTestListenSmuxHook() == nil {
+		t.Fatal("GetTestListenSmuxHook should return set hook")
+	}
+	SetTestListenSmuxHook(oldSmuxHook)
+
+	// Test SetTestListenCloseHook / GetTestListenCloseHook
+	closeHook := func(conn net.Conn) { _ = conn.Close() }
+	oldCloseHook := GetTestListenCloseHook()
+	SetTestListenCloseHook(closeHook)
+	if GetTestListenCloseHook() == nil {
+		t.Fatal("GetTestListenCloseHook should return set hook")
+	}
+	SetTestListenCloseHook(oldCloseHook)
+
+	// Test SetTestRequestHook / GetTestRequestHook
+	reqHook := func(ctx context.Context, cmd protocol.Cmd, addr protocol.Addr) (net.Conn, protocol.Addr, bool) {
+		return nil, protocol.Addr{}, false
+	}
+	oldReqHook := GetTestRequestHook()
+	SetTestRequestHook(reqHook)
+	if GetTestRequestHook() == nil {
+		t.Fatal("GetTestRequestHook should return set hook")
+	}
+	SetTestRequestHook(oldReqHook)
+}
+
+// Test TestAddrFromFQDN and TestAddrFromIP helpers
+func TestTestAddrHelpers(t *testing.T) {
+	t.Parallel()
+
+	// Test TestAddrFromFQDN
+	addr := TestAddrFromFQDN("example.com", 80, "tcp")
+	if addr.Type != protocol.FQDNAddr {
+		t.Fatalf("expected FQDNAddr, got %d", addr.Type)
+	}
+	if addr.ToFQDN() != "example.com" {
+		t.Fatalf("expected example.com, got %s", addr.ToFQDN())
+	}
+	if addr.Port != 80 {
+		t.Fatalf("expected port 80, got %d", addr.Port)
+	}
+
+	// Test TestAddrFromIP
+	ip := net.ParseIP("192.168.1.1")
+	addr2 := TestAddrFromIP(ip, 443, "tcp")
+	if addr2.Type != protocol.IP4Addr && addr2.Type != protocol.IP6Addr {
+		t.Fatalf("expected IP type, got %d", addr2.Type)
+	}
+	if !addr2.ToIP().Equal(ip) {
+		t.Fatalf("expected %v, got %v", ip, addr2.ToIP())
+	}
+	if addr2.Port != 443 {
+		t.Fatalf("expected port 443, got %d", addr2.Port)
+	}
+}
+
+// Test ResetTestHooks
+// NOTE: Not parallel - modifies global test hooks state
+func TestResetTestHooks(t *testing.T) {
+	// Set some hooks
+	SetTestLookupIPHook(func(addr protocol.Addr) protocol.Addr {
+		return protocol.Addr{}
+	})
+
+	// Reset them
+	ResetTestHooks()
+
+	// Verify they're reset (should not panic or error)
+	hook := GetTestLookupIPHook()
+	if hook == nil {
+		t.Fatal("hook should not be nil after reset")
+	}
+
+	// Test the reset hook works
+	addr := TestAddrFromFQDN("test.com", 80, "tcp")
+	result := hook(addr)
+	if result.ToFQDN() != "test.com" {
+		t.Fatalf(
+			"expected default hook to return addr unchanged, got %s",
+			result.ToFQDN(),
+		)
 	}
 }

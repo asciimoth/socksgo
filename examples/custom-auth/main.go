@@ -21,9 +21,21 @@ import (
 )
 
 var (
-	serverAddr = flag.String("addr", "127.0.0.1:1080", "SOCKS server listen address")
-	targetURL  = flag.String("target", "http://example.com", "Target URL to fetch")
-	authToken  = flag.String("token", "secret-token", "Shared authentication token")
+	serverAddr = flag.String(
+		"addr",
+		"127.0.0.1:1080",
+		"SOCKS server listen address",
+	)
+	targetURL = flag.String(
+		"target",
+		"http://example.com",
+		"Target URL to fetch",
+	)
+	authToken = flag.String(
+		"token",
+		"secret-token",
+		"Shared authentication token",
+	)
 )
 
 const (
@@ -91,13 +103,21 @@ func runServer(ctx context.Context, addr, token string) {
 	}
 }
 
-func handleConnection(ctx context.Context, server *socksgo.Server, conn net.Conn) {
+func handleConnection(
+	ctx context.Context,
+	server *socksgo.Server,
+	conn net.Conn,
+) {
 	defer conn.Close()
 
 	log.Printf("New connection from %s", conn.RemoteAddr())
 
 	if err := server.Accept(ctx, conn, false); err != nil {
-		log.Printf("Connection from %s closed with error: %v", conn.RemoteAddr(), err)
+		log.Printf(
+			"Connection from %s closed with error: %v",
+			conn.RemoteAddr(),
+			err,
+		)
 	} else {
 		log.Printf("Connection from %s closed normally", conn.RemoteAddr())
 	}
@@ -177,7 +197,10 @@ func (m *CustomAuthMethod) Code() protocol.AuthMethodCode {
 	return customAuthMethodCode
 }
 
-func (m *CustomAuthMethod) RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, protocol.AuthInfo, error) {
+func (m *CustomAuthMethod) RunAuth(
+	conn net.Conn,
+	pool bufpool.Pool,
+) (net.Conn, protocol.AuthInfo, error) {
 	info := protocol.AuthInfo{
 		Code: m.Code(),
 		Name: m.Name(),
@@ -216,7 +239,10 @@ func (h *CustomAuthHandler) Code() protocol.AuthMethodCode {
 	return customAuthMethodCode
 }
 
-func (h *CustomAuthHandler) HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, protocol.AuthInfo, error) {
+func (h *CustomAuthHandler) HandleAuth(
+	conn net.Conn,
+	pool bufpool.Pool,
+) (net.Conn, protocol.AuthInfo, error) {
 	info := protocol.AuthInfo{
 		Code: h.Code(),
 		Name: h.Name(),

@@ -86,7 +86,8 @@ func main() {
 
 	fmt.Printf(
 		"Try with: curl --cacert %s -4 --proxy socks5h://%s https://example.com/\n",
-		crtFile, *tcpAddr,
+		crtFile,
+		*tcpAddr,
 	)
 
 	sig := <-sigCh
@@ -118,7 +119,10 @@ func startHttpServer(l net.Listener) {
 	log.Println("stopping http server")
 }
 
-func buildHandler(l *Listener, ca *CertAuthority) map[protocol.Cmd]socksgo.CommandHandler {
+func buildHandler(
+	l *Listener,
+	ca *CertAuthority,
+) map[protocol.Cmd]socksgo.CommandHandler {
 	handler := socksgo.CommandHandler{
 		Socks4:    true,
 		Socks5:    true,
@@ -255,7 +259,10 @@ type CertAuthority struct {
 	caCert *x509.Certificate
 }
 
-func (ca *CertAuthority) Accept(conn net.Conn, addr protocol.Addr) (*tls.Conn, error) {
+func (ca *CertAuthority) Accept(
+	conn net.Conn,
+	addr protocol.Addr,
+) (*tls.Conn, error) {
 	host := addr.ToFQDN()
 	cert, err := ca.gen(host)
 	if err != nil {
@@ -290,7 +297,13 @@ func (ca *CertAuthority) gen(host string) (*tls.Certificate, error) {
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:     []string{host},
 	}
-	certBytes, _ := x509.CreateCertificate(rand.Reader, &template, ca.caCert, &priv.PublicKey, ca.cert.PrivateKey)
+	certBytes, _ := x509.CreateCertificate(
+		rand.Reader,
+		&template,
+		ca.caCert,
+		&priv.PublicKey,
+		ca.cert.PrivateKey,
+	)
 	return &tls.Certificate{
 		Certificate: [][]byte{certBytes, ca.caCert.Raw},
 		PrivateKey:  priv,

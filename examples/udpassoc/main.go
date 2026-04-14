@@ -12,7 +12,11 @@ import (
 )
 
 var (
-	proxyURL = flag.String("proxy", "socks5://127.0.0.1:1080", "SOCKS proxy URL")
+	proxyURL = flag.String(
+		"proxy",
+		"socks5://127.0.0.1:1080",
+		"SOCKS proxy URL",
+	)
 	hostname = flag.String("host", "example.com", "Hostname to resolve")
 	timeout  = flag.Duration("timeout", 30*time.Second, "Operation timeout")
 )

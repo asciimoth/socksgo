@@ -38,7 +38,9 @@ func main() {
 
 	// Create Server A (front server) - chains to Server B
 	// First create a client that connects to Server B
-	clientB, err := socksgo.ClientFromURL(fmt.Sprintf("socks5://%s", *serverBAddr))
+	clientB, err := socksgo.ClientFromURL(
+		fmt.Sprintf("socks5://%s", *serverBAddr),
+	)
 	if err != nil {
 		log.Fatalf("failed to create client for Server B: %v", err)
 	}
@@ -48,7 +50,8 @@ func main() {
 
 	// Set up authentication for both servers if credentials provided
 	var auth *protocol.AuthHandlers = nil
-	if username != nil && password != nil && *username != "" && *password != "" {
+	if username != nil && password != nil && *username != "" &&
+		*password != "" {
 		auth = (&protocol.AuthHandlers{}).
 			Add(&protocol.NoAuthHandler{}).
 			Add(&protocol.PassAuthHandler{

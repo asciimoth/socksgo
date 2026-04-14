@@ -17,8 +17,16 @@ const (
 )
 
 var (
-	proxyURL = flag.String("proxy", "socks5://127.0.0.1:1080", "SOCKS proxy URL")
-	payload  = flag.String("payload", "custom message", "Message to send with the command")
+	proxyURL = flag.String(
+		"proxy",
+		"socks5://127.0.0.1:1080",
+		"SOCKS proxy URL",
+	)
+	payload = flag.String(
+		"payload",
+		"custom message",
+		"Message to send with the command",
+	)
 )
 
 func main() {

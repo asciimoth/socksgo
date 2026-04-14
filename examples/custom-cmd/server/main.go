@@ -61,8 +61,16 @@ func main() {
 		go func(c net.Conn) {
 			defer func() { _ = c.Close() }()
 			log.Printf("Connection from %s", c.RemoteAddr())
-			if err := server.Accept(context.Background(), c, false); err != nil {
-				log.Printf("Connection from %s closed with error: %v", c.RemoteAddr(), err)
+			if err := server.Accept(
+				context.Background(),
+				c,
+				false,
+			); err != nil {
+				log.Printf(
+					"Connection from %s closed with error: %v",
+					c.RemoteAddr(),
+					err,
+				)
 			} else {
 				log.Printf("Connection from %s closed normally", c.RemoteAddr())
 			}
