@@ -145,7 +145,7 @@ var DefaultGostMBindHandler = CommandHandler{
 				break
 			}
 			wg.Go(func() {
-				_ = protocol.PipeConn(inc, stream)
+				_ = helpers.PipeConn(inc, stream)
 			})
 		}
 		wg.Wait()
