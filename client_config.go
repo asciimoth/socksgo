@@ -19,8 +19,7 @@ import (
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
-	cws "github.com/coder/websocket"
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 // Tor stream isolation constants.
@@ -88,11 +87,6 @@ func (a *wsBufferPoolAdapter) Put(x any) {
 //   - Client.WebSocketURL: Enable WebSocket transport
 //   - github.com/gorilla/websocket: Underlying WebSocket library
 type WebSocketConfig struct {
-	// ReadBufferSize is the buffer size for WebSocket reads.
-	//
-	// If zero, websocket.DefaultDialer.ReadBufferSize is used.
-	ReadBufferSize int
-
 	// Subprotocols is the list of WebSocket subprotocols to negotiate.
 	//
 	// If nil, websocket.DefaultDialer.Subprotocols is used.
@@ -116,28 +110,21 @@ type WebSocketConfig struct {
 
 func (w *WebSocketConfig) jar() http.CookieJar {
 	if w == nil {
-		return websocket.DefaultDialer.Jar
+		return http.DefaultClient.Jar
 	}
 	return w.Jar
 }
 
-func (w *WebSocketConfig) readBufferSize() int {
-	if w == nil {
-		return websocket.DefaultDialer.ReadBufferSize
-	}
-	return w.ReadBufferSize
-}
-
 func (w *WebSocketConfig) subprotocols() []string {
 	if w == nil {
-		return websocket.DefaultDialer.Subprotocols
+		return nil
 	}
 	return w.Subprotocols
 }
 
 func (w *WebSocketConfig) enableCompression() bool {
 	if w == nil {
-		return websocket.DefaultDialer.EnableCompression
+		return false
 	}
 	return w.EnableCompression
 }
@@ -504,7 +491,7 @@ func (c *Client) GetHandshakeTimeout() time.Duration {
 //
 //   - WebSocketConfig: WebSocket configuration options
 //   - github.com/coder/websocket: Underlying WebSocket library
-func (c *Client) GetWsDialer() *cws.DialOptions {
+func (c *Client) GetWsDialer() *websocket.DialOptions {
 	if c.WebSocketURL == "" {
 		return nil
 	}
@@ -526,19 +513,19 @@ func (c *Client) GetWsDialer() *cws.DialOptions {
 	}
 
 	// Configure compression
-	compressionMode := cws.CompressionDisabled
+	compressionMode := websocket.CompressionDisabled
 	var httpHeader http.Header
 	var subprotocols []string
 
 	if c.WebSocketConfig != nil {
 		if c.WebSocketConfig.enableCompression() {
-			compressionMode = cws.CompressionContextTakeover
+			compressionMode = websocket.CompressionContextTakeover
 		}
 		httpHeader = c.WebSocketConfig.RequestHeader
 		subprotocols = c.WebSocketConfig.subprotocols()
 	}
 
-	return &cws.DialOptions{
+	return &websocket.DialOptions{
 		HTTPClient:      httpClient,
 		HTTPHeader:      httpHeader,
 		Subprotocols:    subprotocols,
@@ -573,7 +560,7 @@ func (c *Client) GetWsDialer() *cws.DialOptions {
 func (c *Client) connectWebSocket(
 	ctx context.Context,
 ) (conn net.Conn, err error) {
-	ws, resp, err := cws.Dial(ctx, c.WebSocketURL, c.GetWsDialer())
+	ws, resp, err := websocket.Dial(ctx, c.WebSocketURL, c.GetWsDialer())
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +569,7 @@ func (c *Client) connectWebSocket(
 	}
 
 	return &wsCoderConn{
-		Conn: cws.NetConn(ctx, ws, cws.MessageBinary),
+		Conn: websocket.NetConn(ctx, ws, websocket.MessageBinary),
 	}, nil
 }
 

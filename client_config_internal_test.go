@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/asciimoth/bufpool"
-	"github.com/gorilla/websocket"
 )
 
 // Test wsBufferPoolAdapter.Get with nil pool
@@ -86,56 +85,13 @@ func TestWsBufferPoolAdapter_Put_ByteSlice(t *testing.T) {
 	adapter.Put(buf)
 }
 
-// Test WebSocketConfig methods with nil receiver
-func TestWebSocketConfigMethods_NilReceiver(t *testing.T) {
-	t.Parallel()
-
-	var cfg *WebSocketConfig
-
-	// jar() with nil receiver should return websocket.DefaultDialer.Jar
-	if got := cfg.jar(); got != websocket.DefaultDialer.Jar {
-		t.Fatalf("jar() with nil receiver expected DefaultDialer.Jar")
-	}
-
-	// readBufferSize() with nil receiver should return DefaultDialer.ReadBufferSize
-	if got := cfg.readBufferSize(); got != websocket.DefaultDialer.ReadBufferSize {
-		t.Fatalf(
-			"readBufferSize() with nil receiver expected DefaultDialer.ReadBufferSize, got %d",
-			got,
-		)
-	}
-
-	// subprotocols() with nil receiver should return DefaultDialer.Subprotocols
-	if got := cfg.subprotocols(); !reflect.DeepEqual(
-		got,
-		websocket.DefaultDialer.Subprotocols,
-	) {
-		t.Fatalf(
-			"subprotocols() with nil receiver expected DefaultDialer.Subprotocols, got %v",
-			got,
-		)
-	}
-
-	// enableCompression() with nil receiver should return DefaultDialer.EnableCompression
-	if got := cfg.enableCompression(); got != websocket.DefaultDialer.EnableCompression {
-		t.Fatalf(
-			"enableCompression() with nil receiver expected DefaultDialer.EnableCompression",
-		)
-	}
-}
-
 // Test WebSocketConfig methods with non-nil receiver
 func TestWebSocketConfigMethods_NonNilReceiver(t *testing.T) {
 	t.Parallel()
 
 	cfg := &WebSocketConfig{
-		ReadBufferSize:    12345,
 		Subprotocols:      []string{"a", "b"},
 		EnableCompression: true,
-	}
-
-	if got := cfg.readBufferSize(); got != 12345 {
-		t.Fatalf("readBufferSize() expected 12345, got %d", got)
 	}
 
 	if got := cfg.subprotocols(); !reflect.DeepEqual(got, []string{"a", "b"}) {

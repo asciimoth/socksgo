@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/asciimoth/socksgo"
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 func connID(conn net.Conn) string {
@@ -42,19 +42,19 @@ func runWSServer(
 ) (func(), net.Addr, error) {
 	ctx, ctx_cancel := context.WithCancel(context.Background())
 
-	upgrader := websocket.Upgrader{}
-
 	var wg sync.WaitGroup
 	stopped := false
 	var mu sync.Mutex
 	sessions := map[string]*websocket.Conn{}
 	addSession := func(conn *websocket.Conn) {
-		sessions[connID(conn.NetConn())] = conn
+		netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+		sessions[connID(netConn)] = conn
 	}
 	rmSession := func(conn *websocket.Conn) {
 		mu.Lock()
 		defer mu.Unlock()
-		delete(sessions, connID(conn.NetConn()))
+		netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+		delete(sessions, connID(netConn))
 	}
 	cancel := func() {
 		mu.Lock()
@@ -62,17 +62,17 @@ func runWSServer(
 		stopped = true
 		ctx_cancel()
 		for _, v := range sessions {
-			_ = v.Close()
+			_ = v.Close(websocket.StatusNormalClosure, "")
 		}
 		sessions = map[string]*websocket.Conn{}
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := upgrader.Upgrade(w, r, nil)
+		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = c.Close() }()
+		defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
 		mu.Lock()
 		if stopped {
 			mu.Unlock()

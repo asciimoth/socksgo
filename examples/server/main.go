@@ -24,7 +24,7 @@ import (
 
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 var (
@@ -309,33 +309,28 @@ func handleWS(
 	r *http.Request,
 	isTLS bool,
 ) {
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		// Allow all origins for demo purposes
-		// In production, implement proper origin checking
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+	opts := &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := websocket.Accept(w, r, opts)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
+	defer conn.Close(websocket.StatusInternalError, "")
 
-	log.Printf("WebSocket connection from %s", conn.RemoteAddr())
+	log.Printf("WebSocket connection from %s", r.RemoteAddr)
 	if err := server.AcceptWS(ctx, conn, isTLS); err != nil {
 		log.Printf(
 			"WebSocket connection from %s closed with error: %v",
-			conn.RemoteAddr(),
+			r.RemoteAddr,
 			err,
 		)
 	} else {
 		log.Printf(
 			"WebSocket connection from %s closed normally",
-			conn.RemoteAddr(),
+			r.RemoteAddr,
 		)
 	}
 }

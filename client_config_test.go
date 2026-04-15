@@ -59,16 +59,12 @@ func TestWebSocketConfigMethodsNilAndNonNil(t *testing.T) {
 	// non-nil values are returned
 	jar, _ := cookiejar.New(nil)
 	cfg := &socksgo.WebSocketConfig{
-		ReadBufferSize:    12345,
 		Subprotocols:      []string{"a", "b"},
 		EnableCompression: true,
 		Jar:               jar,
 	}
 	if got := cfg.Jar; got != jar {
 		t.Fatalf("jar() expected %v got %v", jar, got)
-	}
-	if got := cfg.ReadBufferSize; got != 12345 {
-		t.Fatalf("readBufferSize expected 12345 got %d", got)
 	}
 	if !equalStringSlices(cfg.Subprotocols, []string{"a", "b"}) {
 		t.Fatalf("subprotocols mismatch")
@@ -274,7 +270,6 @@ func TestGetResolver_GetTLSConfig_GetHandshakeTimeout_GetWsDialer(
 	// When WebSocketURL set, ensure Dialer fields come from config
 	jar, _ := cookiejar.New(nil)
 	wsCfg := &socksgo.WebSocketConfig{
-		ReadBufferSize:    999,
 		Subprotocols:      []string{"p1"},
 		EnableCompression: true,
 		Jar:               jar,

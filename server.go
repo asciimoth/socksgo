@@ -13,7 +13,7 @@ import (
 	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/ident"
 	"github.com/asciimoth/socksgo/protocol"
-	"github.com/gorilla/websocket"
+	cws "github.com/coder/websocket"
 	"github.com/xtaci/smux"
 )
 
@@ -259,7 +259,7 @@ type Server struct {
 // # Parameters
 //
 //   - ctx: Context for cancellation and timeouts
-//   - conn: WebSocket connection from gorilla/websocket
+//   - conn: WebSocket connection from coder/websocket
 //   - isTLS: true if connection is encrypted (WSS)
 //
 // # Thread Safety
@@ -270,21 +270,20 @@ type Server struct {
 //
 //	// WebSocket server
 //	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-//	    conn, _ := websocket.Upgrade(w, r, nil, 1024, 1024)
+//	    conn, _ := websocket.Accept(w, r, nil)
 //	    go server.AcceptWS(r.Context(), conn, r.TLS != nil)
 //	})
 //
 // # See Also
 //
 //   - Accept: Accept TCP connections
-//   - wsConn: WebSocket connection wrapper
 func (s *Server) AcceptWS(
 	ctx context.Context,
-	conn *websocket.Conn,
+	conn *cws.Conn,
 	isTLS bool,
 ) error {
-	return s.Accept(ctx, &wsConn{
-		Conn: conn,
+	return s.Accept(ctx, &wsCoderConn{
+		Conn: cws.NetConn(ctx, conn, cws.MessageBinary),
 	}, isTLS)
 }
 
