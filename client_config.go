@@ -19,6 +19,7 @@ import (
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
+	cws "github.com/coder/websocket"
 	"github.com/gorilla/websocket"
 )
 
@@ -482,44 +483,67 @@ func (c *Client) GetHandshakeTimeout() time.Duration {
 	return c.HandshakeTimeout
 }
 
-// GetWsDialer builds the WebSocket dialer for SOCKS over WS.
+// GetWsDialer builds the WebSocket dialer options for SOCKS over WS.
 //
-// GetWsDialer creates a websocket.Dialer configured from WebSocketConfig,
+// GetWsDialer creates coder/websocket.DialOptions configured from WebSocketConfig,
 // GetDialer, and GetTLSConfig. Returns nil if WebSocketURL is empty.
 //
 // # Configuration
 //
 // The dialer is configured with:
-//   - NetDialContext: From GetDialer()
-//   - TLSClientConfig: From GetTLSConfig()
-//   - WriteBufferPool: Uses client's Pool
-//   - HandshakeTimeout: From GetHandshakeTimeout()
-//   - ReadBufferSize, Subprotocols, etc.: From WebSocketConfig
+//   - HTTPClient: Uses custom Dialer via Transport for TCP connections
+//   - Subprotocols: From WebSocketConfig
+//   - CompressionMode: From WebSocketConfig.EnableCompression
+//   - HTTPHeader: From WebSocketConfig.RequestHeader
 //
 // # Returns
 //
-// *websocket.Dialer for WebSocket connections, or nil if WebSocketURL is empty.
+// *websocket.DialOptions for WebSocket connections, or nil if WebSocketURL is empty.
 //
 // # See Also
 //
 //   - WebSocketConfig: WebSocket configuration options
-//   - github.com/gorilla/websocket: Underlying WebSocket library
-func (c *Client) GetWsDialer() *websocket.Dialer {
+//   - github.com/coder/websocket: Underlying WebSocket library
+func (c *Client) GetWsDialer() *cws.DialOptions {
 	if c.WebSocketURL == "" {
 		return nil
 	}
-	dialer := &websocket.Dialer{
-		NetDialContext:  c.GetDialer(),
-		TLSClientConfig: c.GetTLSConfig(),
-		WriteBufferPool: &wsBufferPoolAdapter{pool: c.Pool},
 
-		HandshakeTimeout:  c.GetHandshakeTimeout(),
-		ReadBufferSize:    c.WebSocketConfig.readBufferSize(),
-		Subprotocols:      c.WebSocketConfig.subprotocols(),
-		EnableCompression: c.WebSocketConfig.enableCompression(),
-		Jar:               c.WebSocketConfig.jar(),
+	httpClient := &http.Client{
+		Jar: c.WebSocketConfig.jar(),
 	}
-	return dialer
+	tlsConfig := c.GetTLSConfig()
+
+	if tlsConfig != nil || c.Dialer != nil {
+		transport := &http.Transport{}
+		if c.Dialer != nil {
+			transport.DialContext = c.Dialer
+		}
+		if tlsConfig != nil {
+			transport.TLSClientConfig = tlsConfig
+		}
+		httpClient.Transport = transport
+	}
+
+	// Configure compression
+	compressionMode := cws.CompressionDisabled
+	var httpHeader http.Header
+	var subprotocols []string
+
+	if c.WebSocketConfig != nil {
+		if c.WebSocketConfig.enableCompression() {
+			compressionMode = cws.CompressionContextTakeover
+		}
+		httpHeader = c.WebSocketConfig.RequestHeader
+		subprotocols = c.WebSocketConfig.subprotocols()
+	}
+
+	return &cws.DialOptions{
+		HTTPClient:      httpClient,
+		HTTPHeader:      httpHeader,
+		Subprotocols:    subprotocols,
+		CompressionMode: compressionMode,
+	}
 }
 
 // connectWebSocket establishes a WebSocket connection to the proxy.
@@ -549,22 +573,16 @@ func (c *Client) GetWsDialer() *websocket.Dialer {
 func (c *Client) connectWebSocket(
 	ctx context.Context,
 ) (conn net.Conn, err error) {
-	var header http.Header
-	if c.WebSocketConfig != nil {
-		header = c.WebSocketConfig.RequestHeader
-	}
-	ws, resp, err := c.GetWsDialer().DialContext(
-		ctx,
-		c.WebSocketURL,
-		header,
-	)
+	ws, resp, err := cws.Dial(ctx, c.WebSocketURL, c.GetWsDialer())
 	if err != nil {
 		return nil, err
 	}
-	_ = resp.Body.Close()
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 
-	return &wsConn{
-		Conn: ws,
+	return &wsCoderConn{
+		Conn: cws.NetConn(ctx, ws, cws.MessageBinary),
 	}, nil
 }
 

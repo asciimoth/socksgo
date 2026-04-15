@@ -13,3 +13,5 @@ require github.com/asciimoth/bufpool v0.3.0
 require github.com/asciimoth/ident v0.2.0
 
 require github.com/asciimoth/putback v0.2.0
+
+require github.com/coder/websocket v1.8.14

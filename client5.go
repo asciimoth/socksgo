@@ -88,10 +88,13 @@ func (c *Client) request5(
 
 	// Use server host:port if returned one is 0.0.0.0
 	if addr.IsUnspecified() {
-		proxyAddr := protocol.AddrFromNetAddr(proxy.RemoteAddr())
-		proxyAddr.NetTyp = addr.NetTyp
-		proxyAddr.Port = addr.Port
-		addr = proxyAddr
+		raddr := proxy.RemoteAddr()
+		if raddr != nil && raddr.Network() != "websocket" {
+			proxyAddr := protocol.AddrFromNetAddr(raddr)
+			proxyAddr.NetTyp = addr.NetTyp
+			proxyAddr.Port = addr.Port
+			addr = proxyAddr
+		}
 	}
 
 	return

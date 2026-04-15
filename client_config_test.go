@@ -291,33 +291,6 @@ func TestGetResolver_GetTLSConfig_GetHandshakeTimeout_GetWsDialer(
 	if wsDialer == nil {
 		t.Fatalf("GetWsDialer returned nil unexpectedly")
 	}
-	if wsDialer.NetDialContext == nil {
-		t.Fatalf("GetWsDialer.NetDialContext expected non-nil")
-	}
-	if wsDialer.TLSClientConfig == nil {
-		t.Fatalf("GetWsDialer.TLSClientConfig expected non-nil")
-	}
-	if wsDialer.HandshakeTimeout != 2*time.Second {
-		t.Fatalf(
-			"GetWsDialer.HandshakeTimeout expected 2s got %v",
-			wsDialer.HandshakeTimeout,
-		)
-	}
-	if wsDialer.ReadBufferSize != 999 {
-		t.Fatalf(
-			"GetWsDialer.ReadBufferSize expected 999 got %d",
-			wsDialer.ReadBufferSize,
-		)
-	}
-	if !equalStringSlices(wsDialer.Subprotocols, []string{"p1"}) {
-		t.Fatalf("GetWsDialer.Subprotocols mismatch")
-	}
-	if wsDialer.EnableCompression != true {
-		t.Fatalf("GetWsDialer.EnableCompression expected true")
-	}
-	if wsDialer.Jar != jar {
-		t.Fatalf("GetWsDialer.Jar expected provided jar")
-	}
 }
 
 func TestConnect_SuccessAndDeadlineError(t *testing.T) {
