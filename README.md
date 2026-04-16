@@ -1,5 +1,5 @@
 # socksgo
-[![Go Reference](https://pkg.go.dev/badge/github.com/asciimoth/socksgo.svg)](https://pkg.go.dev/github.com/asciimoth/socksgo) [![Coverage Status](https://coveralls.io/repos/github/asciimoth/socksgo/badge.svg?branch=master)](https://coveralls.io/github/asciimoth/socksgo?branch=master)  
+[![Go Reference](https://pkg.go.dev/badge/github.com/asciimoth/socksgo.svg)](https://pkg.go.dev/github.com/asciimoth/socksgo) [![Coverage Status](https://coveralls.io/repos/github/asciimoth/socksgo/badge.svg)](https://coveralls.io/github/asciimoth/socksgo?branch=master)  
 The most complete, compatible, featured and extensible SOCKS library for Go. Check [comparison](#comparison).  
 Now with [WASM + socks-over-websocket support](https://asciimoth.github.io/socksgo/)!
 
@@ -116,6 +116,7 @@ See the [examples](./examples) directory for more usage patterns:
 - [tor-isolation](./examples/tor-isolation) - Tor streams isolation
 - [resolve](./examples/resolve) - Tor Resolve extension
 - [resolve-ptr](./examples/resolve-ptr) - Tor ResolvePtr extension
+- [webdemo](./webdemo) - Socks go on WASM target with socks-over-websocket
 
 
 ## TODO
