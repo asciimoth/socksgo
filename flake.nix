@@ -62,6 +62,10 @@
           gopls
           pkgsite
 
+          #nodejs # for wasm builds testing
+          python3 # for local dev http server
+          just
+
           gost
           curl
           tor

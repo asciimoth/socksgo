@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOCKS WebSocket WASM Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .container {
+            background-color: #1e1e1e;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #ffffff;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #b0b0b0;
+        }
+        input[type="text"], input[type="url"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: monospace;
+            font-size: 14px;
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+        }
+        button {
+            background-color: #0d6efd;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #0b5ed7;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.ready {
+            background-color: #155724;
+            color: #d4edda;
+        }
+        .status.loading {
+            background-color: #856404;
+            color: #fff3cd;
+        }
+        .status.error {
+            background-color: #721c24;
+            color: #f8d7da;
+        }
+        .status.success {
+            background-color: #155724;
+            color: #d4edda;
+        }
+        .result {
+            margin-top: 20px;
+        }
+        #result {
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 15px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            color: #e0e0e0;
+        }
+        .note {
+            background-color: #0d253f;
+            border-left: 4px solid #0d6efd;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .note h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #0d6efd;
+        }
+        .note ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .note li {
+            margin-bottom: 5px;
+        }
+
+        code {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+        }
+        a {
+            color: #0d6efd;
+        }
+        a:hover {
+            color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+      <h1><b>Socksgo</b> WASM Demo</h1>
+        <div class="note">
+            <h3>Socksgo</h3>
+            <a href="https://github.com/asciimoth/socksgo">socksgo</a>
+            is the most complete, compatible, featured and extensible
+            <a href="https://en.wikipedia.org/wiki/SOCKS">socks</a>
+            library for go.
+            <br>
+            And above other
+            <a href="https://github.com/asciimoth/socksgo/?tab=readme-ov-file#features">features</a>
+            it supports
+            <a href="https://webassembly.org/">WASM</a>
+            builds and socks-over-websocket protocol extension.
+        </div>
+
+        <div class="note">
+            <h3>Prerequisites</h3>
+            <ul>
+                <li>A socks5 server with socks-over-websocket extension support must be running</li>
+                <li>You can start compatible <a href="https://gost.run/en/tutorials/protocols/socks/#socks-over-tls">gost</a> server with: <code>just start-proxy</code> or <code>gost -L socks5+ws://localhost:1080</code></li>
+                <li>Example socks-over-webSocket URL: <code>socks5+ws://localhost:1080</code></li>
+            </ul>
+        </div>
+
+        <div class="form-group">
+            <label for="wsUrl">WebSocket SOCKS Proxy URL:</label>
+            <input type="text" id="wsUrl" placeholder="socsk5+ws://localhost:1080" value="socks5+ws://localhost:1080">
+        </div>
+
+        <div class="form-group">
+            <label for="targetUrl">Target URL:</label>
+            <input type="url" id="targetUrl" placeholder="http://example.com" value="http://example.com">
+        </div>
+
+        <button id="makeRequest" onclick="handleRequest()" disabled>Make Request</button>
+
+        <div class="status ready" id="status">Loading WASM module...</div>
+
+        <div class="result">
+            <label for="result">Response:</label>
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <script src="wasm_exec.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

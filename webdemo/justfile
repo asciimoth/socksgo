@@ -1,0 +1,36 @@
+# Build WebAssembly module
+build:
+    @echo "Building WebAssembly module..."
+    GOOS=js GOARCH=wasm go build -o main.wasm main.go
+    @echo "Copying wasm_exec.js..."
+    @if [ -f "$(go env GOROOT)/misc/wasm/wasm_exec.js" ]; then \
+        cp -f "$(go env GOROOT)/misc/wasm/wasm_exec.js" .; \
+    elif [ -f "$(go env GOROOT)/lib/wasm/wasm_exec.js" ]; then \
+        cp -f "$(go env GOROOT)/lib/wasm/wasm_exec.js" .; \
+    else \
+        echo "Error: Could not find wasm_exec.js in Go installation"; \
+        exit 1; \
+    fi
+    @echo "Build complete!"
+
+# Clean build artifacts
+clean:
+    @echo "Cleaning..."
+    rm -f main.wasm wasm_exec.js
+    @echo "Clean complete!"
+
+# Start HTTP server for demo
+serve: build
+    @echo "Starting HTTP server on http://localhost:8000"
+    @echo "Press Ctrl+C to stop"
+    python3 -m http.server 8000
+
+# Start gost SOCKS-over-WebSocket server
+start-proxy:
+    @echo "Starting gost SOCKS-over-WebSocket server on ws://localhost:1080"
+    @echo "Press Ctrl+C to stop"
+    gost -L socks5+ws://localhost:1080
+
+# Default recipe
+default:
+    @just --list

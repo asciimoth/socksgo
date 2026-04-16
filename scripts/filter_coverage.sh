@@ -34,6 +34,7 @@ trap 'rm -f "$TEMP_FILE"' EXIT
 grep -v "client_testhooks.go" "$INPUT_FILE" | \
   grep -v "client5_testhooks.go" | \
   grep -v "_internal_test.go" | \
+  grep -v "webdemo/" | \
   grep -v "examples/" > "$TEMP_FILE"
 
 mv "$TEMP_FILE" "$OUTPUT_FILE"
