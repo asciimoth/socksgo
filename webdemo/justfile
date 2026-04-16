@@ -31,6 +31,14 @@ start-proxy:
     @echo "Press Ctrl+C to stop"
     gost -L socks5+ws://localhost:1080
 
+# Prepare for GitHub Pages
+gh-pages: build
+    @echo "Preparing for GitHub Pages..."
+    @mkdir -p ./pages
+    @cp -f index.html main.js main.wasm wasm_exec.js ./pages
+    @touch ./pages/.nojekyll
+    @echo "GitHub Pages ready in webdemo/pages"
+
 # Default recipe
 default:
     @just --list

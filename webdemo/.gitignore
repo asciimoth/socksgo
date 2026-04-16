@@ -12,3 +12,6 @@ wasm_exec.js
 # OS files
 .DS_Store
 Thumbs.db
+
+pages/
+
