@@ -1,6 +1,7 @@
 # socksgo
 [![Go Reference](https://pkg.go.dev/badge/github.com/asciimoth/socksgo.svg)](https://pkg.go.dev/github.com/asciimoth/socksgo) [![Coverage Status](https://coveralls.io/repos/github/asciimoth/socksgo/badge.svg?branch=master)](https://coveralls.io/github/asciimoth/socksgo?branch=master)  
-The most complete, compatible, featured and extensible SOCKS library for Go. Check [comparison](#comparison).
+The most complete, compatible, featured and extensible SOCKS library for Go. Check [comparison](#comparison).  
+Now with [WASM + socks-over-websocket support](https://asciimoth.github.io/socksgo/)!
 
 ## Features
 
@@ -34,6 +35,7 @@ The most complete, compatible, featured and extensible SOCKS library for Go. Che
   - Explicit Client structure construction
   - Client from URL (full and safe variants)
   - Client from environment variables
+- [WASM builds support](https://asciimoth.github.io/socksgo/)
 
 ### Extensible
 - Address filtering (both client and server sides)
