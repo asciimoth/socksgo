@@ -1,11 +1,11 @@
 github.com/asciimoth/bufpool v0.3.0 h1:tQMop/kZ3eOLSorM9i0cqtOIpxWQUroGZ6oNk5DTnQc=
 github.com/asciimoth/bufpool v0.3.0/go.mod h1:JV6H4hpj2bCS5Svr0wNqR+XOZFOOkdXfNZxCjm/3QHw=
-github.com/asciimoth/gonnect v0.7.0 h1:IlKjnNTyPObwKZlWKl8Ocpoh9tPSpU2Qzw0CO7UUSw0=
-github.com/asciimoth/gonnect v0.7.0/go.mod h1:XwXDVDjucVhOa/cifySEx+ij8veNKhtzUTnCdF1p+ug=
+github.com/asciimoth/gonnect v0.7.1 h1:53u0mdx2aWXPgfG4hGQNuAxxTIaEYHs0a2o9EMIxtoI=
+github.com/asciimoth/gonnect v0.7.1/go.mod h1:XwXDVDjucVhOa/cifySEx+ij8veNKhtzUTnCdF1p+ug=
 github.com/asciimoth/ident v0.2.0 h1:G6qaTnkxTH+idV5YzJ7AvgC2nLQDE/aoV7rPCOtN07I=
 github.com/asciimoth/ident v0.2.0/go.mod h1:JNNFnfM7/hdcXVkFBBOAU/vpJM+0gucYaAYwB694bT0=
-github.com/asciimoth/putback v0.2.0 h1:9HMvPrm5i36LZTfZpitzUt39S65hIsco2SJVKm/lowQ=
-github.com/asciimoth/putback v0.2.0/go.mod h1:CwupVyrAB+jV09wAmxPCApVGxq6HRWxNbUCR8YH60PA=
+github.com/asciimoth/putback v0.3.0 h1:NKyX1K2yR/pHt9ov7BifA7qd8oMSOhsit4hMf694e30=
+github.com/asciimoth/putback v0.3.0/go.mod h1:K4u9GV2oQVToze+iKSA/e2V26lusyirYqBZuOZnw2YA=
 github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
 github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/xtaci/smux v1.5.44 h1:7T61zLfFX1jokXj6d+lPaxHnVwgYiJ7EN94DAudKqpg=

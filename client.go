@@ -595,6 +595,10 @@ func (c *Client) IsNoProxy() bool {
 	return c == nil || (c.ProxyAddr == "" && c.WebSocketURL == "")
 }
 
+func (c *Client) IsNative() bool {
+	return c.IsNoProxy()
+}
+
 // Request sends a low-level SOCKS request to the proxy.
 //
 // Request establishes a connection to the proxy, performs authentication
