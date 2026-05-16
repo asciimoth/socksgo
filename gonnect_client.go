@@ -9,15 +9,14 @@ import (
 
 // Static type assertions
 var (
-	_ gonnect.Network          = &GonnectClient{}
-	_ gonnect.Resolver         = &GonnectClient{}
-	_ gonnect.InterfaceNetwork = &GonnectClient{}
+	_ gonnect.Network  = &GonnectClient{}
+	_ gonnect.Resolver = &GonnectClient{}
 )
 
 // GonnectClient wraps a Client to implement gonnect.Resolver and
-// gonnect.InterfaceNetwork interfaces. Resolver methods return "not found"
+// gonnect.Network interfaces. Resolver methods return "not found"
 // errors as DNS resolution through SOCKS requires TorLookup to be enabled.
-// InterfaceNetwork methods return empty results as SOCKS proxies don't
+// Network interface methods return empty results as SOCKS proxies don't
 // expose local network interfaces.
 type GonnectClient struct {
 	*Client
@@ -97,19 +96,25 @@ func (gc *GonnectClient) LookupTXT(
 	}
 }
 
-// Interfaces implements gonnect.InterfaceNetwork.Interfaces.
+// Interfaces implements gonnect.Network.Interfaces.
 // Returns an empty slice as SOCKS proxies don't expose local interfaces.
 func (gc *GonnectClient) Interfaces() ([]gonnect.NetworkInterface, error) {
 	return []gonnect.NetworkInterface{}, nil
 }
 
-// InterfaceAddrs implements gonnect.InterfaceNetwork.InterfaceAddrs.
+// InterfaceAddrs implements gonnect.Network.InterfaceAddrs.
 // Returns an empty slice as SOCKS proxies don't expose local addresses.
 func (gc *GonnectClient) InterfaceAddrs() ([]net.Addr, error) {
 	return []net.Addr{}, nil
 }
 
-// InterfacesByIndex implements gonnect.InterfaceNetwork.InterfacesByIndex.
+// InterfaceMulticastAddrs implements gonnect.Network.InterfaceMulticastAddrs.
+// Returns an empty slice as SOCKS proxies don't expose local multicast addresses.
+func (gc *GonnectClient) InterfaceMulticastAddrs() ([]net.Addr, error) {
+	return []net.Addr{}, nil
+}
+
+// InterfacesByIndex implements gonnect.Network.InterfacesByIndex.
 // Returns an interface-not-found error as no interfaces are available.
 func (gc *GonnectClient) InterfacesByIndex(
 	index int,
@@ -117,7 +122,7 @@ func (gc *GonnectClient) InterfacesByIndex(
 	return nil, &net.AddrError{Err: "interface not found", Addr: ""}
 }
 
-// InterfacesByName implements gonnect.InterfaceNetwork.InterfacesByName.
+// InterfacesByName implements gonnect.Network.InterfacesByName.
 // Returns an interface-not-found error as no interfaces are available.
 func (gc *GonnectClient) InterfacesByName(
 	name string,

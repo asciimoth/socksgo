@@ -6,13 +6,12 @@ import (
 	"testing"
 
 	"github.com/asciimoth/gonnect"
-	"github.com/asciimoth/gonnect/loopback"
 	gt "github.com/asciimoth/gonnect/testing"
 	"github.com/asciimoth/socksgo"
 )
 
 func newNetwork() gt.Network {
-	loop := loopback.NewLoopbackNetwok()
+	loop := gonnect.NewLoopbackNetwok()
 	client := &socksgo.Client{
 		Filter: gonnect.FalseFilter,
 	}
@@ -94,6 +93,18 @@ func TestGonnectClient_InterfaceMethods(t *testing.T) {
 	}
 	if len(addrs) != 0 {
 		t.Fatalf("expected empty addrs slice, got %d", len(addrs))
+	}
+
+	// Test InterfaceMulticastAddrs
+	mcastAddrs, err := gc.InterfaceMulticastAddrs()
+	if err != nil {
+		t.Fatalf("InterfaceMulticastAddrs failed: %v", err)
+	}
+	if len(mcastAddrs) != 0 {
+		t.Fatalf(
+			"expected empty multicast addrs slice, got %d",
+			len(mcastAddrs),
+		)
 	}
 
 	// Test InterfacesByIndex

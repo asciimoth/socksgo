@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/asciimoth/gonnect/helpers"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -145,11 +145,11 @@ var DefaultGostMBindHandler = CommandHandler{
 				break
 			}
 			wg.Go(func() {
-				_ = helpers.PipeConn(inc, stream)
+				_ = gonnect.PipeConn(inc, stream)
 			})
 		}
 		wg.Wait()
 
-		return helpers.ClosedNetworkErrToNil(err)
+		return gonnect.ClosedNetworkErrToNil(err)
 	},
 }

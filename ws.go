@@ -4,14 +4,14 @@ import (
 	"io"
 	"net"
 
-	"github.com/asciimoth/gonnect/helpers"
+	"github.com/asciimoth/gonnect"
 )
 
 func wrapEOF(err error) error {
 	if err == nil {
 		return nil
 	}
-	if helpers.ClosedNetworkErrToNil(err) == nil {
+	if gonnect.ClosedNetworkErrToNil(err) == nil {
 		return io.EOF
 	}
 	return err

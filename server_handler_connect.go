@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/asciimoth/gonnect/helpers"
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -83,6 +83,6 @@ var DefaultConnectHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		return helpers.PipeConn(conn, conn2)
+		return gonnect.PipeConn(conn, conn2)
 	},
 }

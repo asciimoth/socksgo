@@ -1,7 +1,7 @@
 github.com/asciimoth/bufpool v0.3.0 h1:tQMop/kZ3eOLSorM9i0cqtOIpxWQUroGZ6oNk5DTnQc=
 github.com/asciimoth/bufpool v0.3.0/go.mod h1:JV6H4hpj2bCS5Svr0wNqR+XOZFOOkdXfNZxCjm/3QHw=
-github.com/asciimoth/gonnect v0.12.0 h1:peLCjuJcj4sQNaphxgN+im7FlOVQItRewTkuIvJgSWA=
-github.com/asciimoth/gonnect v0.12.0/go.mod h1:XwXDVDjucVhOa/cifySEx+ij8veNKhtzUTnCdF1p+ug=
+github.com/asciimoth/gonnect v0.13.0 h1:o0lZNc62xS3Y+lWf5z6zP1bWEklnBQWeTAxtgYFBEc4=
+github.com/asciimoth/gonnect v0.13.0/go.mod h1:CohhruGEkUgKLF0ypR/RNFrdrqmJgUkKhvjMilED9Kk=
 github.com/asciimoth/ident v0.2.0 h1:G6qaTnkxTH+idV5YzJ7AvgC2nLQDE/aoV7rPCOtN07I=
 github.com/asciimoth/ident v0.2.0/go.mod h1:JNNFnfM7/hdcXVkFBBOAU/vpJM+0gucYaAYwB694bT0=
 github.com/asciimoth/putback v0.3.0 h1:NKyX1K2yR/pHt9ov7BifA7qd8oMSOhsit4hMf694e30=
@@ -10,3 +10,7 @@ github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9
 github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/xtaci/smux v1.5.44 h1:7T61zLfFX1jokXj6d+lPaxHnVwgYiJ7EN94DAudKqpg=
 github.com/xtaci/smux v1.5.44/go.mod h1:IGQ9QYrBphmb/4aTnLEcJby0TNr3NV+OslIOMrX825Q=
+golang.org/x/net v0.54.0 h1:2zJIZAxAHV/OHCDTCOHAYehQzLfSXuf/5SoL/Dv6w/w=
+golang.org/x/net v0.54.0/go.mod h1:Sj4oj8jK6XmHpBZU/zWHw3BV3abl4Kvi+Ut7cQcY+cQ=
+golang.org/x/sys v0.44.0 h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=
+golang.org/x/sys v0.44.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=

@@ -11,7 +11,6 @@ import (
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
-	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/internal"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
@@ -139,12 +138,12 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 
 	q := u.Query()
 
-	if f, s := helpers.CheckURLBoolKey(q, "gost"); s {
+	if f, s := gonnect.CheckURLBoolKey(q, "gost"); s {
 		client.GostMbind = f
 		client.GostUDPTun = f
 	}
 
-	if f, s := helpers.CheckURLBoolKey(q, "tor"); s {
+	if f, s := gonnect.CheckURLBoolKey(q, "tor"); s {
 		client.TorLookup = f
 	}
 
@@ -159,7 +158,7 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 		})
 	}
 
-	if f, s := helpers.CheckURLBoolKey(q, "pass"); s && f {
+	if f, s := gonnect.CheckURLBoolKey(q, "pass"); s && f {
 		client.Filter = gonnect.FalseFilter
 	}
 
@@ -167,7 +166,7 @@ func ClientFromURLObjSafe(u *url.URL) *Client {
 		InsecureSkipVerify: true, //nolint
 	}
 	// In safe constructor we can enable it but not disable
-	if f, s := helpers.CheckURLBoolKey(q, "secure"); s && f {
+	if f, s := gonnect.CheckURLBoolKey(q, "secure"); s && f {
 		client.TLSConfig.InsecureSkipVerify = false
 	}
 	return client
@@ -269,13 +268,13 @@ func ClientFromURLObj(u *url.URL) *Client {
 	client := ClientFromURLObjSafe(u)
 
 	q := u.Query()
-	if f, s := helpers.CheckURLBoolKey(q, "insecureudp"); s {
+	if f, s := gonnect.CheckURLBoolKey(q, "insecureudp"); s {
 		client.InsecureUDP = f
 	}
-	if f, s := helpers.CheckURLBoolKey(q, "assocprob"); s {
+	if f, s := gonnect.CheckURLBoolKey(q, "assocprob"); s {
 		client.DoNotSpawnUDPAsocProbber = !f
 	}
-	if f, s := helpers.CheckURLBoolKey(q, "secure"); s {
+	if f, s := gonnect.CheckURLBoolKey(q, "secure"); s {
 		client.TLSConfig.InsecureSkipVerify = !f
 	}
 
@@ -597,6 +596,73 @@ func (c *Client) IsNoProxy() bool {
 
 func (c *Client) IsNative() bool {
 	return c.IsNoProxy()
+}
+
+// ListenPacketConfig is ListenPacket with a gonnect listen config.
+func (c *Client) ListenPacketConfig(
+	ctx context.Context,
+	lc *gonnect.ListenConfig,
+	network, address string,
+) (gonnect.PacketConn, error) {
+	return c.ListenPacket(ctx, network, address)
+}
+
+// ListenUDPConfig is ListenUDP with a gonnect listen config.
+func (c *Client) ListenUDPConfig(
+	ctx context.Context,
+	lc *gonnect.ListenConfig,
+	network, laddr string,
+) (gonnect.UDPConn, error) {
+	if c.DoFilter(network, laddr) && c.DirectPacketListener == nil {
+		return gonnect.DefaultNetwork(nil).ListenUDPConfig(
+			ctx,
+			lc,
+			network,
+			laddr,
+		)
+	}
+	return c.ListenUDP(ctx, network, laddr)
+}
+
+// ListenMulticastUDP listens for multicast UDP on direct networks.
+func (c *Client) ListenMulticastUDP(
+	ctx context.Context,
+	network, address string,
+	opts gonnect.MulticastOptions,
+) (gonnect.MulticastPacketConn, error) {
+	return nil, gonnect.ErrUnsupported
+}
+
+func (c *Client) Interfaces() ([]gonnect.NetworkInterface, error) {
+	return []gonnect.NetworkInterface{}, nil
+}
+
+// InterfaceAddrs returns interface addresses for direct clients and an empty
+// set for proxied clients.
+func (c *Client) InterfaceAddrs() ([]net.Addr, error) {
+	return []net.Addr{}, nil
+}
+
+// InterfaceMulticastAddrs returns multicast interface addresses for direct
+// clients and an empty set for proxied clients.
+func (c *Client) InterfaceMulticastAddrs() ([]net.Addr, error) {
+	return []net.Addr{}, nil
+}
+
+// InterfacesByIndex returns native interfaces for direct clients and an empty
+// set for proxied clients.
+func (c *Client) InterfacesByIndex(
+	index int,
+) ([]gonnect.NetworkInterface, error) {
+	return nil, &net.AddrError{Err: "interface not found", Addr: ""}
+}
+
+// InterfacesByName returns native interfaces for direct clients and an empty
+// set for proxied clients.
+func (c *Client) InterfacesByName(
+	name string,
+) ([]gonnect.NetworkInterface, error) {
+	return nil, &net.AddrError{Err: "interface not found", Addr: ""}
 }
 
 // Request sends a low-level SOCKS request to the proxy.
@@ -1227,6 +1293,54 @@ func (c *Client) LookupHost(
 		addrs[i] = ip.String()
 	}
 	return addrs, nil
+}
+
+func (c *Client) LookupCNAME(ctx context.Context, host string) (string, error) {
+	if c.IsNoProxy() {
+		return c.GetResolver().LookupCNAME(ctx, host)
+	}
+	return "", gonnect.DnsReqErr(host, "nodns")
+}
+
+func (c *Client) LookupPort(
+	ctx context.Context,
+	network, service string,
+) (int, error) {
+	if c.IsNoProxy() {
+		return c.GetResolver().LookupPort(ctx, network, service)
+	}
+	return gonnect.LookupPortOffline(network, service)
+}
+
+func (c *Client) LookupNS(ctx context.Context, name string) ([]*net.NS, error) {
+	if c.IsNoProxy() {
+		return c.GetResolver().LookupNS(ctx, name)
+	}
+	return nil, gonnect.DnsReqErr(name, "nodns")
+}
+
+func (c *Client) LookupMX(ctx context.Context, name string) ([]*net.MX, error) {
+	if c.IsNoProxy() {
+		return c.GetResolver().LookupMX(ctx, name)
+	}
+	return nil, gonnect.DnsReqErr(name, "nodns")
+}
+
+func (c *Client) LookupSRV(
+	ctx context.Context,
+	service, proto, name string,
+) (string, []*net.SRV, error) {
+	if c.IsNoProxy() {
+		return c.GetResolver().LookupSRV(ctx, service, proto, name)
+	}
+	return "", nil, gonnect.DnsReqErr(name, "nodns")
+}
+
+func (c *Client) LookupTXT(ctx context.Context, name string) ([]string, error) {
+	if c.IsNoProxy() {
+		return c.GetResolver().LookupTXT(ctx, name)
+	}
+	return nil, gonnect.DnsReqErr(name, "nodns")
 }
 
 // DialTCP establishes a TCP connection through the SOCKS proxy with

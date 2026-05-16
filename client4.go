@@ -10,7 +10,6 @@ import (
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
-	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -153,7 +152,7 @@ func (w *tcpConnWrapper) WriteTo(writer io.Writer) (int64, error) {
 			}
 		}
 		if er != nil {
-			return total, helpers.ClosedNetworkErrToNil(er)
+			return total, gonnect.ClosedNetworkErrToNil(er)
 		}
 	}
 }

@@ -62,7 +62,6 @@ import (
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
-	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/internal"
 )
 
@@ -238,7 +237,7 @@ loop:
 		if err != nil {
 			return
 		}
-		if (checkAddr != nil && !helpers.AddrsSameHost(checkAddr, incAddr)) ||
+		if (checkAddr != nil && !gonnect.AddrsSameHost(checkAddr, incAddr)) ||
 			// Packet is too small to contain any meaningful socks5 header
 			n < 8 ||
 			// RSV is not 0
@@ -1011,7 +1010,7 @@ func ProxySocks5UDPAssoc(
 			}
 			// It was first packet from client
 			if clientUDPAddr == nil {
-				if !helpers.AddrsSameHost(incAddr, ctrlAddr) {
+				if !gonnect.AddrsSameHost(incAddr, ctrlAddr) {
 					// Packet is not from our client
 					continue
 				}
@@ -1062,7 +1061,7 @@ func ProxySocks5UDPAssoc(
 		}
 	}()
 
-	helpers.ReadUntilClose(ctrl)
+	gonnect.ReadUntilClose(ctrl)
 	_ = assoc.Close()
 	_ = proxy.Close()
 

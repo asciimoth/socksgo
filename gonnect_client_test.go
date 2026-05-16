@@ -74,7 +74,7 @@ func TestGonnectClient_Resolver(t *testing.T) {
 	})
 }
 
-func TestGonnectClient_InterfaceNetwork(t *testing.T) {
+func TestGonnectClient_NetworkInterfaces(t *testing.T) {
 	t.Parallel()
 
 	client := &socksgo.GonnectClient{Client: &socksgo.Client{}}
@@ -98,6 +98,17 @@ func TestGonnectClient_InterfaceNetwork(t *testing.T) {
 		}
 		if len(addrs) != 0 {
 			t.Errorf("expected empty addrs, got %d", len(addrs))
+		}
+	})
+
+	t.Run("InterfaceMulticastAddrs", func(t *testing.T) {
+		t.Parallel()
+		addrs, err := client.InterfaceMulticastAddrs()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(addrs) != 0 {
+			t.Errorf("expected empty multicast addrs, got %d", len(addrs))
 		}
 	})
 
@@ -129,7 +140,7 @@ func TestGonnectClient_InterfaceAssertions(t *testing.T) {
 
 	// Verify interface implementations at runtime
 	var _ gonnect.Resolver = &socksgo.GonnectClient{}
-	var _ gonnect.InterfaceNetwork = &socksgo.GonnectClient{}
+	var _ gonnect.Network = &socksgo.GonnectClient{}
 
 	client := &socksgo.GonnectClient{Client: &socksgo.Client{}}
 
@@ -137,8 +148,8 @@ func TestGonnectClient_InterfaceAssertions(t *testing.T) {
 	if _, ok := any(client).(gonnect.Resolver); !ok {
 		t.Error("GonnectClient does not implement gonnect.Resolver")
 	}
-	if _, ok := any(client).(gonnect.InterfaceNetwork); !ok {
-		t.Error("GonnectClient does not implement gonnect.InterfaceNetwork")
+	if _, ok := any(client).(gonnect.Network); !ok {
+		t.Error("GonnectClient does not implement gonnect.Network")
 	}
 }
 

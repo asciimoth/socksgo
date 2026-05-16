@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"github.com/asciimoth/bufpool"
-	"github.com/asciimoth/gonnect/helpers"
+	"github.com/asciimoth/gonnect"
 )
 
 // BuildSocsk4TCPRequest builds a SOCKS4 or SOCKS4a TCP request.
@@ -114,7 +114,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 
 	buf := bufpool.GetBuffer(pool, MAX_HEADER_STR_LENGTH)
 	defer bufpool.PutBuffer(pool, buf)
-	user, err = helpers.ReadNullTerminatedString(reader, buf)
+	user, err = gonnect.ReadNullTerminatedString(reader, buf)
 	if err != nil {
 		if err.Error() == "string is too long" {
 			err = ErrTooLongUser
@@ -125,7 +125,7 @@ func ReadSocks4TCPRequest(reader io.Reader, pool bufpool.Pool) (
 	if resp[3] == 0 && resp[4] == 0 && resp[5] == 0 && resp[6] != 0 {
 		// socks4a extension
 		var fqdn string
-		fqdn, err = helpers.ReadNullTerminatedString(reader, buf)
+		fqdn, err = gonnect.ReadNullTerminatedString(reader, buf)
 		if err != nil {
 			if err.Error() == "string is too long" {
 				err = ErrTooLongHost

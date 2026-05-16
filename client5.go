@@ -10,7 +10,6 @@ import (
 
 	"github.com/asciimoth/bufpool"
 	"github.com/asciimoth/gonnect"
-	"github.com/asciimoth/gonnect/helpers"
 	"github.com/asciimoth/socksgo/protocol"
 	"github.com/xtaci/smux"
 )
@@ -223,8 +222,8 @@ func (l *clientListener5mux) Addr() net.Addr {
 }
 
 func (l *clientListener5mux) Close() error {
-	err1 := helpers.ClosedNetworkErrToNil(l.session.Close())
-	err2 := helpers.ClosedNetworkErrToNil(l.conn.Close())
+	err1 := gonnect.ClosedNetworkErrToNil(l.session.Close())
+	err2 := gonnect.ClosedNetworkErrToNil(l.conn.Close())
 	switch {
 	case err1 != nil && err2 == nil:
 		return err1
