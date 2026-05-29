@@ -116,7 +116,9 @@ func main() {
 	js.Global().Set("makeSocksRequest", jsFunc)
 
 	log("WASM initialized successfully")
-	updateStatus("Ready. Enter WebSocket URL and Target URL, then click 'Make Request'")
+	updateStatus(
+		"Ready. Enter WebSocket URL and Target URL, then click 'Make Request'",
+	)
 
 	// Keep the program running
 	select {}

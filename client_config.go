@@ -508,7 +508,11 @@ func (c *Client) connectWebSocket(
 	}
 
 	return &wsCoderConn{
-		Conn: websocket.NetConn(ctx, ws, websocket.MessageBinary),
+		Conn: websocket.NetConn(
+			context.Background(),
+			ws,
+			websocket.MessageBinary,
+		),
 	}, nil
 }
 
