@@ -317,3 +317,79 @@ func TestBindHandlerControlCloseClosesIdleListener(t *testing.T) {
 		t.Fatal("timeout waiting for handler return")
 	}
 }
+
+func TestBindHandlerWrappedControlCloseClosesIdleListener(t *testing.T) {
+	ctrlListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ctrlListener.Close() }()
+
+	conn2, err := net.Dial("tcp", ctrlListener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := ctrlListener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = conn.Close()
+		_ = conn2.Close()
+	}()
+
+	listener := &blockingCloseListener{
+		addr: &net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 1080,
+		},
+		closed:        make(chan struct{}),
+		acceptStarted: make(chan struct{}),
+	}
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- socksgo.DefaultBindHandler.Handler(
+			context.Background(),
+			&server,
+			noSyscallConn{Conn: conn},
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdBind,
+			protocol.AddrFromFQDN("example.com", 8080, ""),
+		)
+	}()
+
+	_, _, err = protocol.ReadSocks5TCPReply(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-listener.acceptStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener accept")
+	}
+
+	_ = conn2.Close()
+
+	select {
+	case <-listener.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener close")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for handler return")
+	}
+}
+
+type noSyscallConn struct {
+	net.Conn
+}

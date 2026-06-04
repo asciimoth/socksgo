@@ -273,6 +273,72 @@ func TestMbindHandlerContextCancelClosesIdleListener(t *testing.T) {
 	}
 }
 
+func TestMbindHandlerSessionCloseClosesIdleListener(t *testing.T) {
+	conn, conn2 := net.Pipe()
+	defer func() {
+		_ = conn.Close()
+		_ = conn2.Close()
+	}()
+
+	listener := &blockingCloseListener{
+		addr: &net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 1080,
+		},
+		closed:        make(chan struct{}),
+		acceptStarted: make(chan struct{}),
+	}
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- socksgo.DefaultGostMBindHandler.Handler(
+			context.Background(),
+			&server,
+			conn,
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdGostMuxBind,
+			protocol.AddrFromFQDN("example.com", 8080, ""),
+		)
+	}()
+
+	_, _, err := protocol.ReadSocks5TCPReply(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := smux.Server(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-listener.acceptStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener accept")
+	}
+
+	_ = session.Close()
+
+	select {
+	case <-listener.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener close")
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for handler return")
+	}
+}
+
 type blockingCloseListener struct {
 	addr          net.Addr
 	closed        chan struct{}

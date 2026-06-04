@@ -151,16 +151,20 @@ func watchBindControlConn(
 	conn net.Conn,
 	closeListener func(),
 ) func() {
+	if _, ok := conn.(*wsCoderConn); ok {
+		return closeOnContextDone(ctx, closeListener)
+	}
+
 	done := make(chan struct{})
 	ready := make(chan struct{})
 	var once sync.Once
 	rawConn, ok := conn.(syscall.Conn)
 	if !ok {
-		return closeOnContextDone(ctx, closeListener)
+		return watchBindControlConnRead(ctx, conn, closeListener)
 	}
 	raw, err := rawConn.SyscallConn()
 	if err != nil {
-		return closeOnContextDone(ctx, closeListener)
+		return watchBindControlConnRead(ctx, conn, closeListener)
 	}
 
 	stop := func() {
@@ -194,6 +198,68 @@ func watchBindControlConn(
 	}()
 
 	return stop
+}
+
+func watchBindControlConnRead(
+	ctx context.Context,
+	conn net.Conn,
+	closeListener func(),
+) func() {
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return closeOnContextDone(ctx, closeListener)
+	}
+
+	done := make(chan struct{})
+	ready := make(chan struct{})
+	var once sync.Once
+
+	stop := func() {
+		once.Do(func() {
+			close(done)
+			<-ready
+			_ = conn.SetReadDeadline(time.Time{})
+		})
+	}
+
+	go func() {
+		defer close(ready)
+		var buf [1]byte
+		for {
+			select {
+			case <-ctx.Done():
+				closeListener()
+				return
+			case <-done:
+				return
+			default:
+			}
+
+			if err := conn.SetReadDeadline(
+				time.Now().Add(100 * time.Millisecond),
+			); err != nil {
+				closeListener()
+				return
+			}
+
+			n, err := conn.Read(buf[:])
+			if n > 0 || err == nil {
+				closeListener()
+				return
+			}
+			if isTimeoutErr(err) {
+				continue
+			}
+			closeListener()
+			return
+		}
+	}()
+
+	return stop
+}
+
+func isTimeoutErr(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func controlConnClosed(raw syscall.RawConn, buf []byte) (bool, error) {
