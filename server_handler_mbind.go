@@ -99,7 +99,10 @@ var DefaultGostMBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, errorToReplyStatus(err), pool)
 			return err
 		}
-		defer func() { _ = listener.Close() }()
+		closeListener := sync.OnceFunc(func() {
+			_ = listener.Close()
+		})
+		defer closeListener()
 		// Send first reply with laddr
 		err = protocol.Reply(
 			ver,
@@ -112,23 +115,34 @@ var DefaultGostMBindHandler = CommandHandler{
 			return err
 		}
 
-		session, err := smux.Client(conn, server.GetSmux())
+		session, err := smux.Client(
+			conn,
+			withDefaultSmuxConfig(server.GetSmux()),
+		)
 		if err != nil {
 			_ = conn.Close()
 			return err
 		}
-		defer func() {
-			_ = conn.Close()
+		closeAll := sync.OnceFunc(func() {
+			closeListener()
 			_ = session.Close()
-		}()
+			_ = conn.Close()
+		})
+		defer closeAll()
 
 		var wg sync.WaitGroup
+		wg.Go(func() {
+			select {
+			case <-ctx.Done():
+			case <-session.CloseChan():
+			}
+			closeAll()
+		})
 		wg.Go(func() {
 			for {
 				rw, err := session.Accept()
 				if err != nil {
-					_ = session.Close()
-					_ = listener.Close()
+					closeAll()
 					return
 				}
 				_ = rw.Close()
@@ -142,12 +156,15 @@ var DefaultGostMBindHandler = CommandHandler{
 			}
 			stream, err := session.OpenStream()
 			if err != nil {
+				_ = inc.Close()
+				closeAll()
 				break
 			}
 			wg.Go(func() {
 				_ = gonnect.PipeConn(inc, stream)
 			})
 		}
+		closeAll()
 		wg.Wait()
 
 		return gonnect.ClosedNetworkErrToNil(err)

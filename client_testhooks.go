@@ -207,7 +207,7 @@ func (c *Client) listenSmuxWithHook(
 		testListenCloseHook(conn)
 		return nil, err
 	}
-	session, err := smux.Server(conn, c.Smux)
+	session, err := smux.Server(conn, withDefaultSmuxConfig(c.Smux))
 	if err != nil {
 		testListenCloseHook(conn)
 		return nil, err

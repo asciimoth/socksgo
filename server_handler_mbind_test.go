@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
@@ -199,4 +201,101 @@ func TestMbindHandlerSmuxAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestMbindHandlerContextCancelClosesIdleListener(t *testing.T) {
+	conn, conn2 := net.Pipe()
+	defer func() {
+		_ = conn.Close()
+		_ = conn2.Close()
+	}()
+
+	listener := &blockingCloseListener{
+		addr: &net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 1080,
+		},
+		closed:        make(chan struct{}),
+		acceptStarted: make(chan struct{}),
+	}
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- socksgo.DefaultGostMBindHandler.Handler(
+			ctx,
+			&server,
+			conn,
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdGostMuxBind,
+			protocol.AddrFromFQDN("example.com", 8080, ""),
+		)
+	}()
+
+	_, _, err := protocol.ReadSocks5TCPReply(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := smux.Server(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = session.Close()
+	}()
+
+	select {
+	case <-listener.acceptStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener accept")
+	}
+
+	cancel()
+
+	select {
+	case <-listener.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener close")
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for handler return")
+	}
+}
+
+type blockingCloseListener struct {
+	addr          net.Addr
+	closed        chan struct{}
+	acceptStarted chan struct{}
+	acceptOnce    sync.Once
+	closeOnce     sync.Once
+}
+
+func (l *blockingCloseListener) Accept() (net.Conn, error) {
+	l.acceptOnce.Do(func() {
+		close(l.acceptStarted)
+	})
+	<-l.closed
+	return nil, net.ErrClosed
+}
+
+func (l *blockingCloseListener) Close() error {
+	l.closeOnce.Do(func() {
+		close(l.closed)
+	})
+	return nil
+}
+
+func (l *blockingCloseListener) Addr() net.Addr {
+	return l.addr
 }
