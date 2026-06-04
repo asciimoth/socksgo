@@ -193,7 +193,10 @@ func watchBindControlConn(
 				return
 			case <-ticker.C:
 				closed, err := controlConnClosed(raw, buf[:])
-				if err != nil || closed {
+				if err != nil {
+					continue
+				}
+				if closed {
 					closeListener()
 					return
 				}
@@ -270,7 +273,6 @@ func controlConnClosed(raw syscall.RawConn, buf []byte) (bool, error) {
 	var (
 		n       int
 		recvErr error
-		rawErr  error
 	)
 	err := raw.Control(func(fd uintptr) {
 		n, _, recvErr = syscall.Recvfrom(int(fd), buf, syscall.MSG_PEEK)
@@ -285,10 +287,16 @@ func controlConnClosed(raw syscall.RawConn, buf []byte) (bool, error) {
 		errors.Is(recvErr, syscall.EWOULDBLOCK) {
 		return false, nil
 	}
-	if errors.Is(recvErr, syscall.ECONNRESET) ||
-		errors.Is(recvErr, syscall.ENOTCONN) {
+	if isControlConnClosedErr(recvErr) {
 		return true, nil
 	}
-	rawErr = gonnect.ClosedNetworkErrToNil(recvErr)
-	return rawErr == nil, rawErr
+	return false, recvErr
+}
+
+func isControlConnClosedErr(err error) bool {
+	if errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ENOTCONN) {
+		return true
+	}
+	return gonnect.ClosedNetworkErrToNil(err) == nil
 }

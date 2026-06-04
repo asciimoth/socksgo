@@ -1,12 +1,14 @@
 package socksgo_test
 
 import (
+	"net"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/asciimoth/bufpool"
 	socksgo "github.com/asciimoth/socksgo"
+	"github.com/asciimoth/socksgo/protocol"
 )
 
 func runClientHttp(t *testing.T, srv string, urls []string) {
@@ -325,6 +327,72 @@ func TestClientServerBind(t *testing.T) {
 	defer cancel()
 
 	runListen45Tcp(t, addr.String(), false, false, pool)
+}
+
+func TestClientServerSocks5BindAcceptBlocksWhileIdle(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTCPServer(&socksgo.Server{
+		Pool: pool,
+		Handlers: map[protocol.Cmd]socksgo.CommandHandler{
+			protocol.CmdBind: socksgo.DefaultBindHandler,
+		},
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	client := buildClient("socks5://"+addr.String(), t, pool)
+	ln, err := client.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	acceptDone := make(chan error, 1)
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+		acceptDone <- err
+	}()
+
+	select {
+	case err := <-acceptDone:
+		t.Fatalf("BIND Accept returned while idle: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	peer, err := net.Dial("tcp", ln.Addr().String()) //nolint noctx
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = peer.Close() }()
+
+	select {
+	case err := <-acceptDone:
+		if err != nil {
+			t.Fatalf("BIND Accept failed after peer connected: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for BIND Accept after peer connected")
+	}
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+	default:
+		t.Fatal("BIND Accept reported success without a connection")
+	}
 }
 
 func TestClientServerTLSBind(t *testing.T) {
