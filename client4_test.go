@@ -465,8 +465,6 @@ func TestClientListener4_AcceptSecondCallFails(t *testing.T) {
 }
 
 // Test clientListener4.Accept when read fails.
-// Note: The current implementation closes the conn on read error but doesn't
-// return the error (this may be a bug). This test verifies the conn is closed.
 func TestClientListener4_AcceptReadFails(t *testing.T) {
 	t.Parallel()
 
@@ -492,8 +490,10 @@ func TestClientListener4_AcceptReadFails(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 
 	// Accept will try to read second reply but get error
-	// The implementation closes the conn but may not return the error
-	_, _ = ln.Accept()
+	_, err = ln.Accept()
+	if !errors.Is(err, readErr) {
+		t.Fatalf("expected read error, got %v", err)
+	}
 
 	// Verify the connection was closed on read error
 	if !conn.closed {
@@ -1002,8 +1002,6 @@ func TestRequest4_ReadErrorAfterSuccessfulWrite(t *testing.T) {
 }
 
 // Test clientListener4.Accept with wrong reply version (on second reply).
-// Note: The current implementation has a bug where read errors are not returned.
-// This test verifies the behavior as-is.
 func TestClientListener4_AcceptWrongReplyVersion(t *testing.T) {
 	t.Parallel()
 
@@ -1027,9 +1025,11 @@ func TestClientListener4_AcceptWrongReplyVersion(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 
-	_, _ = ln.Accept()
-	// Due to a bug in the implementation, the error from ReadSocks4TCPReply
-	// is not returned (only the conn is closed). We verify the conn is closed.
+	_, err = ln.Accept()
+	var wrongVerErr protocol.Wrong4ReplyVerError
+	if !errors.As(err, &wrongVerErr) {
+		t.Fatalf("expected protocol.Wrong4ReplyVerError, got %T: %v", err, err)
+	}
 	if !conn.closed {
 		t.Fatal("expected connection to be closed on wrong reply version")
 	}
@@ -1043,15 +1043,16 @@ func TestClientListener4_AcceptClosesConnOnError(t *testing.T) {
 	// First reply for Listen() success (8 bytes), then read error for Accept()
 	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
 	readErr := errors.New("read failed after first reply")
+	conn := &mockConnForClient4{
+		readData: replyData,
+		readErr:  readErr,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
 		Filter:       gonnect.FalseFilter,
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return &mockConnForClient4{
-				readData: replyData,
-				readErr:  readErr,
-			}, nil
+			return conn, nil
 		},
 	}
 
@@ -1060,10 +1061,14 @@ func TestClientListener4_AcceptClosesConnOnError(t *testing.T) {
 		t.Fatalf("Listen failed: %v", err)
 	}
 
-	_, _ = ln.Accept()
+	_, err = ln.Accept()
+	if !errors.Is(err, readErr) {
+		t.Fatalf("expected read error, got %v", err)
+	}
 
-	// The underlying conn should be closed after read error in Accept
-	// This is verified by checking the closed flag in our mock
+	if !conn.closed {
+		t.Fatal("expected connection to be closed on read error")
+	}
 }
 
 // Test request4 success with socks4a and very long but valid FQDN.
