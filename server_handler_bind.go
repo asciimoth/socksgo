@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
@@ -88,25 +87,28 @@ var DefaultBindHandler = CommandHandler{
 		addr protocol.Addr) error {
 		pool := server.GetPool()
 		addr = addr.WithDefaultHost(server.GetDefaultListenHost())
-		err := server.CheckLaddr(&addr)
-		if err != nil {
+
+		if err := server.CheckLaddr(&addr); err != nil {
 			protocol.Reject(ver, conn, protocol.DisallowReply, pool)
 			return err
 		}
+
 		tcp := "tcp"
 		if ver == "4" || ver == "4a" {
 			tcp = "tcp4"
 		}
+
 		listener, err := server.GetListener()(ctx, tcp, addr.ToHostPort())
 		if err != nil {
-			protocol.Reject(ver, conn, errorToReplyStatus(err), pool)
+			protocol.Reject(ver, conn, socksBindErrorToReplyStatus(err), pool)
 			return err
 		}
+
 		closeListener := sync.OnceFunc(func() {
 			_ = listener.Close()
 		})
 		defer closeListener()
-		// Send first reply with laddr
+
 		err = protocol.Reply(
 			ver,
 			conn,
@@ -117,7 +119,8 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		stopWatchControl := watchBindControlConn(ctx, conn, closeListener)
+
+		stopWatchControl := closeSocksBindOnContextDone(ctx, closeListener)
 		proxy, err := listener.Accept()
 		stopWatchControl()
 		if err != nil {
@@ -126,11 +129,12 @@ var DefaultBindHandler = CommandHandler{
 			}
 			return err
 		}
+
 		closeListener()
 		defer func() {
 			_ = proxy.Close()
 		}()
-		// Send second reply with raddr
+
 		err = protocol.Reply(
 			ver,
 			conn,
@@ -141,162 +145,85 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		stopWatchPipe := closeOnContextDone(ctx, func() {
+
+		stopWatchPipe := closeSocksBindOnContextDone(ctx, func() {
 			_ = conn.Close()
 			_ = proxy.Close()
 		})
 		defer stopWatchPipe()
-		return gonnect.PipeConn(conn, proxy)
+
+		err = gonnect.PipeConn(conn, proxy)
+		return err
 	},
 }
 
-func watchBindControlConn(
-	ctx context.Context,
-	conn net.Conn,
-	closeListener func(),
-) func() {
-	if _, ok := conn.(*wsCoderConn); ok {
-		return closeOnContextDone(ctx, closeListener)
-	}
-
+func closeSocksBindOnContextDone(ctx context.Context, closeFn func()) func() {
 	done := make(chan struct{})
-	ready := make(chan struct{})
 	var once sync.Once
-	rawConn, ok := conn.(syscall.Conn)
-	if !ok {
-		return watchBindControlConnRead(ctx, conn, closeListener)
-	}
-	raw, err := rawConn.SyscallConn()
-	if err != nil {
-		return watchBindControlConnRead(ctx, conn, closeListener)
-	}
-
-	stop := func() {
-		once.Do(func() {
-			close(done)
-			<-ready
-		})
-	}
 
 	go func() {
-		defer close(ready)
-		var buf [1]byte
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				closeListener()
-				return
-			case <-done:
-				return
-			case <-ticker.C:
-				closed, err := controlConnClosed(raw, buf[:])
-				if err != nil {
-					continue
-				}
-				if closed {
-					closeListener()
-					return
-				}
-			}
+		select {
+		case <-ctx.Done():
+			closeFn()
+		case <-done:
 		}
 	}()
 
-	return stop
-}
-
-func watchBindControlConnRead(
-	ctx context.Context,
-	conn net.Conn,
-	closeListener func(),
-) func() {
-	if err := conn.SetReadDeadline(time.Time{}); err != nil {
-		return closeOnContextDone(ctx, closeListener)
-	}
-
-	done := make(chan struct{})
-	ready := make(chan struct{})
-	var once sync.Once
-
-	stop := func() {
+	return func() {
 		once.Do(func() {
 			close(done)
-			<-ready
-			_ = conn.SetReadDeadline(time.Time{})
 		})
 	}
+}
 
-	go func() {
-		defer close(ready)
-		var buf [1]byte
-		for {
-			select {
-			case <-ctx.Done():
-				closeListener()
-				return
-			case <-done:
-				return
-			default:
-			}
+func socksBindErrorToReplyStatus(err error) protocol.ReplyStatus {
+	if err == nil {
+		return protocol.SuccReply
+	}
 
-			if err := conn.SetReadDeadline(
-				time.Now().Add(100 * time.Millisecond),
-			); err != nil {
-				closeListener()
-				return
-			}
-
-			n, err := conn.Read(buf[:])
-			if n > 0 || err == nil {
-				closeListener()
-				return
-			}
-			if isTimeoutErr(err) {
-				continue
-			}
-			closeListener()
-			return
+	var unwrapped = err
+	for {
+		u := errors.Unwrap(unwrapped)
+		if u == nil {
+			break
 		}
-	}()
+		unwrapped = u
+	}
 
-	return stop
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Err != nil {
+		unwrapped = opErr.Err
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return protocol.HostUnreachReply
+	}
+
+	errStr := strings.ToLower(unwrapped.Error())
+	if strings.Contains(errStr, "connection refused") {
+		return protocol.ConnRefusedReply
+	}
+	if strings.Contains(errStr, "network unreachable") {
+		return protocol.NetUnreachReply
+	}
+	if strings.Contains(errStr, "host unreachable") {
+		return protocol.HostUnreachReply
+	}
+	if strings.Contains(errStr, "connection timed out") ||
+		strings.Contains(errStr, "i/o timeout") {
+		return protocol.TTLExpiredReply
+	}
+	if strings.Contains(errStr, "permission denied") {
+		return protocol.DisallowReply
+	}
+
+	return protocol.FailReply
 }
 
-func isTimeoutErr(err error) bool {
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
-}
-
-func controlConnClosed(raw syscall.RawConn, buf []byte) (bool, error) {
-	var (
-		n       int
-		recvErr error
-	)
-	err := raw.Control(func(fd uintptr) {
-		n, _, recvErr = syscall.Recvfrom(int(fd), buf, syscall.MSG_PEEK)
-	})
-	if err != nil {
-		return false, err
+func socksBindAddrString(addr net.Addr) string {
+	if addr == nil {
+		return "<nil>"
 	}
-	if recvErr == nil {
-		return n == 0, nil
-	}
-	if errors.Is(recvErr, syscall.EAGAIN) ||
-		errors.Is(recvErr, syscall.EWOULDBLOCK) {
-		return false, nil
-	}
-	if isControlConnClosedErr(recvErr) {
-		return true, nil
-	}
-	return false, recvErr
-}
-
-func isControlConnClosedErr(err error) bool {
-	if errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.ENOTCONN) {
-		return true
-	}
-	return gonnect.ClosedNetworkErrToNil(err) == nil
+	return addr.String()
 }
