@@ -127,12 +127,14 @@ var DefaultUDPAssocHandler = CommandHandler{
 			protocol.Reject(ver, ctrl, errorToReplyStatus(err), pool)
 			return err
 		}
+		defer func() { _ = proxy.Close() }()
 
 		assoc, err := server.ListenForAssoc(ctx, ctrl)
 		if err != nil {
 			protocol.Reject(ver, ctrl, errorToReplyStatus(err), pool)
 			return err
 		}
+		defer func() { _ = assoc.Close() }()
 
 		err = protocol.Reply(
 			ver,
@@ -144,6 +146,13 @@ var DefaultUDPAssocHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
+
+		stopWatch := closeOnContextDone(ctx, func() {
+			_ = ctrl.Close()
+			_ = assoc.Close()
+			_ = proxy.Close()
+		})
+		defer stopWatch()
 
 		return protocol.ProxySocks5UDPAssoc(
 			assoc, proxy, ctrl, binded, nil, pool,

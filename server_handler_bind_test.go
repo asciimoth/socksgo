@@ -1,3 +1,4 @@
+// nolint
 package socksgo_test
 
 import (
@@ -5,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
@@ -178,5 +180,140 @@ func TestBindHandlerAcceptFail(t *testing.T) {
 	)
 	if err.Error() != errstr {
 		t.Fatal(err)
+	}
+}
+
+func TestBindHandlerContextCancelClosesIdleListener(t *testing.T) {
+	conn, conn2 := net.Pipe()
+	defer func() {
+		_ = conn.Close()
+		_ = conn2.Close()
+	}()
+
+	listener := &blockingCloseListener{
+		addr: &net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 1080,
+		},
+		closed:        make(chan struct{}),
+		acceptStarted: make(chan struct{}),
+	}
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- socksgo.DefaultBindHandler.Handler(
+			ctx,
+			&server,
+			conn,
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdBind,
+			protocol.AddrFromFQDN("example.com", 8080, ""),
+		)
+	}()
+
+	_, _, err := protocol.ReadSocks5TCPReply(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-listener.acceptStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener accept")
+	}
+
+	cancel()
+
+	select {
+	case <-listener.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener close")
+	}
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for handler return")
+	}
+}
+
+func TestBindHandlerControlCloseClosesIdleListener(t *testing.T) {
+	ctrlListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ctrlListener.Close() }()
+
+	conn2, err := net.Dial("tcp", ctrlListener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := ctrlListener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = conn.Close()
+		_ = conn2.Close()
+	}()
+
+	listener := &blockingCloseListener{
+		addr: &net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 1080,
+		},
+		closed:        make(chan struct{}),
+		acceptStarted: make(chan struct{}),
+	}
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- socksgo.DefaultBindHandler.Handler(
+			context.Background(),
+			&server,
+			conn,
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdBind,
+			protocol.AddrFromFQDN("example.com", 8080, ""),
+		)
+	}()
+
+	_, _, err = protocol.ReadSocks5TCPReply(conn2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-listener.acceptStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener accept")
+	}
+
+	_ = conn2.Close()
+
+	select {
+	case <-listener.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for listener close")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for handler return")
 	}
 }

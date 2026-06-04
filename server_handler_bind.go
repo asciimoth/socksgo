@@ -2,7 +2,11 @@ package socksgo
 
 import (
 	"context"
+	"errors"
 	"net"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/protocol"
@@ -98,7 +102,6 @@ var DefaultBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, errorToReplyStatus(err), pool)
 			return err
 		}
-		defer func() { _ = listener.Close() }()
 		// Send first reply with laddr
 		err = protocol.Reply(
 			ver,
@@ -110,8 +113,17 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
+		closeListener := sync.OnceFunc(func() {
+			_ = listener.Close()
+		})
+		defer closeListener()
+		stopWatchControl := watchBindControlConn(ctx, conn, closeListener)
 		proxy, err := listener.Accept()
+		stopWatchControl()
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			return err
 		}
 		// Send second reply with raddr
@@ -125,6 +137,88 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
+		stopWatchPipe := closeOnContextDone(ctx, func() {
+			_ = conn.Close()
+			_ = proxy.Close()
+		})
+		defer stopWatchPipe()
 		return gonnect.PipeConn(conn, proxy)
 	},
+}
+
+func watchBindControlConn(
+	ctx context.Context,
+	conn net.Conn,
+	closeListener func(),
+) func() {
+	done := make(chan struct{})
+	ready := make(chan struct{})
+	var once sync.Once
+	rawConn, ok := conn.(syscall.Conn)
+	if !ok {
+		return closeOnContextDone(ctx, closeListener)
+	}
+	raw, err := rawConn.SyscallConn()
+	if err != nil {
+		return closeOnContextDone(ctx, closeListener)
+	}
+
+	stop := func() {
+		once.Do(func() {
+			close(done)
+			<-ready
+		})
+	}
+
+	go func() {
+		defer close(ready)
+		var buf [1]byte
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				closeListener()
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				closed, err := controlConnClosed(raw, buf[:])
+				if err != nil || closed {
+					closeListener()
+					return
+				}
+			}
+		}
+	}()
+
+	return stop
+}
+
+func controlConnClosed(raw syscall.RawConn, buf []byte) (bool, error) {
+	var (
+		n       int
+		recvErr error
+		rawErr  error
+	)
+	err := raw.Control(func(fd uintptr) {
+		n, _, recvErr = syscall.Recvfrom(int(fd), buf, syscall.MSG_PEEK)
+	})
+	if err != nil {
+		return false, err
+	}
+	if recvErr == nil {
+		return n == 0, nil
+	}
+	if errors.Is(recvErr, syscall.EAGAIN) ||
+		errors.Is(recvErr, syscall.EWOULDBLOCK) {
+		return false, nil
+	}
+	if errors.Is(recvErr, syscall.ECONNRESET) ||
+		errors.Is(recvErr, syscall.ENOTCONN) {
+		return true, nil
+	}
+	rawErr = gonnect.ClosedNetworkErrToNil(recvErr)
+	return rawErr == nil, rawErr
 }

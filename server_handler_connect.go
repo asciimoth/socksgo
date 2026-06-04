@@ -83,6 +83,11 @@ var DefaultConnectHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
+		stopWatch := closeOnContextDone(ctx, func() {
+			_ = conn.Close()
+			_ = conn2.Close()
+		})
+		defer stopWatch()
 		return gonnect.PipeConn(conn, conn2)
 	},
 }
