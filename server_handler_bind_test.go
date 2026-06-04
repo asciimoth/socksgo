@@ -5,12 +5,37 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
+
+type closeTrackingListener struct {
+	conn     net.Conn
+	addr     net.Addr
+	accepted chan struct{}
+	closed   chan struct{}
+	once     sync.Once
+}
+
+func (l *closeTrackingListener) Accept() (net.Conn, error) {
+	close(l.accepted)
+	return l.conn, nil
+}
+
+func (l *closeTrackingListener) Close() error {
+	l.once.Do(func() {
+		close(l.closed)
+	})
+	return nil
+}
+
+func (l *closeTrackingListener) Addr() net.Addr {
+	return l.addr
+}
 
 func TestBindHandlerLaddrBlocked(t *testing.T) {
 	server := socksgo.Server{
@@ -139,6 +164,78 @@ func TestBindHandlerSecondReplyFail(t *testing.T) {
 	if err.Error() != "io: read/write on closed pipe" {
 		t.Fatal(err)
 	}
+}
+
+func TestBindHandlerClosesListenerAfterFirstAccept(t *testing.T) {
+	ctrlServer, ctrlClient := net.Pipe()
+	proxyServer, proxyClient := net.Pipe()
+	defer func() {
+		_ = ctrlServer.Close()
+		_ = ctrlClient.Close()
+		_ = proxyServer.Close()
+		_ = proxyClient.Close()
+	}()
+
+	listener := &closeTrackingListener{
+		conn: connWithAaddr{
+			Conn:  proxyServer,
+			Laddr: protocol.AddrFromFQDN("example.com", 8080, ""),
+			Raddr: protocol.AddrFromFQDN("peer.example.com", 9090, ""),
+		},
+		addr:     protocol.AddrFromFQDN("example.com", 8080, ""),
+		accepted: make(chan struct{}),
+		closed:   make(chan struct{}),
+	}
+	server := socksgo.Server{
+		Listener: func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	}
+
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		buf := make([]byte, 64)
+		for {
+			if _, err := ctrlClient.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- socksgo.DefaultBindHandler.Handler(
+			context.Background(),
+			&server,
+			ctrlServer,
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdBind,
+			protocol.AddrFromFQDN("example.com", 8080, ""),
+		)
+	}()
+
+	select {
+	case <-listener.accepted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for bind listener Accept")
+	}
+
+	select {
+	case <-listener.closed:
+	case <-time.After(time.Second):
+		t.Fatal("bind listener was not closed after first Accept")
+	}
+
+	_ = ctrlClient.Close()
+	_ = proxyClient.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for bind handler to return")
+	}
+	<-readDone
 }
 
 func TestBindHandlerAcceptFail(t *testing.T) {

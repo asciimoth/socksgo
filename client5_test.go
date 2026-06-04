@@ -1045,6 +1045,67 @@ func TestClientListener5_AcceptSuccess(t *testing.T) {
 	}
 }
 
+func TestClientListener5_AcceptSecondCallFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	replyData := []byte{
+		5,
+		0,
+		0,
+		1,
+		10,
+		0,
+		0,
+		1,
+		39,
+		15,
+		5,
+		0,
+		0,
+		1,
+		192,
+		168,
+		1,
+		1,
+		0,
+		80,
+	}
+	c := &socksgo.Client{
+		SocksVersion: "5",
+		ProxyAddr:    "127.0.0.1:1080",
+		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return &mockConnForClient5{readData: replyData}, nil
+		},
+	}
+
+	ln, err := c.Listen(ctx, "tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatalf("first Accept failed: %v", err)
+	}
+	if conn == nil {
+		t.Fatal("expected non-nil conn on first accept")
+	}
+
+	_, err = ln.Accept()
+	if err == nil {
+		t.Fatal("expected error on second Accept")
+	}
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		t.Fatalf("expected *net.OpError, got %T: %v", err, err)
+	}
+	if opErr.Op != "accept" {
+		t.Fatalf("expected Op=accept, got %s", opErr.Op)
+	}
+}
+
 // Test clientListener5mux.Addr.
 func TestClientListener5mux_Addr(t *testing.T) {
 	t.Parallel()

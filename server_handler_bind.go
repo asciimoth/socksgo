@@ -102,6 +102,10 @@ var DefaultBindHandler = CommandHandler{
 			protocol.Reject(ver, conn, errorToReplyStatus(err), pool)
 			return err
 		}
+		closeListener := sync.OnceFunc(func() {
+			_ = listener.Close()
+		})
+		defer closeListener()
 		// Send first reply with laddr
 		err = protocol.Reply(
 			ver,
@@ -113,10 +117,6 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
-		closeListener := sync.OnceFunc(func() {
-			_ = listener.Close()
-		})
-		defer closeListener()
 		stopWatchControl := watchBindControlConn(ctx, conn, closeListener)
 		proxy, err := listener.Accept()
 		stopWatchControl()
@@ -126,6 +126,10 @@ var DefaultBindHandler = CommandHandler{
 			}
 			return err
 		}
+		closeListener()
+		defer func() {
+			_ = proxy.Close()
+		}()
 		// Send second reply with raddr
 		err = protocol.Reply(
 			ver,

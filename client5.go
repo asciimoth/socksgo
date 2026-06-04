@@ -170,9 +170,10 @@ func (c *Client) setupUDPTun5(
 }
 
 type clientListener5 struct {
-	addr net.Addr
-	conn net.Conn
-	pool bufpool.Pool
+	addr     net.Addr
+	conn     net.Conn
+	pool     bufpool.Pool
+	accepted bool
 }
 
 func (l *clientListener5) Addr() net.Addr {
@@ -184,7 +185,16 @@ func (l *clientListener5) Close() error {
 }
 
 func (l *clientListener5) Accept() (net.Conn, error) {
+	if l.accepted {
+		return nil, &net.OpError{
+			Op:   "accept",
+			Net:  "tcp",
+			Addr: l.addr,
+			Err:  errors.New("use of closed network connection"),
+		}
+	}
 	stat, _, err := protocol.ReadSocks5TCPReply(l.conn, l.pool)
+	l.accepted = true
 	if err != nil {
 		_ = l.conn.Close()
 	}
