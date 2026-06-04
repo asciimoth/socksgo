@@ -170,10 +170,9 @@ func (c *Client) setupUDPTun5(
 }
 
 type clientListener5 struct {
-	addr     net.Addr
-	conn     net.Conn
-	pool     bufpool.Pool
-	accepted bool
+	addr net.Addr
+	bind *oneShotBindAccept
+	pool bufpool.Pool
 }
 
 func (l *clientListener5) Addr() net.Addr {
@@ -181,27 +180,20 @@ func (l *clientListener5) Addr() net.Addr {
 }
 
 func (l *clientListener5) Close() error {
-	return l.conn.Close()
+	return l.bind.Close()
 }
 
 func (l *clientListener5) Accept() (net.Conn, error) {
-	if l.accepted {
-		return nil, &net.OpError{
-			Op:   "accept",
-			Net:  "tcp",
-			Addr: l.addr,
-			Err:  errors.New("use of closed network connection"),
+	return l.bind.Accept(func() error {
+		stat, _, err := protocol.ReadSocks5TCPReply(l.bind.conn, l.pool)
+		if err != nil {
+			return err
 		}
-	}
-	stat, _, err := protocol.ReadSocks5TCPReply(l.conn, l.pool)
-	l.accepted = true
-	if err != nil {
-		_ = l.conn.Close()
-	}
-	if !stat.Ok() {
-		return nil, RejectdError{stat}
-	}
-	return l.conn, err
+		if !stat.Ok() {
+			return RejectdError{stat}
+		}
+		return nil
+	})
 }
 
 // TCPListener interface implementations
@@ -218,7 +210,7 @@ func (l *clientListener5) AcceptTCP() (gonnect.TCPConn, error) {
 }
 
 func (l *clientListener5) SetDeadline(t time.Time) error {
-	return l.conn.SetDeadline(t)
+	return l.bind.conn.SetDeadline(t)
 }
 
 type clientListener5mux struct {

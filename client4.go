@@ -3,7 +3,6 @@ package socksgo
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net"
 	"time"
@@ -73,9 +72,8 @@ func (c *Client) request4(
 }
 
 type clientListener4 struct {
-	addr     protocol.Addr
-	conn     net.Conn
-	accepted bool
+	addr protocol.Addr
+	bind *oneShotBindAccept
 }
 
 func (l *clientListener4) Addr() net.Addr {
@@ -83,27 +81,20 @@ func (l *clientListener4) Addr() net.Addr {
 }
 
 func (l *clientListener4) Close() error {
-	return l.conn.Close()
+	return l.bind.Close()
 }
 
 func (l *clientListener4) Accept() (net.Conn, error) {
-	if l.accepted {
-		return nil, &net.OpError{
-			Op:   "accept",
-			Net:  "tcp",
-			Addr: l.addr,
-			Err:  errors.New("use of closed network connection"),
+	return l.bind.Accept(func() error {
+		stat, _, err := protocol.ReadSocks4TCPReply(l.bind.conn)
+		if err != nil {
+			return err
 		}
-	}
-	stat, _, err := protocol.ReadSocks4TCPReply(l.conn)
-	l.accepted = true
-	if err != nil {
-		_ = l.conn.Close()
-	}
-	if !stat.Ok() {
-		return nil, RejectdError{stat}
-	}
-	return l.conn, nil
+		if !stat.Ok() {
+			return RejectdError{stat}
+		}
+		return nil
+	})
 }
 
 // TCPListener interface implementations
@@ -122,7 +113,7 @@ func (l *clientListener4) AcceptTCP() (gonnect.TCPConn, error) {
 }
 
 func (l *clientListener4) SetDeadline(t time.Time) error {
-	return l.conn.SetDeadline(t)
+	return l.bind.conn.SetDeadline(t)
 }
 
 // tcpConnWrapper wraps a net.Conn to implement gonnect.TCPConn

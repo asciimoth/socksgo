@@ -993,8 +993,8 @@ func (c *Client) Listen(
 	addr.NetTyp = network
 	if ver == "4" || ver == "4a" {
 		return &clientListener4{
-			conn: conn,
 			addr: addr,
+			bind: newOneShotBindAccept(conn, addr),
 		}, nil
 	}
 	if ver == "5" {
@@ -1002,8 +1002,8 @@ func (c *Client) Listen(
 			return c.listenSmuxWithHook(conn, addr)
 		}
 		return &clientListener5{
-			conn: conn,
 			addr: addr,
+			bind: newOneShotBindAccept(conn, addr),
 		}, nil
 	}
 	testListenCloseHook(conn)

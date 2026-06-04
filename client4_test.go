@@ -271,7 +271,10 @@ func TestRequest4_UseProxyAddr(t *testing.T) {
 
 	ctx := context.Background()
 	// SOCKS4 reply: VN=0, CD=90 (success), PORT=0, IP=0.0.0.0
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	remoteAddr := &net.TCPAddr{IP: net.IPv4(10, 0, 0, 1), Port: 9999}
 	c := &socksgo.Client{
 		SocksVersion: "4",
@@ -386,7 +389,10 @@ func TestClientListener4_Close(t *testing.T) {
 
 	ctx := context.Background()
 	// SOCKS4 reply: VN=0, CD=90 (success), PORT=0, IP=0.0.0.0
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -413,7 +419,10 @@ func TestClientListener4_AcceptSecondCallFails(t *testing.T) {
 
 	ctx := context.Background()
 	// SOCKS4 reply: VN=0, CD=90 (success), PORT=0, IP=0.0.0.0
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -437,7 +446,11 @@ func TestClientListener4_AcceptSecondCallFails(t *testing.T) {
 		t.Fatal("expected non-nil conn on first accept")
 	}
 
-	// Second accept should fail with OpError
+	if err := conn1.Close(); err != nil {
+		t.Fatalf("failed to close accepted conn: %v", err)
+	}
+
+	// Second accept should fail with OpError after the accepted conn closes.
 	_, err = ln.Accept()
 	if err == nil {
 		t.Fatal("expected error on second Accept")
@@ -527,7 +540,10 @@ func TestClientListener4_AcceptSuccess(t *testing.T) {
 
 	ctx := context.Background()
 	// SOCKS4 reply: VN=0, CD=90 (success), PORT=8080, IP=10.0.0.1
-	replyData := []byte{0, 90, 31, 160, 10, 0, 0, 1}
+	replyData := []byte{
+		0, 90, 31, 160, 10, 0, 0, 1,
+		0, 90, 31, 160, 10, 0, 0, 1,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -568,7 +584,10 @@ func TestClientListener4_AddrReturnsCorrect(t *testing.T) {
 
 	ctx := context.Background()
 	// SOCKS4 reply: VN=0, CD=90 (success), PORT=9999, IP=192.168.1.1
-	replyData := []byte{0, 90, 39, 15, 192, 168, 1, 1}
+	replyData := []byte{
+		0, 90, 39, 15, 192, 168, 1, 1,
+		0, 90, 39, 15, 192, 168, 1, 1,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -740,7 +759,10 @@ func TestClientListener4_CustomRemoteAddr(t *testing.T) {
 
 	ctx := context.Background()
 	// SOCKS4 reply: VN=0, CD=90 (success), PORT=1234, IP=1.1.1.1
-	replyData := []byte{0, 90, 4, 210, 1, 1, 1, 1}
+	replyData := []byte{
+		0, 90, 4, 210, 1, 1, 1, 1,
+		0, 90, 4, 210, 1, 1, 1, 1,
+	}
 	customRemoteAddr := &net.TCPAddr{IP: net.IPv4(2, 2, 2, 2), Port: 5678}
 	c := &socksgo.Client{
 		SocksVersion: "4",
@@ -878,7 +900,10 @@ func TestClientListener4_CloseWithError(t *testing.T) {
 
 	ctx := context.Background()
 	closeErr := errors.New("close failed")
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1279,7 +1304,10 @@ func TestClientListener4_AcceptTCP(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1307,11 +1335,14 @@ func TestClientListener4_AcceptTCP(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Now test AcceptTCP on the listener
+	if err := conn.Close(); err != nil {
+		t.Fatalf("failed to close accepted conn: %v", err)
+	}
+
+	// Now test AcceptTCP on the listener after the one-shot conn closes.
 	_, err = tcpListener.AcceptTCP()
 	if err == nil {
-		// Second call should fail since connection already accepted
-		t.Log("AcceptTCP succeeded on second call (unexpected)")
+		t.Fatal("expected AcceptTCP to fail after accepted conn closed")
 	}
 }
 
@@ -1320,7 +1351,10 @@ func TestClientListener4_SetDeadline(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	deadlineCalled := false
 	c := &socksgo.Client{
 		SocksVersion: "4",
@@ -1368,7 +1402,10 @@ func TestClientListener4_AcceptTCP_WithoutTCPConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1411,7 +1448,10 @@ func TestTCPConnWrapper_ReadFrom(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1505,7 +1545,10 @@ func TestTCPConnWrapper_SetKeepAlive_NoTCPConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1543,7 +1586,10 @@ func TestTCPConnWrapper_SetKeepAliveConfig_NoTCPConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1587,7 +1633,10 @@ func TestTCPConnWrapper_SetKeepAlivePeriod_NoTCPConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1624,7 +1673,10 @@ func TestTCPConnWrapper_SetLinger_NoTCPConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1661,7 +1713,10 @@ func TestTCPConnWrapper_SetNoDelay_NoTCPConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1698,7 +1753,10 @@ func TestTCPConnWrapper_CloseRead_NoCloseRead(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1740,7 +1798,10 @@ func TestTCPConnWrapper_CloseWrite_NoCloseWrite(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	replyData := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	replyData := []byte{
+		0, 90, 0, 0, 0, 0, 0, 0,
+		0, 90, 0, 0, 0, 0, 0, 0,
+	}
 	c := &socksgo.Client{
 		SocksVersion: "4",
 		ProxyAddr:    "127.0.0.1:1080",
@@ -1815,9 +1876,7 @@ func TestClientListener4_AcTCP_ErrorPropagation(t *testing.T) {
 	}
 }
 
-// Test AcceptTCP with read error
-// Note: Due to a bug in the implementation, read errors during Accept are not returned,
-// but the connection is closed. This test verifies that behavior.
+// Test AcceptTCP with read error.
 func TestClientListener4_AcceptTCP_ReadError(t *testing.T) {
 	t.Parallel()
 
@@ -1846,24 +1905,17 @@ func TestClientListener4_AcceptTCP_ReadError(t *testing.T) {
 		t.Fatal("listener should implement gonnect.TCPListener")
 	}
 
-	// Due to the bug, AcceptTCP will succeed but return a closed connection
-	tcpConn, err := tcpListener.AcceptTCP()
-	if err != nil {
-		t.Fatalf(
-			"AcceptTCP should not return error (bug: errors not propagated): %v",
-			err,
-		)
+	_, err = tcpListener.AcceptTCP()
+	if err == nil {
+		t.Fatal("expected AcceptTCP to return read error")
+	}
+	if !errors.Is(err, readErr) {
+		t.Fatalf("AcceptTCP error = %v, want %v", err, readErr)
 	}
 	// Verify the connection is closed
 	if !conn.closed {
 		t.Fatal("expected connection to be closed on read error")
 	}
-	// Any operation on tcpConn should fail
-	_, err = tcpConn.Read(make([]byte, 1))
-	if err == nil {
-		t.Fatal("expected read to fail on closed connection")
-	}
-	_ = tcpConn.Close()
 }
 
 // Test tcpConnWrapper methods when underlying conn DOES implement TCPConn
@@ -1904,11 +1956,6 @@ func TestTCPConnWrapper_WithTCPConn(t *testing.T) {
 		t.Fatalf("AcceptTCP failed: %v", err)
 	}
 	defer func() { _ = tcpConn.Close() }()
-
-	// Test that it's the same mock connection (not wrapped)
-	if tcpConn != mockTCPConnInst {
-		t.Fatal("expected tcpConn to be the same as mockTCPConn")
-	}
 
 	// Test all TCPConn methods on the mock
 	err = tcpConn.SetKeepAlive(true)

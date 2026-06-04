@@ -1092,6 +1092,9 @@ func TestClientListener5_AcceptSecondCallFails(t *testing.T) {
 	if conn == nil {
 		t.Fatal("expected non-nil conn on first accept")
 	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("failed to close accepted conn: %v", err)
+	}
 
 	_, err = ln.Accept()
 	if err == nil {

@@ -1,8 +1,11 @@
 package socksgo_test
 
 import (
+	"bufio"
+	"io"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -392,6 +395,114 @@ func TestClientServerSocks5BindAcceptBlocksWhileIdle(t *testing.T) {
 		_ = conn.Close()
 	default:
 		t.Fatal("BIND Accept reported success without a connection")
+	}
+}
+
+func TestClientServerBindHTTPServeWaitsForAcceptedConnClose(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil // Too verbose
+	defer pool.Close()
+
+	cfg := GetEnvConfig()
+
+	cancel, addr, err := runTCPServer(&socksgo.Server{
+		Pool: pool,
+	}, cfg.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	for _, version := range []string{"socks4", "socks5"} {
+		t.Run(version, func(t *testing.T) {
+			client := buildClient(version+"://"+addr.String(), t, pool)
+			ln, err := client.Listen(t.Context(), "tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			handlerEntered := make(chan struct{})
+			releaseResponse := make(chan struct{})
+			var releaseResponseOnce sync.Once
+			release := func() {
+				releaseResponseOnce.Do(func() { close(releaseResponse) })
+			}
+			defer release()
+			handler := http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					close(handlerEntered)
+					<-releaseResponse
+					_, _ = io.WriteString(w, "ok")
+				},
+			)
+
+			srv := &http.Server{Handler: handler} //nolint gosec
+			defer func() { _ = srv.Close() }()
+
+			serveDone := make(chan error, 1)
+			go func() {
+				serveDone <- srv.Serve(ln)
+			}()
+
+			conn, err := net.Dial("tcp", ln.Addr().String()) //nolint noctx
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = conn.Close() }()
+
+			_, err = conn.Write([]byte(
+				"GET / HTTP/1.1\r\n" +
+					"Host: bind.test\r\n" +
+					"Connection: close\r\n\r\n",
+			))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			select {
+			case <-handlerEntered:
+			case err := <-serveDone:
+				t.Fatalf(
+					"http Serve returned while first request started: %v",
+					err,
+				)
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for http handler")
+			}
+
+			select {
+			case err := <-serveDone:
+				t.Fatalf(
+					"http Serve returned before accepted conn closed: %v",
+					err,
+				)
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			release()
+
+			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != "ok" {
+				t.Fatalf("response body = %q, want %q", body, "ok")
+			}
+
+			select {
+			case <-serveDone:
+			case <-time.After(time.Second):
+				t.Fatal("http Serve did not return after accepted conn closed")
+			}
+		})
 	}
 }
 
