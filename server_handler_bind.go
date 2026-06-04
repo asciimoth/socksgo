@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/asciimoth/gonnect"
+	"github.com/asciimoth/putback"
 	"github.com/asciimoth/socksgo/protocol"
 )
 
@@ -120,9 +123,18 @@ var DefaultBindHandler = CommandHandler{
 			return err
 		}
 
-		stopWatchControl := closeSocksBindOnContextDone(ctx, closeListener)
+		var stopWatchControl func() []byte
+		if _, ok := conn.(*wsCoderConn); ok {
+			stopWatch := closeSocksBindOnContextDone(ctx, closeListener)
+			stopWatchControl = func() []byte {
+				stopWatch()
+				return nil
+			}
+		} else {
+			stopWatchControl = watchSocksBindControl(ctx, conn, closeListener)
+		}
 		proxy, err := listener.Accept()
-		stopWatchControl()
+		putBack := stopWatchControl()
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
@@ -145,6 +157,9 @@ var DefaultBindHandler = CommandHandler{
 		if err != nil {
 			return err
 		}
+		if len(putBack) > 0 {
+			conn = putback.WrapConn(conn, putBack, pool)
+		}
 
 		stopWatchPipe := closeSocksBindOnContextDone(ctx, func() {
 			_ = conn.Close()
@@ -155,6 +170,61 @@ var DefaultBindHandler = CommandHandler{
 		err = gonnect.PipeConn(conn, proxy)
 		return err
 	},
+}
+
+func watchSocksBindControl(
+	ctx context.Context,
+	conn net.Conn,
+	closeFn func(),
+) func() []byte {
+	done := make(chan struct{})
+	result := make(chan []byte, 1)
+	var once sync.Once
+
+	go func() {
+		defer close(result)
+		buf := []byte{0}
+		for {
+			select {
+			case <-ctx.Done():
+				closeFn()
+				return
+			case <-done:
+				return
+			default:
+			}
+
+			err := conn.SetReadDeadline(
+				time.Now().Add(50 * time.Millisecond),
+			)
+			if err != nil {
+				return
+			}
+			n, err := conn.Read(buf)
+			if n > 0 {
+				result <- append([]byte(nil), buf[:n]...)
+				return
+			}
+			if err == nil {
+				continue
+			}
+			if isTimeout(err) {
+				continue
+			}
+			closeFn()
+			return
+		}
+	}()
+
+	return func() []byte {
+		once.Do(func() {
+			close(done)
+			_ = conn.SetReadDeadline(time.Now())
+		})
+		putBack := <-result
+		_ = conn.SetReadDeadline(time.Time{})
+		return putBack
+	}
 }
 
 func closeSocksBindOnContextDone(ctx context.Context, closeFn func()) func() {
@@ -221,9 +291,19 @@ func socksBindErrorToReplyStatus(err error) protocol.ReplyStatus {
 	return protocol.FailReply
 }
 
-func socksBindAddrString(addr net.Addr) string {
-	if addr == nil {
-		return "<nil>"
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
 	}
-	return addr.String()
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
