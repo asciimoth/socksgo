@@ -305,5 +305,18 @@ func isTimeout(err error) bool {
 	}
 
 	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	for unwrapped := err; unwrapped != nil; unwrapped = errors.Unwrap(unwrapped) {
+		if strings.Contains(
+			strings.ToLower(unwrapped.Error()),
+			"i/o timeout",
+		) {
+			return true
+		}
+	}
+
+	return false
 }
