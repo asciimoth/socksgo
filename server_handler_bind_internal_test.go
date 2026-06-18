@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net"
 	"testing"
+
+	"github.com/asciimoth/gonnect"
 )
 
 func TestIsTimeoutRecognizesNetOpErrorIOTimeout(t *testing.T) {
@@ -15,7 +17,7 @@ func TestIsTimeoutRecognizesNetOpErrorIOTimeout(t *testing.T) {
 		Err: errors.New("i/o timeout"),
 	}
 
-	if !isTimeout(err) {
+	if !gonnect.IsTimeout(err) {
 		t.Fatal("expected net.OpError i/o timeout to be recognized")
 	}
 }

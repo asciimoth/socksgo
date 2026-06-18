@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -208,7 +207,7 @@ func watchSocksBindControl(
 			if err == nil {
 				continue
 			}
-			if isTimeout(err) {
+			if gonnect.IsTimeout(err) {
 				continue
 			}
 			closeFn()
@@ -289,34 +288,4 @@ func socksBindErrorToReplyStatus(err error) protocol.ReplyStatus {
 	}
 
 	return protocol.FailReply
-}
-
-func isTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	if errors.Is(err, os.ErrDeadlineExceeded) {
-		return true
-	}
-
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-
-	for unwrapped := err; unwrapped != nil; unwrapped = errors.Unwrap(unwrapped) {
-		if strings.Contains(
-			strings.ToLower(unwrapped.Error()),
-			"i/o timeout",
-		) {
-			return true
-		}
-	}
-
-	return false
 }
