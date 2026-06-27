@@ -107,21 +107,34 @@ var (
 	_ Socks5UDPClient = &Socks5UDPClientTUN{}
 )
 
+type udpPacketWriter interface {
+	WriteToUDP(b []byte, addr *net.UDPAddr) (int, error)
+}
+
 func WriteToAddrUDP(conn gonnect.PacketConn, addr Addr, b []byte) (err error) {
 	addr = addr.WithNetTyp("udp")
-	if udpProxy, ok := conn.(*net.UDPConn); ok {
-		// For some fucking reason net.UDPConn.WriteTo just crashing on any
-		// net.Addr that is not *net.UDPAddr so we handling it individually
+	if udpProxy := unwrapUDPPacketWriter(conn); udpProxy != nil {
 		udpAddr := addr.ToUDP()
 		if udpAddr == nil {
 			return nil
 		}
 		_, err = udpProxy.WriteToUDP(b, udpAddr)
-	} else {
-		// For all others PacketConn implementations
-		_, err = conn.WriteTo(b, addr)
+		return
 	}
+
+	// For all other PacketConn implementations.
+	_, err = conn.WriteTo(b, addr)
 	return
+}
+
+func unwrapUDPPacketWriter(conn any) udpPacketWriter {
+	for conn != nil {
+		if udpProxy, ok := conn.(udpPacketWriter); ok {
+			return udpProxy
+		}
+		conn = gonnect.GetWrapped(conn)
+	}
+	return nil
 }
 
 // AppendSocks5UDPHeader appends a SOCKS5 UDP header to a buffer.

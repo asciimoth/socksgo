@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +29,14 @@ type recordingPacketConn struct {
 func (r *recordingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	r.addr = addr
 	return len(p), nil
+}
+
+type packetConnWrapper struct {
+	gonnect.PacketConn
+}
+
+func (p *packetConnWrapper) GetWrapped() any {
+	return p.PacketConn
 }
 
 type localAddrConn struct {
@@ -89,6 +98,102 @@ func TestWriteToAddrUDP_NormalizesNetwork(t *testing.T) {
 	}
 	if got, want := conn.addr.Network(), "udp"; got != want {
 		t.Fatalf("fqdn addr.Network() = %q, want %q", got, want)
+	}
+}
+
+func TestWriteToAddrUDP_DirectNativeUDPConn(t *testing.T) {
+	receiver := listenUDPForWriteToAddrUDP(t)
+	sender := listenUDPForWriteToAddrUDP(t)
+
+	err := protocol.WriteToAddrUDP(
+		sender,
+		protocol.AddrFromNetAddr(receiver.LocalAddr()),
+		[]byte("direct"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertUDPReadForWriteToAddrUDP(t, receiver, "direct")
+}
+
+func TestWriteToAddrUDP_WrappedNativeUDPConn(t *testing.T) {
+	receiver := listenUDPForWriteToAddrUDP(t)
+	sender := listenUDPForWriteToAddrUDP(t)
+	wrapped := gonnect.PacketConnWithCallbacks(sender, &gonnect.Callbacks{})
+	wrapped = &packetConnWrapper{PacketConn: wrapped}
+
+	err := protocol.WriteToAddrUDP(
+		wrapped,
+		protocol.AddrFromNetAddr(receiver.LocalAddr()),
+		[]byte("wrapped"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertUDPReadForWriteToAddrUDP(t, receiver, "wrapped")
+}
+
+func TestWriteToAddrUDP_WrappedNativeUDPConnInvalidAddr(t *testing.T) {
+	receiver := listenUDPForWriteToAddrUDP(t)
+	sender := listenUDPForWriteToAddrUDP(t)
+	wrapped := gonnect.PacketConnWithCallbacks(sender, &gonnect.Callbacks{})
+
+	err := protocol.WriteToAddrUDP(
+		wrapped,
+		protocol.AddrFromFQDN("example.com", 53, "udp"),
+		[]byte("invalid"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := make([]byte, 16)
+	err = receiver.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _, err := receiver.ReadFrom(buf)
+	if err == nil {
+		t.Fatalf("unexpected packet %q", string(buf[:n]))
+	}
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("ReadFrom error = %v, want deadline exceeded", err)
+	}
+}
+
+func listenUDPForWriteToAddrUDP(t *testing.T) *net.UDPConn {
+	t.Helper()
+
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
+		IP: net.IPv4(127, 0, 0, 1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+	})
+	return conn
+}
+
+func assertUDPReadForWriteToAddrUDP(
+	t *testing.T, conn *net.UDPConn, want string,
+) {
+	t.Helper()
+
+	err := conn.SetReadDeadline(time.Now().Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64)
+	n, _, err := conn.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(buf[:n]); got != want {
+		t.Fatalf("packet = %q, want %q", got, want)
 	}
 }
 
