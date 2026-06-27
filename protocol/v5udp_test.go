@@ -20,6 +20,25 @@ import (
 	"github.com/asciimoth/socksgo/protocol"
 )
 
+type recordingPacketConn struct {
+	gonnect.PacketConn
+	addr net.Addr
+}
+
+func (r *recordingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	r.addr = addr
+	return len(p), nil
+}
+
+type localAddrConn struct {
+	net.Conn
+	local net.Addr
+}
+
+func (l localAddrConn) LocalAddr() net.Addr {
+	return l.local
+}
+
 func TestWriteToAddrUDP(t *testing.T) {
 	pc, err := net.DialUDP("udp", nil, &net.UDPAddr{
 		IP:   net.IPv4(127, 0, 0, 1),
@@ -43,6 +62,33 @@ func TestWriteToAddrUDP(t *testing.T) {
 		"use of WriteTo with pre-connected connection",
 	) {
 		t.Fatal(err)
+	}
+}
+
+func TestWriteToAddrUDP_NormalizesNetwork(t *testing.T) {
+	conn := &recordingPacketConn{}
+	err := protocol.WriteToAddrUDP(
+		conn,
+		protocol.AddrFromIP(net.ParseIP("127.0.0.1"), 53, "tcp4"),
+		[]byte("dns"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := conn.addr.Network(), "udp4"; got != want {
+		t.Fatalf("addr.Network() = %q, want %q", got, want)
+	}
+
+	err = protocol.WriteToAddrUDP(
+		conn,
+		protocol.AddrFromFQDN("example.com", 53, "tcp"),
+		[]byte("dns"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := conn.addr.Network(), "udp"; got != want {
+		t.Fatalf("fqdn addr.Network() = %q, want %q", got, want)
 	}
 }
 
@@ -1158,6 +1204,72 @@ func (f *fakePacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (f *fakePacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	// WriteTo is treated same as Write: push to peer
 	return f.Write(b)
+}
+
+func TestReadSocks5AssocUDPPacket_NormalizesDecodedNetwork(t *testing.T) {
+	sender, receiver := newPacketConnPair()
+	defer sender.Close()   //nolint
+	defer receiver.Close() //nolint
+
+	receiver.local = protocol.AddrFromIP(net.ParseIP("127.0.0.1"), 1080, "tcp4")
+	payload := []byte("assoc-payload")
+	dst := protocol.AddrFromIP(net.ParseIP("192.0.2.10"), 53, "udp")
+	packet := append(protocol.AppendSocks5UDPHeader(nil, 0, dst), payload...)
+	_, err := sender.Write(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := make([]byte, 128)
+	n, addr, _, err := protocol.ReadSocks5AssocUDPPacket(
+		nil,
+		receiver,
+		out,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out[:n]); got != string(payload) {
+		t.Fatalf("payload = %q, want %q", got, payload)
+	}
+	if got, want := addr.Network(), "udp4"; got != want {
+		t.Fatalf("addr.Network() = %q, want %q", got, want)
+	}
+}
+
+func TestReadSocks5TunUDPPacket_NormalizesDecodedNetwork(t *testing.T) {
+	local, remote := net.Pipe()
+	defer local.Close()  //nolint
+	defer remote.Close() //nolint
+
+	tun := localAddrConn{
+		Conn:  local,
+		local: protocol.AddrFromIP(net.ParseIP("127.0.0.1"), 1080, "tcp4"),
+	}
+	payload := []byte("tun-payload")
+	dst := protocol.AddrFromIP(net.ParseIP("192.0.2.20"), 53, "udp")
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := protocol.WriteSocks5TUNUDPPacket(nil, remote, dst, payload)
+		writeDone <- err
+	}()
+
+	out := make([]byte, 128)
+	n, addr, err := protocol.ReadSocks5TunUDPPacket(nil, tun, out, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out[:n]); got != string(payload) {
+		t.Fatalf("payload = %q, want %q", got, payload)
+	}
+	if got, want := addr.Network(), "udp4"; got != want {
+		t.Fatalf("addr.Network() = %q, want %q", got, want)
+	}
+	if err := <-writeDone; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAppendSocks5UDPHeader_IPv4_IPv6_FQDN_and_frag(t *testing.T) {

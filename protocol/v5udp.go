@@ -108,6 +108,7 @@ var (
 )
 
 func WriteToAddrUDP(conn gonnect.PacketConn, addr Addr, b []byte) (err error) {
+	addr = addr.WithNetTyp("udp")
 	if udpProxy, ok := conn.(*net.UDPConn); ok {
 		// For some fucking reason net.UDPConn.WriteTo just crashing on any
 		// net.Addr that is not *net.UDPAddr so we handling it individually
@@ -260,7 +261,7 @@ loop:
 			if !skipAddr {
 				ip := net.IP(slices.Clone(buf[4:8]))
 				port := binary.BigEndian.Uint16(buf[8:10])
-				addr = AddrFromIP(ip, port, conn.LocalAddr().Network())
+				addr = AddrFromIP(ip, port, "udp")
 			}
 		case IP6Addr:
 			if n < 22 {
@@ -272,7 +273,7 @@ loop:
 			if !skipAddr {
 				ip := net.IP(slices.Clone(buf[4:20]))
 				port := binary.BigEndian.Uint16(buf[20:22])
-				addr = AddrFromIP(ip, port, conn.LocalAddr().Network())
+				addr = AddrFromIP(ip, port, "udp")
 			}
 		case FQDNAddr:
 			ln := int(buf[4])
@@ -286,7 +287,7 @@ loop:
 				dom := string(buf[5 : 5+ln])
 				port := binary.BigEndian.Uint16(buf[5+ln : 5+ln+2])
 				host := net.JoinHostPort(dom, strconv.Itoa(int(port)))
-				addr = AddrFromFQDN(host, port, conn.LocalAddr().Network())
+				addr = AddrFromFQDN(host, port, "udp")
 			}
 		default:
 			// Unknown address type
@@ -338,7 +339,7 @@ func ReadSocks5TunUDPPacket(
 			if !skipAddr && !skip {
 				ip := net.IP([]byte{fb, hbuf[0], hbuf[1], hbuf[2]})
 				port := binary.BigEndian.Uint16(hbuf[3:5])
-				addr = AddrFromIP(ip, port, conn.LocalAddr().Network())
+				addr = AddrFromIP(ip, port, "udp")
 			}
 		case IP6Addr:
 			_, err = io.ReadFull(conn, hbuf[:17]) // ip6 + port - 1
@@ -353,7 +354,7 @@ func ReadSocks5TunUDPPacket(
 					hbuf[11], hbuf[12], hbuf[13], hbuf[14],
 				})
 				port := binary.BigEndian.Uint16(hbuf[15:17])
-				addr = AddrFromIP(ip, port, conn.LocalAddr().Network())
+				addr = AddrFromIP(ip, port, "udp")
 			}
 		case FQDNAddr:
 			ln := int(fb)
@@ -367,7 +368,7 @@ func ReadSocks5TunUDPPacket(
 					string(hbuf[:ln]),
 					strconv.Itoa(int(port)),
 				)
-				addr = AddrFromFQDN(host, port, conn.LocalAddr().Network())
+				addr = AddrFromFQDN(host, port, "udp")
 			}
 		default:
 			err = UnknownAddrTypeError{atyp}
