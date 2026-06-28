@@ -50,6 +50,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -1115,19 +1116,59 @@ func ProxySocks5UDPTun(
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool bufpool.Pool, bufSize int,
 ) (err error) {
+	return ProxySocks5UDPTunContext(
+		context.Background(),
+		tun,
+		proxy,
+		binded,
+		defaultAddr,
+		pool,
+		bufSize,
+	)
+}
+
+// ProxySocks5UDPTunContext is like ProxySocks5UDPTun, with cancellation.
+//
+// When ctx is canceled, both underlying connections are closed. The function
+// waits for both proxying directions to stop before returning buffers to pool.
+func ProxySocks5UDPTunContext(
+	ctx context.Context,
+	tun net.Conn, proxy gonnect.PacketConn,
+	binded bool,
+	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
+	pool bufpool.Pool, bufSize int,
+) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	tun2proxy := bufpool.GetBuffer(pool, bufSize)
 	tun2assoc := bufpool.GetBuffer(pool, bufSize)
 	defer bufpool.PutBuffer(pool, tun2proxy)
 	defer bufpool.PutBuffer(pool, tun2assoc)
 
 	done := make(chan error, 1)
+	stopWatch := make(chan struct{})
+	var closeOnce sync.Once
+	closeAll := func() {
+		closeOnce.Do(func() {
+			_ = tun.Close()
+			_ = proxy.Close()
+		})
+	}
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			closeAll()
+		case <-stopWatch:
+		}
+	}()
+	defer close(stopWatch)
 
 	go func() {
 		// tun -> proxy
-		defer func() {
-			_ = tun.Close()
-			_ = proxy.Close()
-		}()
+		defer closeAll()
 
 		for {
 			n, addr, err := ReadSocks5TunUDPPacket(pool, tun, tun2proxy, false)
@@ -1152,7 +1193,9 @@ func ProxySocks5UDPTun(
 
 	// tun <- proxy
 	for {
-		n, addr, err := proxy.ReadFrom(tun2assoc)
+		var n int
+		var addr net.Addr
+		n, addr, err = proxy.ReadFrom(tun2assoc)
 		if err != nil {
 			break
 		}
@@ -1160,13 +1203,15 @@ func ProxySocks5UDPTun(
 			pool, tun, AddrFromNetAddr(addr), tun2assoc[:n],
 		)
 		if err != nil {
-			done <- err
 			break
 		}
 	}
 
-	_ = tun.Close()
-	_ = proxy.Close()
+	closeAll()
 
-	return JoinNetErrors(err, <-done)
+	err = JoinNetErrors(err, <-done)
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return err
 }

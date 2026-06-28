@@ -116,14 +116,8 @@ var DefaultGostUDPTUNHandler = CommandHandler{
 			return err
 		}
 
-		stopWatch := closeOnContextDone(ctx, func() {
-			_ = tun.Close()
-			_ = proxy.Close()
-		})
-		defer stopWatch()
-
-		return protocol.ProxySocks5UDPTun(
-			tun, proxy, binded, nil, pool, server.GetUDPBufferSize(),
+		return protocol.ProxySocks5UDPTunContext(
+			ctx, tun, proxy, binded, nil, pool, server.GetUDPBufferSize(),
 		)
 	},
 }

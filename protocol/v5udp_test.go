@@ -3,6 +3,7 @@ package protocol_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -2417,6 +2418,43 @@ func TestProxySocks5UDPTun_Binded(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timeout waiting for ProxySocks5UDPTun to exit (binded)")
 	}
+}
+
+func TestProxySocks5UDPTunContext_CancelReturnsBuffers(t *testing.T) {
+	tunLocal, tunRemote := net.Pipe()
+	defer tunRemote.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyB.Close() //nolint
+
+	pool := bufpool.NewTestDebugPool(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- protocol.ProxySocks5UDPTunContext(
+			ctx,
+			tunLocal,
+			proxyA,
+			true,
+			nil,
+			pool,
+			2048,
+		)
+	}()
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timeout waiting for ProxySocks5UDPTunContext to exit")
+	}
+
+	pool.Close()
 }
 
 // fakeCtrlConn simulates a control connection whose RemoteAddr returns the
