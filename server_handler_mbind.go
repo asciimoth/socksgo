@@ -161,7 +161,7 @@ var DefaultGostMBindHandler = CommandHandler{
 				break
 			}
 			wg.Go(func() {
-				_ = gonnect.PipeConn(inc, stream)
+				_ = gonnect.PipeConn(inc, stream, server.GetSpawner())
 			})
 		}
 		closeAll()

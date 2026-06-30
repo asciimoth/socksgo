@@ -166,7 +166,7 @@ var DefaultBindHandler = CommandHandler{
 		})
 		defer stopWatchPipe()
 
-		err = gonnect.PipeConn(conn, proxy)
+		err = gonnect.PipeConn(conn, proxy, server.GetSpawner())
 		return err
 	},
 }

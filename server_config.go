@@ -350,6 +350,17 @@ func (s *Server) GetResolver() gonnect.Resolver {
 	return s.Resolver
 }
 
+// GetSpawner returns the goroutine spawner for gonnect helpers.
+//
+// Returns nil when no spawner is configured. gonnect treats nil as direct
+// goroutine spawning.
+func (s *Server) GetSpawner() gonnect.Spawner {
+	if s == nil {
+		return nil
+	}
+	return s.Spawner
+}
+
 // ListenForAssoc creates a UDP listener for UDP ASSOC commands.
 //
 // ListenForAssoc calls AssocListener if set, otherwise creates a UDP

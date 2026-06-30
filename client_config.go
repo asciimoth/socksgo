@@ -402,6 +402,17 @@ func (c *Client) GetResolver() gonnect.Resolver {
 	return c.Resolver
 }
 
+// GetSpawner returns the goroutine spawner for gonnect helpers.
+//
+// Returns nil when no spawner is configured. gonnect treats nil as direct
+// goroutine spawning.
+func (c *Client) GetSpawner() gonnect.Spawner {
+	if c == nil {
+		return nil
+	}
+	return c.Spawner
+}
+
 // GetTLSConfig builds the TLS configuration for secure connections.
 //
 // GetTLSConfig creates a TLS configuration from TLSConfig field or

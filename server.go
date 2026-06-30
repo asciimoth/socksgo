@@ -246,6 +246,11 @@ type Server struct {
 	// Default: net.DefaultResolver
 	Resolver gonnect.Resolver
 
+	// Spawner is passed to gonnect helpers that need to spawn goroutines.
+	//
+	// If nil, gonnect falls back to direct goroutine spawning.
+	Spawner gonnect.Spawner
+
 	// DanglingConnections disable closing of used connections after handler
 	// returns.
 	DanglingConnections bool

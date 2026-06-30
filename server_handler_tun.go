@@ -116,8 +116,9 @@ var DefaultGostUDPTUNHandler = CommandHandler{
 			return err
 		}
 
-		return protocol.ProxySocks5UDPTunContext(
+		return protocol.ProxySocks5UDPTunContextWithSpawner(
 			ctx, tun, proxy, binded, nil, pool, server.GetUDPBufferSize(),
+			server.GetSpawner(),
 		)
 	},
 }

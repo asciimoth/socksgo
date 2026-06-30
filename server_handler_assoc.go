@@ -154,9 +154,10 @@ var DefaultUDPAssocHandler = CommandHandler{
 		})
 		defer stopWatch()
 
-		return protocol.ProxySocks5UDPAssoc(
+		return protocol.ProxySocks5UDPAssocWithSpawner(
 			assoc, proxy, ctrl, binded, nil, pool,
 			server.GetUDPBufferSize(), server.GetUDPTimeout(),
+			server.GetSpawner(),
 		)
 	},
 }

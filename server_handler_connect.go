@@ -88,6 +88,6 @@ var DefaultConnectHandler = CommandHandler{
 			_ = conn2.Close()
 		})
 		defer stopWatch()
-		return gonnect.PipeConn(conn, conn2)
+		return gonnect.PipeConn(conn, conn2, server.GetSpawner())
 	},
 }

@@ -66,6 +66,15 @@ import (
 	"github.com/asciimoth/socksgo/internal"
 )
 
+func spawn(spawner gonnect.Spawner, worker func(), name string) error {
+	if spawner == nil {
+		go worker()
+		return nil
+	}
+	_, err := spawner.Spawn(worker, name)
+	return err
+}
+
 // Socks5UDPClient is the interface for SOCKS5 UDP clients.
 //
 // This interface combines net.Conn and net.PacketConn to support both
@@ -975,6 +984,29 @@ func ProxySocks5UDPAssoc(
 	pool bufpool.Pool, bufSize int,
 	timeOut time.Duration,
 ) (err error) {
+	return ProxySocks5UDPAssocWithSpawner(
+		assoc,
+		proxy,
+		ctrl,
+		binded,
+		defaultAddr,
+		pool,
+		bufSize,
+		timeOut,
+		nil,
+	)
+}
+
+// ProxySocks5UDPAssocWithSpawner is like ProxySocks5UDPAssoc, with worker
+// goroutines spawned through spawner when it is non-nil.
+func ProxySocks5UDPAssocWithSpawner(
+	assoc, proxy gonnect.PacketConn, ctrl net.Conn,
+	binded bool,
+	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
+	pool bufpool.Pool, bufSize int,
+	timeOut time.Duration,
+	spawner gonnect.Spawner,
+) (err error) {
 	assoc2proxy := bufpool.GetBuffer(pool, bufSize)
 	proxy2assoc := bufpool.GetBuffer(pool, bufSize)
 	defer bufpool.PutBuffer(pool, assoc2proxy)
@@ -982,7 +1014,7 @@ func ProxySocks5UDPAssoc(
 
 	done := make(chan error, 2)
 
-	go func() {
+	if err = spawn(spawner, func() {
 		// assoc -> proxy goroutine
 		var reverseProxyStarted bool
 		defer func() {
@@ -1036,8 +1068,7 @@ func ProxySocks5UDPAssoc(
 
 				// Only now after clientUDPAddr is known, we can start reverse
 				// directional proxy too
-				reverseProxyStarted = true
-				go func() {
+				spawnErr := spawn(spawner, func() {
 					// assoc <- proxy goroutine
 					defer func() { _ = ctrl.Close() }()
 					for {
@@ -1058,7 +1089,14 @@ func ProxySocks5UDPAssoc(
 							return
 						}
 					}
-				}()
+				}, "socksgo.ProxySocks5UDPAssoc.proxy2assoc")
+				if spawnErr != nil {
+					done <- spawnErr
+					done <- nil
+					_ = ctrl.Close()
+					return
+				}
+				reverseProxyStarted = true
 			}
 
 			if binded { //nolint nestif
@@ -1074,7 +1112,9 @@ func ProxySocks5UDPAssoc(
 				return
 			}
 		}
-	}()
+	}, "socksgo.ProxySocks5UDPAssoc.assoc2proxy"); err != nil {
+		return err
+	}
 
 	gonnect.ReadUntilClose(ctrl)
 	_ = assoc.Close()
@@ -1116,7 +1156,27 @@ func ProxySocks5UDPTun(
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool bufpool.Pool, bufSize int,
 ) (err error) {
-	return ProxySocks5UDPTunContext(
+	return ProxySocks5UDPTunWithSpawner(
+		tun,
+		proxy,
+		binded,
+		defaultAddr,
+		pool,
+		bufSize,
+		nil,
+	)
+}
+
+// ProxySocks5UDPTunWithSpawner is like ProxySocks5UDPTun, with worker
+// goroutines spawned through spawner when it is non-nil.
+func ProxySocks5UDPTunWithSpawner(
+	tun net.Conn, proxy gonnect.PacketConn,
+	binded bool,
+	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
+	pool bufpool.Pool, bufSize int,
+	spawner gonnect.Spawner,
+) (err error) {
+	return ProxySocks5UDPTunContextWithSpawner(
 		context.Background(),
 		tun,
 		proxy,
@@ -1124,6 +1184,7 @@ func ProxySocks5UDPTun(
 		defaultAddr,
 		pool,
 		bufSize,
+		spawner,
 	)
 }
 
@@ -1137,6 +1198,28 @@ func ProxySocks5UDPTunContext(
 	binded bool,
 	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
 	pool bufpool.Pool, bufSize int,
+) (err error) {
+	return ProxySocks5UDPTunContextWithSpawner(
+		ctx,
+		tun,
+		proxy,
+		binded,
+		defaultAddr,
+		pool,
+		bufSize,
+		nil,
+	)
+}
+
+// ProxySocks5UDPTunContextWithSpawner is like ProxySocks5UDPTunContext, with
+// worker goroutines spawned through spawner when it is non-nil.
+func ProxySocks5UDPTunContextWithSpawner(
+	ctx context.Context,
+	tun net.Conn, proxy gonnect.PacketConn,
+	binded bool,
+	defaultAddr *Addr, // Addr to send packets with 0.0.0.0 / :: as dst
+	pool bufpool.Pool, bufSize int,
+	spawner gonnect.Spawner,
 ) (err error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1157,16 +1240,18 @@ func ProxySocks5UDPTunContext(
 		})
 	}
 
-	go func() {
+	if err = spawn(spawner, func() {
 		select {
 		case <-ctx.Done():
 			closeAll()
 		case <-stopWatch:
 		}
-	}()
+	}, "socksgo.ProxySocks5UDPTun.watch"); err != nil {
+		return err
+	}
 	defer close(stopWatch)
 
-	go func() {
+	if err = spawn(spawner, func() {
 		// tun -> proxy
 		defer closeAll()
 
@@ -1189,7 +1274,10 @@ func ProxySocks5UDPTunContext(
 				return
 			}
 		}
-	}()
+	}, "socksgo.ProxySocks5UDPTun.tun2proxy"); err != nil {
+		closeAll()
+		return err
+	}
 
 	// tun <- proxy
 	for {

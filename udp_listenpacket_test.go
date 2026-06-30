@@ -67,7 +67,7 @@ func newUDPListenPacketSocksClientServer(
 		_ = ln.Close()
 		t.Fatalf("create SOCKS client: %v", err)
 	}
-	client.WithNetwork(gonnect.DetachNetwork(network, nil))
+	client.WithNetwork(gonnect.DetachNetwork(network, nil, nil))
 	client.Filter = gonnect.FalseFilter
 
 	cleanup := func() {

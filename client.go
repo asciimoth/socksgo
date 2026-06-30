@@ -512,6 +512,11 @@ type Client struct {
 	// Default: net.DefaultResolver
 	Resolver gonnect.Resolver
 
+	// Spawner is passed to gonnect helpers that need to spawn goroutines.
+	//
+	// If nil, gonnect falls back to direct goroutine spawning.
+	Spawner gonnect.Spawner
+
 	// HandshakeTimeout specifies the timeout for SOCKS handshake.
 	//
 	// If zero, uses context deadline or no timeout.
