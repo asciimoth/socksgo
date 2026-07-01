@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -2802,6 +2803,44 @@ func (w writeErrPacketConn) WriteToIpPort([]byte, net.IP, uint16) (int, error) {
 	return 0, errors.New("mock write error")
 }
 
+type failFirstWritePacketConn struct {
+	gonnect.PacketConn
+	mu  sync.Mutex
+	err error
+}
+
+func (f *failFirstWritePacketConn) fail() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	err := f.err
+	f.err = nil
+	return err
+}
+
+func (f *failFirstWritePacketConn) Write(b []byte) (int, error) {
+	if err := f.fail(); err != nil {
+		return 0, err
+	}
+	return f.PacketConn.Write(b)
+}
+
+func (f *failFirstWritePacketConn) WriteTo(
+	b []byte,
+	addr net.Addr,
+) (int, error) {
+	if err := f.fail(); err != nil {
+		return 0, err
+	}
+	return f.PacketConn.WriteTo(b, addr)
+}
+
+func (f *failFirstWritePacketConn) WriteToUDP(
+	b []byte,
+	addr *net.UDPAddr,
+) (int, error) {
+	return f.WriteTo(b, addr)
+}
+
 func TestProxySocks5UDPAssoc_ErrWriteProxy(t *testing.T) {
 	assocA, assocB := newPacketConnPair()
 	defer assocA.Close() //nolint
@@ -2841,6 +2880,77 @@ func TestProxySocks5UDPAssoc_ErrWriteProxy(t *testing.T) {
 	err := <-doneCh
 	if err.Error() != "mock write error" {
 		t.Fatal(err)
+	}
+}
+
+func TestProxySocks5UDPAssoc_TransientWriteProxyContinues(t *testing.T) {
+	assocA, assocB := newPacketConnPair()
+	defer assocA.Close() //nolint
+	defer assocB.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	clientIP := net.ParseIP("127.0.0.1")
+	ctrlAddr := &net.UDPAddr{IP: clientIP, Port: 61000}
+	ctrl := newFakeCtrlConn(ctrlAddr)
+	defer ctrl.Close() //nolint
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- protocol.ProxySocks5UDPAssoc(
+			assocA,
+			&failFirstWritePacketConn{
+				PacketConn: proxyA,
+				err:        syscall.EHOSTUNREACH,
+			},
+			ctrl,
+			false,
+			nil,
+			nil,
+			2048,
+			1*time.Second,
+		)
+	}()
+
+	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
+	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
+	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	assocA.in <- pkt{
+		data: append(append([]byte(nil), hdr...), []byte("dropped")...),
+		from: clientFrom,
+	}
+
+	payload := []byte("assoc-after-transient")
+	assocA.in <- pkt{
+		data: append(append([]byte(nil), hdr...), payload...),
+		from: clientFrom,
+	}
+
+	got := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, _ := proxyB.ReadFrom(buf)
+		got <- append([]byte(nil), buf[:n]...)
+	}()
+
+	select {
+	case b := <-got:
+		if string(b) != string(payload) {
+			t.Fatalf("payload mismatch: want %q got %q", payload, b)
+		}
+	case err := <-errCh:
+		t.Fatalf("proxy exited after transient write error: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timeout waiting for packet after transient write error")
+	}
+
+	_ = ctrl.Close()
+	select {
+	case <-errCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for ProxySocks5UDPAssoc to exit")
 	}
 }
 
@@ -2884,6 +2994,130 @@ func TestProxySocks5UDPAssoc_ErrWriteAssoc(t *testing.T) {
 	err := <-doneCh
 	if err.Error() != "mock write error" {
 		t.Fatal(err)
+	}
+}
+
+func TestProxySocks5UDPTun_TransientWriteToProxyUnbindedContinues(
+	t *testing.T,
+) {
+	tunLocal, tunRemote := net.Pipe()
+	defer tunLocal.Close()  //nolint
+	defer tunRemote.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- protocol.ProxySocks5UDPTun(
+			tunLocal,
+			&failFirstWritePacketConn{
+				PacketConn: proxyA,
+				err: &net.OpError{
+					Op:  "write",
+					Net: "udp",
+					Err: syscall.EHOSTUNREACH,
+				},
+			},
+			false,
+			nil,
+			nil,
+			2048,
+		)
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("10.11.12.13"), 31337, "udp")
+	first := []byte("dropped")
+	firstHdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(first)), addr)
+	_, _ = tunRemote.Write(append(firstHdr, first...)) //nolint
+
+	payload := []byte("tun-after-transient")
+	hdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(payload)), addr)
+	_, _ = tunRemote.Write(append(hdr, payload...)) //nolint
+
+	got := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, _ := proxyB.ReadFrom(buf)
+		got <- append([]byte(nil), buf[:n]...)
+	}()
+
+	select {
+	case b := <-got:
+		if string(b) != string(payload) {
+			t.Fatalf("payload mismatch: want %q got %q", payload, b)
+		}
+	case err := <-errCh:
+		t.Fatalf("proxy exited after transient write error: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timeout waiting for packet after transient write error")
+	}
+
+	_ = proxyA.Close()
+	select {
+	case <-errCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for ProxySocks5UDPTun to exit")
+	}
+}
+
+func TestProxySocks5UDPTun_TransientWriteProxyBindedContinues(t *testing.T) {
+	tunLocal, tunRemote := net.Pipe()
+	defer tunLocal.Close()  //nolint
+	defer tunRemote.Close() //nolint
+
+	proxyA, proxyB := newPacketConnPair()
+	defer proxyA.Close() //nolint
+	defer proxyB.Close() //nolint
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- protocol.ProxySocks5UDPTun(
+			tunLocal,
+			&failFirstWritePacketConn{
+				PacketConn: proxyA,
+				err:        syscall.ECONNREFUSED,
+			},
+			true,
+			nil,
+			nil,
+			2048,
+		)
+	}()
+
+	addr := protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 4444, "udp")
+	first := []byte("dropped")
+	firstHdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(first)), addr)
+	_, _ = tunRemote.Write(append(firstHdr, first...)) //nolint
+
+	payload := []byte("tun-binded-after-transient")
+	hdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(payload)), addr)
+	_, _ = tunRemote.Write(append(hdr, payload...)) //nolint
+
+	got := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, _ := proxyB.ReadFrom(buf)
+		got <- append([]byte(nil), buf[:n]...)
+	}()
+
+	select {
+	case b := <-got:
+		if string(b) != string(payload) {
+			t.Fatalf("payload mismatch: want %q got %q", payload, b)
+		}
+	case err := <-errCh:
+		t.Fatalf("proxy exited after transient write error: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timeout waiting for packet after transient write error")
+	}
+
+	_ = proxyA.Close()
+	select {
+	case <-errCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for ProxySocks5UDPTun to exit")
 	}
 }
 

@@ -59,6 +59,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/asciimoth/bufpool"
@@ -145,6 +146,12 @@ func unwrapUDPPacketWriter(conn any) udpPacketWriter {
 		conn = gonnect.GetWrapped(conn)
 	}
 	return nil
+}
+
+func isTransientUDPDeliveryError(err error) bool {
+	return errors.Is(err, syscall.EHOSTUNREACH) ||
+		errors.Is(err, syscall.ENETUNREACH) ||
+		errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // AppendSocks5UDPHeader appends a SOCKS5 UDP header to a buffer.
@@ -1108,6 +1115,9 @@ func ProxySocks5UDPAssocWithSpawner(
 				err = WriteToAddrUDP(proxy, addr, assoc2proxy[:n])
 			}
 			if err != nil {
+				if isTransientUDPDeliveryError(err) {
+					continue
+				}
 				done <- err
 				return
 			}
@@ -1270,6 +1280,9 @@ func ProxySocks5UDPTunContextWithSpawner(
 				err = WriteToAddrUDP(proxy, addr, tun2proxy[:n])
 			}
 			if err != nil {
+				if isTransientUDPDeliveryError(err) {
+					continue
+				}
 				done <- err
 				return
 			}
