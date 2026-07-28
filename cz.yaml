@@ -8,7 +8,7 @@ commitizen:
   name: cz_customize
   customize:
     schema: "<type>(<scope>)?: <message>"
-    schema_pattern: "^(?:bump|feat|fix|perf|refactor|docs|style|test|chore|build|ci|revert|other)(?:\\([A-Za-z0-9_\\-\\/\\.]+\\))?(!)?:\\s.+$"
+    schema_pattern: "^(?:bump|feat|fix|perf|refactor|docs|style|test|chore|dev|build|ci|revert|other)(?:\\([A-Za-z0-9_\\-\\/\\.]+\\))?(!)?:\\s.+$"
     message_template: >
       {{ change_type }}{% if scope %}({{ scope }}){% endif %}{% if is_breaking %}!{% endif %}: {{ message }}
       {% if body %}
@@ -34,6 +34,7 @@ commitizen:
       - style
       - test
       - chore
+      - dev
       - build
       - ci
     change_type_map:
@@ -68,31 +69,33 @@ commitizen:
             name: "test:     Adding or fixing tests"
           - value: chore
             name: "chore:    Chores/maintenance (build scripts, tooling, etc)"
+          - value: dev
+            name: "dev:      Dev env configuration"
           - value: build
             name: "build:    Build system / dependencies"
           - value: ci
             name: "ci:       CI configuration and scripts"
       - type: input
         name: scope
-        message: "What is the scope of this change? (class or file name): (press [enter] to skip)"
+        message: "What is the scope of this change? (class or file name): (press [enter] to skip)\n"
         default: ""
 
       - type: input
         name: message
-        message: "Write a short and imperative summary of the code changes: (lower case and no period)"
+        message: "Write a short and imperative summary of the code changes: (lower case and no period)\n"
         default: ""
 
       - type: input
         name: body
-        message: "Provide additional contextual information about the code changes: (press [enter] to skip)"
+        message: "Provide additional contextual information about the code changes: (press [enter] to skip)\n"
         default: ""
 
       - type: confirm
         name: is_breaking
-        message: "Is this a BREAKING CHANGE? Correlates with MAJOR in SemVer"
+        message: "Is this a BREAKING CHANGE? Correlates with MAJOR in SemVer\n"
         default: false
 
       - type: input
         name: footer
-        message: "Footer (e.g. issues) (optional)"
+        message: "Footer (e.g. issues) (optional)\n"
         default: ""
