@@ -11,7 +11,7 @@ import (
 )
 
 func newNetwork() gt.Network {
-	loop := gonnect.NewLoopbackNetwok()
+	loop := gonnect.NewLoopbackNetwork()
 	client := &socksgo.Client{
 		Filter: gonnect.FalseFilter,
 	}
