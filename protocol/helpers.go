@@ -7,6 +7,7 @@ package protocol
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 
@@ -56,6 +57,8 @@ func Reply(
 		reply, err = BuildSocks5TCPReply(stat.To5(), addr, pool)
 	case "4", "4a":
 		reply = BuildSocks4TCPReply(stat.To4(), addr, pool)
+	default:
+		return fmt.Errorf("unknown socks protocol version %q", ver)
 	}
 	if err != nil {
 		return

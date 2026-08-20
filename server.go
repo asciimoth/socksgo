@@ -40,8 +40,9 @@ import (
 //
 // # Thread Safety
 //
-// Server is safe for concurrent use. Multiple goroutines can call
-// Accept simultaneously, and handlers execute independently.
+// Server is safe for concurrent Accept calls after initialization. Do not
+// modify exported configuration fields, handler maps, auth handlers, filters,
+// dialers, listeners, or resolver while Accept is running.
 //
 // # See Also
 //
@@ -64,8 +65,7 @@ type Server struct {
 	// Examples:
 	//
 	//	server.Auth = (&protocol.AuthHandlers{}).
-	//	    Add(&protocol.NoAuthHandler{}).
-	//	    Add(&protocol.PassAuthHandler{Verify: verifyFunc})
+	//	    Add(&protocol.PassAuthHandler{VerifyFn: verifyFunc})
 	Auth *protocol.AuthHandlers
 
 	// Smux configures connection multiplexing for Gost MBIND.
@@ -89,7 +89,7 @@ type Server struct {
 
 	// UDPTimeout is the timeout for UDP associations.
 	//
-	// Default: 2 minutes (120 seconds)
+	// Default: 3 minutes (180 seconds)
 	//
 	// UDP associations are closed after this duration of inactivity.
 	UDPTimeout time.Duration
@@ -510,7 +510,8 @@ func (s *Server) accept4(ctx context.Context, conn net.Conn, isTLS bool) error {
 // Supported methods depend on Auth configuration:
 //   - No Auth (0x00)
 //   - Username/Password (0x02)
-//   - GSS-API (0x01) - stub implementation
+//   - GSS-API (0x01) - experimental token exchange; no RFC 1961
+//     protection-level negotiation
 //
 // # Errors
 //
@@ -561,6 +562,9 @@ func (s *Server) accept5(ctx context.Context, conn net.Conn, isTLS bool) error {
 
 	stat, err := s.runPreCmd(ctx, conn, "5", info, cmd, addr)
 	if err != nil || !stat.Ok() {
+		if stat.Ok() {
+			stat = protocol.FailReply
+		}
 		protocol.Reject("5", conn, stat, pool)
 		return err
 	}
@@ -628,6 +632,8 @@ func (s *Server) checkIDENT(
 			err,
 		)
 	}
+	defer func() { _ = identConn.Close() }()
+
 	iresp, err := ident.QueryWithConn(
 		srcAddr.PortStr(),
 		dstAddr.PortStr(),

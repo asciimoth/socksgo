@@ -117,6 +117,13 @@ func TestReply(t *testing.T) {
 				192, 168, 1, 100, // IP address
 			},
 		},
+		{
+			name:   "unknown version",
+			ver:    "6",
+			stat:   protocol.FailReply,
+			addr:   protocol.AddrFromIP(net.IPv4(127, 0, 0, 1), 1080, ""),
+			errMsg: "unknown socks protocol version",
+		},
 	}
 
 	for _, tt := range tests {

@@ -251,6 +251,19 @@ func TestClientFromURLObjSafe_NilURL(t *testing.T) {
 	}
 }
 
+func TestClientFromURLObj_NilURL(t *testing.T) {
+	t.Parallel()
+
+	client := socksgo.ClientFromURLObj(nil)
+
+	if client == nil {
+		t.Fatal("Expected non-nil client for nil URL")
+	}
+	if !client.IsNoProxy() {
+		t.Fatal("Expected no-proxy empty client")
+	}
+}
+
 func TestClientFromURLObjSafe_PassParam(t *testing.T) {
 	t.Parallel()
 

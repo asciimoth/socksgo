@@ -14,7 +14,7 @@ Now with [WASM + socks-over-websocket support](https://asciimoth.github.io/socks
 - **All standard auth methods**
     - NoAuth
     - [Username/Password](https://www.rfc-editor.org/rfc/rfc1929)
-    - [GSSAPI](https://www.rfc-editor.org/rfc/rfc1961) (stub)
+    - [GSSAPI](https://www.rfc-editor.org/rfc/rfc1961) (experimental; no RFC 1961 protection-level negotiation)
 - **All commands**
     - CONNECT
     - BIND
@@ -84,12 +84,16 @@ client, _ := socksgo.ClientFromURL("socks5://proxy:1080")
 conn, _ := client.Dial(context.Background(), "tcp", "example.com:80")
 ```
 
+URL-created TLS clients use `InsecureSkipVerify: true` by default for
+compatibility with Gost and other SOCKS-over-TLS deployments. Add `?secure` to
+the proxy URL or set `Client.TLSConfig` directly when certificate verification
+is required.
+
 ### Server
 ```go
 import "github.com/asciimoth/socksgo"
 
 server := &socksgo.Server{
-    Auth:     socksgo.DefaultAuthHandlers,
     Handlers: socksgo.DefaultCommandHandlers,
 }
 

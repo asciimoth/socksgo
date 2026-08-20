@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
+	"crypto/subtle"
 	"flag"
 	"fmt"
 	"io"
@@ -33,8 +33,8 @@ var (
 	)
 	authToken = flag.String(
 		"token",
-		"secret-token",
-		"Shared authentication token",
+		"",
+		"Shared authentication token (required)",
 	)
 )
 
@@ -44,6 +44,9 @@ const (
 
 func main() {
 	flag.Parse()
+	if *authToken == "" {
+		log.Fatal("token is required")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -170,6 +173,7 @@ func runClient(proxyAddr, targetURL, token string) {
 	if err != nil {
 		log.Fatalf("failed run request: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	response, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -180,13 +184,13 @@ func runClient(proxyAddr, targetURL, token string) {
 	log.Printf("request completed successfully")
 }
 
-func hashToken(token string) string {
+func hashToken(token string) []byte {
 	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
+	return append([]byte(nil), h[:]...)
 }
 
 type CustomAuthMethod struct {
-	Token string
+	Token []byte
 }
 
 func (m *CustomAuthMethod) Name() string {
@@ -228,7 +232,7 @@ func (m *CustomAuthMethod) RunAuth(
 }
 
 type CustomAuthHandler struct {
-	ExpectedToken string
+	ExpectedToken []byte
 }
 
 func (h *CustomAuthHandler) Name() string {
@@ -260,9 +264,9 @@ func (h *CustomAuthHandler) HandleAuth(
 		return conn, info, err
 	}
 
-	clientToken := string(buf)
 	resp := []byte{0}
-	if clientToken != h.ExpectedToken {
+	if len(buf) != len(h.ExpectedToken) ||
+		subtle.ConstantTimeCompare(buf, h.ExpectedToken) != 1 {
 		resp[0] = 1
 	}
 
@@ -274,6 +278,6 @@ func (h *CustomAuthHandler) HandleAuth(
 		return conn, info, fmt.Errorf("invalid token")
 	}
 
-	info.Info = map[string]any{"token": clientToken}
+	info.Info = map[string]any{"token": "<redacted>"}
 	return conn, info, nil
 }

@@ -166,6 +166,7 @@ func runClient(proxyAddr, targetURL string) {
 	if err != nil {
 		log.Fatalf("failed run request: %v", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	response, err := io.ReadAll(resp.Body)
 	if err != nil {

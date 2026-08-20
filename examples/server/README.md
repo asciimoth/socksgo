@@ -12,6 +12,15 @@ This starts:
 - TLS listener on `127.0.0.1:1081` (self signed certificates)
 - WebSocket listener on `127.0.0.1:1082` at `/ws`
 
+## Options
+
+- `-tcp-addr`: TCP listen address (default: `127.0.0.1:1080`)
+- `-tls-addr`: TLS listen address (default: `127.0.0.1:1081`)
+- `-ws-addr`: WebSocket listen address (default: `127.0.0.1:1082`)
+- `-ws-origin`: allowed WebSocket Origin patterns, comma-separated. Empty uses
+  the coder/websocket default, which permits same-host browser requests.
+- `-user`, `-pass`: enable username/password auth when both are set.
+
 ## Curl
 ```sh
 # No auth
@@ -34,4 +43,3 @@ Then use curl as usual
 ```sh
 curl -4 --proxy socks5://localhost:1090 http://example.com
 ```
-

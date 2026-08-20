@@ -333,18 +333,14 @@ func TestGetDialerAndPacketDialer_DefaultAndCustom(t *testing.T) {
 	defer udpLn.Close() //nolint
 	udpAddr := udpLn.LocalAddr().String()
 
-	pdFn := (&socksgo.Server{}).GetPacketDialer() // both Dialer and PacketDialer nil -> default
+	pdFn := (&socksgo.Server{}).GetPacketDialer()
 	pconn, err := pdFn(ctx, "udp", udpAddr)
 	if err != nil {
 		t.Fatalf("default packet dialer failed: %v", err)
 	}
 	pconn.Close() //nolint
 
-	// custom PacketDialer is returned only if s.Dialer != nil (see implementation)
 	sCustom := &socksgo.Server{
-		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return nil, nil //nolint
-		},
 		PacketDialer: func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			return nil, markerErr
 		},

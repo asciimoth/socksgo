@@ -33,6 +33,34 @@ func TestTunHandlerAddrBlocked(t *testing.T) {
 	}
 }
 
+func TestTunHandlerChecksDefaultListenHostLaddr(t *testing.T) {
+	var checked string
+	server := socksgo.Server{
+		DefaultListenHost: "127.0.0.1",
+		LaddrFilter: func(addr *protocol.Addr) bool {
+			checked = addr.ToHostPort()
+			return false
+		},
+	}
+
+	conn := &net.TCPConn{}
+	err := socksgo.DefaultGostUDPTUNHandler.Handler(
+		context.Background(),
+		&server,
+		conn,
+		"5",
+		protocol.AuthInfo{},
+		protocol.CmdGostUDPTun,
+		protocol.AddrFromIP(net.IPv4zero, 0, ""),
+	)
+	if err == nil {
+		t.Fatal("error expected")
+	}
+	if checked != "127.0.0.1:0" {
+		t.Fatalf("checked laddr = %q, want 127.0.0.1:0", checked)
+	}
+}
+
 func TestTunHandlerReplyFail(t *testing.T) {
 	server := socksgo.Server{}
 	conn := &net.TCPConn{}

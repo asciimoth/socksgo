@@ -19,19 +19,16 @@ go run . [options]
 
 - `-addr`: SOCKS server listen address (default: `127.0.0.1:1080`)
 - `-target`: Target URL to fetch (default: `http://example.com`)
-- `-token`: Shared authentication token (default: `secret-token`)
+- `-token`: Shared authentication token (required)
 
 ## Examples
 
 ```sh
-# Default settings
-go run .
-
-# Use a custom token
+# Use a token
 go run . -token my-secret-token
 
 # Connect to a custom target
-go run . -target http://httpbin.org/ip
+go run . -token my-secret-token -target http://httpbin.org/ip
 ```
 
 ## Custom Authentication Protocol
@@ -84,4 +81,3 @@ SOCKS5 defines the following standard method codes:
 - `0xFF`: No acceptable methods
 
 This example uses `0x80` for the custom token-based authentication method.
-

@@ -2,8 +2,9 @@ package protocol
 
 // GSS-API Authentication for SOCKS5.
 //
-// This file implements a stub for GSS-API authentication as defined in
-// RFC 1961: GSS-API Authentication Method for SOCKS Version 5.
+// This file implements an experimental GSS-API token exchange for SOCKS5.
+// It is not a complete RFC 1961 implementation because it does not perform
+// the protection-level negotiation after the security context is established.
 //
 // # Overview
 //
@@ -27,6 +28,9 @@ package protocol
 //    - Client -> Server: GSS token (framed with 4-byte header)
 //    - Server -> Client: GSS token (framed with 4-byte header)
 // 4. When GSS_S_COMPLETE is reached, authentication succeeds
+//
+// RFC 1961 also defines protection-level negotiation after authentication.
+// That step is not implemented here.
 //
 // # Token Frame Format
 //
@@ -75,6 +79,31 @@ var (
 	_ AuthMethod  = &GSSAuthMethod{}
 	_ AuthHandler = &GSSAuthHandler{}
 )
+
+const maxGSSTokenLength = 1<<16 - 1
+
+func writeGSSAuthToken(conn net.Conn, token []byte) error {
+	if len(token) > maxGSSTokenLength {
+		return fmt.Errorf(
+			"GSS token length %d exceeds %d",
+			len(token),
+			maxGSSTokenLength,
+		)
+	}
+	header := []byte{
+		0x01,                    // ver=1
+		0x01,                    // mtyp=1 (authentication)
+		byte(len(token) >> 8),   //nolint mnd
+		byte(len(token) & 0xff), //nolint mnd
+	}
+	if _, err := conn.Write(header); err != nil {
+		return err
+	}
+	if _, err := conn.Write(token); err != nil {
+		return err
+	}
+	return nil
+}
 
 // GSSAPIClient is the interface for client-side GSS-API implementations.
 //
@@ -171,6 +200,9 @@ func (m *GSSAuthMethod) RunAuth(
 	pool bufpool.Pool,
 ) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{Code: m.Code()}
+	if m.Client == nil {
+		return conn, info, fmt.Errorf("GSS client is nil")
+	}
 	defer func() { _ = m.Client.DeleteSecContext() }()
 
 	// Initial call: no input token yet.
@@ -185,16 +217,7 @@ func (m *GSSAuthMethod) RunAuth(
 		}
 		// If GSS produced a token, send it in a framed message.
 		if len(outToken) > 0 {
-			header := []byte{
-				0x01,                       // ver=1
-				0x01,                       // mtyp=1 (authentication)
-				byte(len(outToken) >> 8),   //nolint mnd
-				byte(len(outToken) & 0xff), //nolint mnd
-			}
-			if _, err := conn.Write(header); err != nil {
-				return conn, info, err
-			}
-			if _, err := conn.Write(outToken); err != nil {
+			if err := writeGSSAuthToken(conn, outToken); err != nil {
 				return conn, info, err
 			}
 		}
@@ -258,6 +281,9 @@ func (h *GSSAuthHandler) HandleAuth(
 	pool bufpool.Pool,
 ) (net.Conn, AuthInfo, error) {
 	info := AuthInfo{Code: h.Code()}
+	if h.Server == nil {
+		return conn, info, fmt.Errorf("GSS server is nil")
+	}
 	defer func() { _ = h.Server.DeleteSecContext() }()
 
 	var srcName string
@@ -290,15 +316,7 @@ func (h *GSSAuthHandler) HandleAuth(
 		}
 		// Send any output token back to client
 		if needContinue {
-			header := []byte{
-				0x01, // ver=1
-				0x01, // mtyp=1
-				byte(len(outToken) >> 8), byte(len(outToken) & 0xff),
-			}
-			if _, err := conn.Write(header); err != nil {
-				return conn, info, err
-			}
-			if _, err := conn.Write(outToken); err != nil {
+			if err := writeGSSAuthToken(conn, outToken); err != nil {
 				return conn, info, err
 			}
 		}

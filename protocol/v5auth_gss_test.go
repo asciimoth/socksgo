@@ -59,6 +59,19 @@ func (m *ErrGSSClient) DeleteSecContext() error {
 	return errors.New("TEST ERROR")
 }
 
+type OversizeGSSClient struct{}
+
+func (m *OversizeGSSClient) InitSecContext(
+	_ string,
+	_ []byte,
+) ([]byte, bool, error) {
+	return bytes.Repeat([]byte{42}, 65536), false, nil
+}
+
+func (m *OversizeGSSClient) DeleteSecContext() error {
+	return nil
+}
+
 type MockGSSServer struct {
 	Rounds    int
 	Principal string
@@ -97,6 +110,18 @@ func (m *ErrGSSServer) AcceptSecContext(
 
 func (m *ErrGSSServer) DeleteSecContext() error {
 	return errors.New("TEST ERROR")
+}
+
+type OversizeGSSServer struct{}
+
+func (m *OversizeGSSServer) AcceptSecContext(
+	_ []byte,
+) ([]byte, string, bool, error) {
+	return bytes.Repeat([]byte{42}, 65536), "", true, nil
+}
+
+func (m *OversizeGSSServer) DeleteSecContext() error {
+	return nil
 }
 
 func runGSSAuthTest(
@@ -163,6 +188,50 @@ func TestGSSErrClient(t *testing.T) {
 	}
 }
 
+func TestGSSAuthMethodNilClient(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	method := &protocol.GSSAuthMethod{}
+	_, info, err := method.RunAuth(c1, nil)
+	if err == nil {
+		t.Fatal("expected nil GSS client error")
+	}
+	if err.Error() != "GSS client is nil" {
+		t.Fatal(err)
+	}
+	if info.Code != protocol.GSSAuthCode {
+		t.Fatalf("Code = %v, want %v", info.Code, protocol.GSSAuthCode)
+	}
+}
+
+func TestGSSAuthHandlerNilServer(t *testing.T) {
+	t.Parallel()
+
+	c1, c2 := net.Pipe()
+	defer func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	}()
+
+	handler := &protocol.GSSAuthHandler{}
+	_, info, err := handler.HandleAuth(c1, nil)
+	if err == nil {
+		t.Fatal("expected nil GSS server error")
+	}
+	if err.Error() != "GSS server is nil" {
+		t.Fatal(err)
+	}
+	if info.Code != protocol.GSSAuthCode {
+		t.Fatalf("Code = %v, want %v", info.Code, protocol.GSSAuthCode)
+	}
+}
+
 func TestGSSErrServer(t *testing.T) {
 	pool := bufpool.NewTestDebugPool(t)
 	defer pool.Close()
@@ -210,6 +279,53 @@ func TestGSSErrBoth(t *testing.T) {
 
 	if sE.Error() != "EOF" {
 		t.Error(sE)
+	}
+}
+
+func TestGSSClientRejectsOversizedToken(t *testing.T) {
+	t.Parallel()
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	conn := &MockConn{}
+	method := protocol.GSSAuthMethod{Client: &OversizeGSSClient{}}
+
+	_, _, err := method.RunAuth(conn, pool)
+	if err == nil {
+		t.Fatal("expected oversized token error")
+	}
+	if err.Error() != "GSS token length 65536 exceeds 65535" {
+		t.Fatal(err)
+	}
+	if conn.Len() != 0 {
+		t.Fatalf("expected no bytes written, got %d", conn.Len())
+	}
+}
+
+func TestGSSHandlerRejectsOversizedToken(t *testing.T) {
+	t.Parallel()
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	conn := &MockConn{}
+	token := []byte("c:1")
+	hdr := []byte{
+		0x01, 0x01,
+		byte(len(token) >> 8), byte(len(token) & 0xff),
+	}
+	_, _ = conn.Write(hdr)
+	_, _ = conn.Write(token)
+
+	handler := protocol.GSSAuthHandler{Server: &OversizeGSSServer{}}
+	_, _, err := handler.HandleAuth(conn, pool)
+	if err == nil {
+		t.Fatal("expected oversized token error")
+	}
+	if err.Error() != "GSS token length 65536 exceeds 65535" {
+		t.Fatal(err)
+	}
+	if conn.Len() != 0 {
+		t.Fatalf("expected no bytes written, got %d", conn.Len())
 	}
 }
 

@@ -25,6 +25,10 @@ var (
 	// ErrUDPAssocTimeout is returned when a UDP association times out
 	// due to inactivity.
 	ErrUDPAssocTimeout = errors.New("socks udp assoc timeout")
+
+	// ErrPacketTooLarge is returned when a packet cannot fit in the
+	// protocol length field.
+	ErrPacketTooLarge = errors.New("socks packet too large")
 )
 
 // UnknownAuthVerError is returned when an unknown authentication version

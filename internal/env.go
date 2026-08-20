@@ -17,13 +17,13 @@ func GetProxyFromEnvVar(scheme string) (val string) {
 		}, prior...)
 	}
 	for _, key := range prior {
-		val = os.Getenv(key)
+		if key == "HTTP_PROXY" && os.Getenv("REQUEST_METHOD") != "" {
+			continue
+		}
+		val = strings.TrimSpace(os.Getenv(key))
 		if val != "" {
 			break
 		}
-	}
-	if val != "" {
-		val = strings.TrimSpace(val)
 	}
 	return
 }

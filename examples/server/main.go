@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -35,6 +36,11 @@ var (
 		"127.0.0.1:1082",
 		"WebSocket listen address",
 	)
+	wsOrigin = flag.String(
+		"ws-origin",
+		"",
+		"Allowed WebSocket Origin patterns, comma-separated",
+	)
 	username = flag.String("user", "", "Username for authentication")
 	password = flag.String("pass", "", "Password for authentication")
 )
@@ -42,17 +48,7 @@ var (
 func main() {
 	flag.Parse()
 
-	var auth *protocol.AuthHandlers = nil
-	if username != nil && password != nil && *username != "" &&
-		*password != "" {
-		(&protocol.AuthHandlers{}).
-			Add(&protocol.NoAuthHandler{}).
-			Add(&protocol.PassAuthHandler{
-				VerifyFn: func(user, pass string) bool {
-					return user == *username && pass == *password
-				},
-			})
-	}
+	auth := buildAuthHandlers(*username, *password)
 
 	// Create server with default handlers
 	server := &socksgo.Server{
@@ -128,8 +124,7 @@ func preCmdLogger(
 		authInfo = "no-auth"
 	case protocol.PassAuthCode:
 		if user, ok := info.Info["user"].(string); ok {
-			pass, _ := info.Info["pass"].(string)
-			authInfo = fmt.Sprintf("user=%s pass=%s", user, pass)
+			authInfo = fmt.Sprintf("user=%s", user)
 		} else {
 			authInfo = "password-auth"
 		}
@@ -309,11 +304,7 @@ func handleWS(
 	r *http.Request,
 	isTLS bool,
 ) {
-	opts := &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	}
-
-	conn, err := websocket.Accept(w, r, opts)
+	conn, err := websocket.Accept(w, r, buildWSAcceptOptions(*wsOrigin))
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
@@ -333,6 +324,38 @@ func handleWS(
 			r.RemoteAddr,
 		)
 	}
+}
+
+func buildAuthHandlers(user, pass string) *protocol.AuthHandlers {
+	if user == "" || pass == "" {
+		return nil
+	}
+
+	return (&protocol.AuthHandlers{}).Add(&protocol.PassAuthHandler{
+		VerifyFn: func(gotUser, gotPass string) bool {
+			return gotUser == user && gotPass == pass
+		},
+	})
+}
+
+func buildWSAcceptOptions(patterns string) *websocket.AcceptOptions {
+	patterns = strings.TrimSpace(patterns)
+	if patterns == "" {
+		return nil
+	}
+
+	parts := strings.Split(patterns, ",")
+	allowed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			allowed = append(allowed, part)
+		}
+	}
+	if len(allowed) == 0 {
+		return nil
+	}
+	return &websocket.AcceptOptions{OriginPatterns: allowed}
 }
 
 func generateSelfSignedCert() (tls.Certificate, error) {

@@ -87,6 +87,56 @@ func TestBuildSocks5TCPRequest(t *testing.T) {
 			errMsg:  "host name is too long",
 		},
 		{
+			name: "Unknown address type should error",
+			cmd:  protocol.CmdConnect,
+			addr: protocol.Addr{
+				Type: protocol.AddrType(99),
+				Host: []byte{
+					192, 168, 1, 1,
+				},
+				Port: 80,
+			},
+			wantErr: true,
+			errMsg:  "unknown socks addr type",
+		},
+		{
+			name: "Short IPv4 address should error",
+			cmd:  protocol.CmdConnect,
+			addr: protocol.Addr{
+				Type: protocol.IP4Addr,
+				Host: []byte{
+					192, 168, 1,
+				},
+				Port: 80,
+			},
+			wantErr: true,
+			errMsg:  "malformed socks IPv4 address length 3",
+		},
+		{
+			name: "Short IPv6 address should error",
+			cmd:  protocol.CmdConnect,
+			addr: protocol.Addr{
+				Type: protocol.IP6Addr,
+				Host: []byte{
+					0x20, 0x01, 0x0d, 0xb8,
+				},
+				Port: 80,
+			},
+			wantErr: true,
+			errMsg:  "malformed socks IPv6 address length 4",
+		},
+		{
+			name: "IPv4 bytes marked as IPv6 should error",
+			cmd:  protocol.CmdConnect,
+			addr: protocol.Addr{
+				Type: protocol.IP6Addr,
+				Host: net.ParseIP("192.168.1.1").To4(),
+				Port: 80,
+			},
+			wantErr: true,
+			errMsg:  "malformed socks IPv6 address length 4",
+		},
+		{
 			name: "Localhost IPv4",
 			cmd:  protocol.CmdConnect,
 			addr: protocol.AddrFromIP(net.ParseIP("127.0.0.1"), 1080, ""),
@@ -238,17 +288,16 @@ func TestReadSocks5TCPRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Reserved byte should be ignored",
+			name: "Non-zero reserved byte",
 			data: []byte{
 				0x05, // SOCKS version
 				0x01, // CONNECT command
-				0xFF, // Reserved (non-zero, should be ignored)
+				0xFF, // Reserved
 				0x01, // IPv4 address type
 				127, 0, 0, 1,
 				0x04, 0x38, // Port 1080
 			},
-			wantCmd:  protocol.CmdConnect,
-			wantAddr: "127.0.0.1:1080",
+			wantErr: true,
 		},
 	}
 

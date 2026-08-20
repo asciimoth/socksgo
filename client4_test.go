@@ -114,7 +114,7 @@ func TestRequest4_ConnectFails(t *testing.T) {
 	}
 }
 
-// Test request4 when BuildSocsk4TCPRequest would fail (user too long).
+// Test request4 when BuildSocks4TCPRequest would fail (user too long).
 func TestRequest4_BuildRequestFails(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +131,7 @@ func TestRequest4_BuildRequestFails(t *testing.T) {
 		}),
 	}
 
-	// Use a very long FQDN to trigger error in BuildSocsk4TCPRequest for socks4a
+	// Use a very long FQDN to trigger error in BuildSocks4TCPRequest for socks4a
 	longHost := string(make([]byte, 300))
 	proxy, addr, err := c.Request(
 		ctx,
@@ -139,7 +139,7 @@ func TestRequest4_BuildRequestFails(t *testing.T) {
 		protocol.AddrFromHostPort(longHost+":80", "tcp"),
 	)
 	if err == nil {
-		t.Fatal("expected error when BuildSocsk4TCPRequest fails")
+		t.Fatal("expected error when BuildSocks4TCPRequest fails")
 	}
 	if proxy == nil {
 		t.Fatal("expected non-nil proxy to be closed")
@@ -151,7 +151,7 @@ func TestRequest4_BuildRequestFails(t *testing.T) {
 		}
 	}
 	if addr.Type != 0 {
-		t.Fatal("expected zero addr on BuildSocsk4TCPRequest failure")
+		t.Fatal("expected zero addr on BuildSocks4TCPRequest failure")
 	}
 }
 
@@ -889,7 +889,7 @@ func TestRequest4_CloseErrorIgnoredOnBuildFailure(t *testing.T) {
 		protocol.AddrFromHostPort(longHost+":80", "tcp"),
 	)
 	if err == nil {
-		t.Fatal("expected error when BuildSocsk4TCPRequest fails")
+		t.Fatal("expected error when BuildSocks4TCPRequest fails")
 	}
 	// Close error should be ignored, but the connection should still be closed
 }

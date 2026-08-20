@@ -33,12 +33,45 @@ func (r *recordingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	return len(p), nil
 }
 
+type recordingUDPPacketConn struct {
+	gonnect.PacketConn
+	addr    net.Addr
+	udpAddr *net.UDPAddr
+}
+
+func (r *recordingUDPPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	r.addr = addr
+	return len(p), nil
+}
+
+func (r *recordingUDPPacketConn) WriteToUDP(
+	p []byte, addr *net.UDPAddr,
+) (int, error) {
+	r.udpAddr = addr
+	return len(p), nil
+}
+
 type packetConnWrapper struct {
 	gonnect.PacketConn
 }
 
 func (p *packetConnWrapper) GetWrapped() any {
 	return p.PacketConn
+}
+
+func mustAppendSocks5UDPHeader(
+	t testing.TB,
+	buf []byte,
+	rsv uint16,
+	addr protocol.Addr,
+) []byte {
+	t.Helper()
+
+	header, err := protocol.AppendSocks5UDPHeader(buf, rsv, addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return header
 }
 
 type localAddrConn struct {
@@ -62,8 +95,8 @@ func TestWriteToAddrUDP(t *testing.T) {
 	err = protocol.WriteToAddrUDP(
 		pc, protocol.AddrFromFQDN("example.com", 42, "udp"), []byte{42},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected error for FQDN write to native UDP connection")
 	}
 	err = protocol.WriteToAddrUDP(
 		pc, protocol.AddrFromIP(net.IPv4(127, 0, 0, 1), 42, "udp"), []byte{42},
@@ -73,6 +106,28 @@ func TestWriteToAddrUDP(t *testing.T) {
 		"use of WriteTo with pre-connected connection",
 	) {
 		t.Fatal(err)
+	}
+}
+
+func TestWriteToAddrUDP_FQDNFallsBackToWriteTo(t *testing.T) {
+	conn := &recordingUDPPacketConn{}
+
+	err := protocol.WriteToAddrUDP(
+		conn,
+		protocol.AddrFromFQDN("example.com", 53, "tcp"),
+		[]byte("dns"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn.udpAddr != nil {
+		t.Fatalf("WriteToUDP addr = %v, want nil", conn.udpAddr)
+	}
+	if conn.addr == nil {
+		t.Fatal("WriteTo was not called")
+	}
+	if got, want := conn.addr.Network(), "udp"; got != want {
+		t.Fatalf("addr.Network() = %q, want %q", got, want)
 	}
 }
 
@@ -147,8 +202,10 @@ func TestWriteToAddrUDP_WrappedNativeUDPConnInvalidAddr(t *testing.T) {
 		protocol.AddrFromFQDN("example.com", 53, "udp"),
 		[]byte("invalid"),
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal(
+			"expected error for FQDN write to wrapped native UDP connection",
+		)
 	}
 
 	buf := make([]byte, 16)
@@ -269,7 +326,7 @@ func TestAppendSocks5UDPHeader(t *testing.T) {
 			var buf []byte
 			addr := protocol.AddrFromString(tt.host, tt.port, "")
 
-			result := protocol.AppendSocks5UDPHeader(buf, tt.rsv, addr)
+			result := mustAppendSocks5UDPHeader(t, buf, tt.rsv, addr)
 
 			if !bytes.Equal(result, tt.expected) {
 				t.Errorf(
@@ -277,6 +334,81 @@ func TestAppendSocks5UDPHeader(t *testing.T) {
 					result,
 					tt.expected,
 				)
+			}
+		})
+	}
+}
+
+func TestAppendSocks5UDPHeader_TooLongFQDN(t *testing.T) {
+	addr := protocol.AddrFromFQDN(
+		strings.Repeat("a", protocol.MAX_HEADER_STR_LENGTH+1),
+		53,
+		"udp",
+	)
+
+	header, err := protocol.AppendSocks5UDPHeader(nil, 0, addr)
+	if !errors.Is(err, protocol.ErrTooLongHost) {
+		t.Fatalf("expected ErrTooLongHost, got %v", err)
+	}
+	if header != nil {
+		t.Fatalf("expected nil header, got %v", header)
+	}
+}
+
+func TestAppendSocks5UDPHeaderInvalidAddr(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		addr   protocol.Addr
+		errMsg string
+	}{
+		{
+			name: "short IPv4",
+			addr: protocol.Addr{
+				Type: protocol.IP4Addr,
+				Host: []byte{127, 0, 0},
+				Port: 53,
+			},
+			errMsg: "malformed socks IPv4 address length 3",
+		},
+		{
+			name: "short IPv6",
+			addr: protocol.Addr{
+				Type: protocol.IP6Addr,
+				Host: make([]byte, net.IPv6len-1),
+				Port: 53,
+			},
+			errMsg: "malformed socks IPv6 address length 15",
+		},
+		{
+			name: "unknown type",
+			addr: protocol.Addr{
+				Type: protocol.AddrType(0xff),
+				Host: []byte("example.com"),
+				Port: 53,
+			},
+			errMsg: "unknown socks addr type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix := []byte("prefix")
+			wantPrefix := string(prefix)
+			header, err := protocol.AppendSocks5UDPHeader(prefix, 0, tc.addr)
+			if err == nil || !strings.Contains(err.Error(), tc.errMsg) {
+				t.Fatalf("expected %q error, got %v", tc.errMsg, err)
+			}
+			if string(prefix) != wantPrefix {
+				t.Fatalf(
+					"input buffer changed: got %v want %q",
+					prefix,
+					wantPrefix,
+				)
+			}
+			if header != nil {
+				t.Fatalf("expected nil header, got %v", header)
 			}
 		})
 	}
@@ -1313,6 +1445,19 @@ func (f *fakePacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	return f.Write(b)
 }
 
+type errWritePacketConn struct {
+	gonnect.PacketConn
+	err error
+}
+
+func (e errWritePacketConn) Write([]byte) (int, error) {
+	return 0, e.err
+}
+
+func (e errWritePacketConn) Close() error {
+	return nil
+}
+
 func TestReadSocks5AssocUDPPacket_NormalizesDecodedNetwork(t *testing.T) {
 	sender, receiver := newPacketConnPair()
 	defer sender.Close()   //nolint
@@ -1321,7 +1466,7 @@ func TestReadSocks5AssocUDPPacket_NormalizesDecodedNetwork(t *testing.T) {
 	receiver.local = protocol.AddrFromIP(net.ParseIP("127.0.0.1"), 1080, "tcp4")
 	payload := []byte("assoc-payload")
 	dst := protocol.AddrFromIP(net.ParseIP("192.0.2.10"), 53, "udp")
-	packet := append(protocol.AppendSocks5UDPHeader(nil, 0, dst), payload...)
+	packet := append(mustAppendSocks5UDPHeader(t, nil, 0, dst), payload...)
 	_, err := sender.Write(packet)
 	if err != nil {
 		t.Fatal(err)
@@ -1381,7 +1526,7 @@ func TestReadSocks5TunUDPPacket_NormalizesDecodedNetwork(t *testing.T) {
 
 func TestAppendSocks5UDPHeader_IPv4_IPv6_FQDN_and_frag(t *testing.T) {
 	ip4 := protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 4321, "udp")
-	h := protocol.AppendSocks5UDPHeader(nil, 0, ip4)
+	h := mustAppendSocks5UDPHeader(t, nil, 0, ip4)
 	// header length for IPv4: 2(rsv)+1(frag)+1(atyp)+4(ip)+2(port)=10
 	if len(h) != 10 {
 		t.Fatalf("expected ipv4 header len 10, got %d", len(h))
@@ -1401,7 +1546,7 @@ func TestAppendSocks5UDPHeader_IPv4_IPv6_FQDN_and_frag(t *testing.T) {
 
 	// IPv6
 	ip6 := protocol.AddrFromIP(net.ParseIP("::1"), 9999, "udp")
-	h6 := protocol.AppendSocks5UDPHeader(nil, 0, ip6)
+	h6 := mustAppendSocks5UDPHeader(t, nil, 0, ip6)
 	// rsv 0, frag 0, type byte present:
 	if h6[2] != 0 {
 		t.Fatalf("expected frag 0 for ipv6")
@@ -1416,12 +1561,12 @@ func TestAppendSocks5UDPHeader_IPv4_IPv6_FQDN_and_frag(t *testing.T) {
 		1234,
 		"udp",
 	)
-	hfq := protocol.AppendSocks5UDPHeader(nil, 0, fq)
+	hfq := mustAppendSocks5UDPHeader(t, nil, 0, fq)
 	if protocol.AddrType(hfq[3]) != protocol.FQDNAddr {
 		t.Fatalf("expected FQDN atyp")
 	}
 	// test non-zero rsv sets GOST_UDP_FRAG_FLAG
-	hfrag := protocol.AppendSocks5UDPHeader(nil, 12, ip4)
+	hfrag := mustAppendSocks5UDPHeader(t, nil, 12, ip4)
 	if hfrag[2] != protocol.GOST_UDP_FRAG_FLAG {
 		t.Fatalf("expected gost frag flag set for non-zero rsv")
 	}
@@ -1499,7 +1644,7 @@ func TestWriteSocksAssoc5UDPPacket_WriteAndWriteTo(t *testing.T) {
 	}
 }
 
-func TestWriteSocks5TUNUDPPacket_and_ReadSocks5TunUDPPacket_IPv4_IPv6_FQDN_truncation(
+func TestWriteSocks5TUNUDPPacket_and_ReadSocks5TunUDPPacket_IPv4_IPv6_FQDN(
 	t *testing.T,
 ) {
 	// net.Pipe for conn io
@@ -1540,33 +1685,13 @@ func TestWriteSocks5TUNUDPPacket_and_ReadSocks5TunUDPPacket_IPv4_IPv6_FQDN_trunc
 		t.Fatalf("gotAddr unspecified")
 	}
 
-	// Test truncation: create bigger than 65535 payload
-	huge := make([]byte, 70000)
-	for i := range huge {
-		huge[i] = byte(i)
+	huge := make([]byte, 65536)
+	n2, err := protocol.WriteSocks5TUNUDPPacket(nil, c1, addr, huge)
+	if !errors.Is(err, protocol.ErrPacketTooLarge) {
+		t.Fatalf("expected ErrPacketTooLarge, got %v", err)
 	}
-	c3, c4 := net.Pipe()
-	defer func() {
-		_ = c3.Close()
-		_ = c4.Close()
-	}()
-	go func() {
-		// Write will truncate internally
-		_, _ = protocol.WriteSocks5TUNUDPPacket(nil, c3, addr, huge)
-	}()
-	out2 := make([]byte, 70000)
-	n2, _, err := protocol.ReadSocks5TunUDPPacket(
-		nil,
-		c4,
-		out2,
-		true,
-	) // skipAddr true to test skip branch
-	if err != nil {
-		t.Fatalf("ReadSocks5TunUDPPacket huge err: %v", err)
-	}
-	// truncated to 65535
-	if n2 != 65535 {
-		t.Fatalf("expected truncated length 65535, got %d", n2)
+	if n2 != 0 {
+		t.Fatalf("expected n=0, got %d", n2)
 	}
 }
 
@@ -1600,7 +1725,7 @@ func TestReadSocks5AssocUDPPacket_ignore_small_and_checkAddr(t *testing.T) {
 	// now a proper packet
 	payload := []byte("abc-123")
 	addr := protocol.AddrFromIP(net.ParseIP("7.7.7.7"), 7777, "udp")
-	header := protocol.AppendSocks5UDPHeader(nil, 0, addr)
+	header := mustAppendSocks5UDPHeader(t, nil, 0, addr)
 	full := append(header, payload...) //nolint
 	receiver.in <- pkt{data: full, from: newUDPAddr(30000)}
 
@@ -1634,7 +1759,7 @@ func TestReadSocks5AssocUDPPacket_ignore_small_and_checkAddr(t *testing.T) {
 	}
 	wrong := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 11111}
 	good := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 22222}
-	hdr := protocol.AppendSocks5UDPHeader(nil, 0, addr)
+	hdr := mustAppendSocks5UDPHeader(t, nil, 0, addr)
 	receiver2.in <- pkt{data: append(hdr, payload...), from: wrong}
 	receiver2.in <- pkt{data: append(hdr, payload...), from: good}
 
@@ -1662,7 +1787,7 @@ func TestReadSocks5TunUDPPacket_IPv4_IPv6_FQDN(t *testing.T) {
 
 	// Helper to build a raw TUN packet: rsv (2) | frag | atyp | addr... | port | payload
 	build := func(rsv uint16, a protocol.Addr, payload []byte) []byte {
-		h := protocol.AppendSocks5UDPHeader(nil, rsv, a)
+		h := mustAppendSocks5UDPHeader(t, nil, rsv, a)
 		// Append payload
 		return append(h, payload...)
 	}
@@ -1803,7 +1928,7 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 	}
 
 	// Test ReadFromUDP: send an IPv4 formatted packet directly into assoc.PacketConn (which is 'a')
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		0,
 		protocol.AddrFromIP(net.ParseIP("9.9.9.9"), 9090, "udp"),
@@ -1864,7 +1989,7 @@ func TestSocks5UDPClientAssoc_and_TUN_basic_methods(t *testing.T) {
 
 	// Try ReadFrom on tun: construct a TUN-style packet and write into c2 so tun.ReadFrom reads it.
 	// For convenience, use AppendSocks5UDPHeader to build a TUN packet (with non-zero RSV).
-	header2 := protocol.AppendSocks5UDPHeader(
+	header2 := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len([]byte("T"))), //nolint
 		protocol.AddrFromIP(net.ParseIP("5.5.5.5"), 5555, "udp"),
@@ -1938,7 +2063,7 @@ func TestSocks5UDPClientAssoc_RemoteAddr_Read_ReadFrom_WriteTo_WriteToUDP(
 
 	// 2) Read(): push a socks5 assoc packet into underlying conn and expect Read to parse payload
 	payload := []byte("assoc-read")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		0,
 		protocol.AddrFromIP(net.ParseIP("4.3.2.1"), 4321, "udp"),
@@ -2023,6 +2148,23 @@ func TestSocks5UDPClientAssoc_RemoteAddr_Read_ReadFrom_WriteTo_WriteToUDP(
 	}
 }
 
+func TestSocks5UDPClientAssocWriteReturnsUnderlyingError(t *testing.T) {
+	writeErr := errors.New("write failed")
+	addr := protocol.AddrFromIP(net.ParseIP("10.10.10.10"), 1010, "udp")
+	uc := protocol.NewSocks5UDPClientAssoc(
+		errWritePacketConn{err: writeErr},
+		&addr,
+		nil,
+		nil,
+	)
+	defer uc.Close()
+
+	_, err := uc.Write([]byte("payload"))
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("Write error = %v, want %v", err, writeErr)
+	}
+}
+
 func TestSocks5UDPClientTUN_RemoteLocal_Read_ReadFromUDP_WriteTo_variants(
 	t *testing.T,
 ) {
@@ -2061,7 +2203,7 @@ func TestSocks5UDPClientTUN_RemoteLocal_Read_ReadFromUDP_WriteTo_variants(
 
 	// 2) Read(): build a TUN packet on c2 and ensure Read parses payload when skipAddr=true
 	pl := []byte("tun-read")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(pl)), //nolint
 		protocol.AddrFromIP(net.ParseIP("3.3.3.3"), 3333, "udp"),
@@ -2081,7 +2223,7 @@ func TestSocks5UDPClientTUN_RemoteLocal_Read_ReadFromUDP_WriteTo_variants(
 
 	// 3) ReadFromUDP(): write a TUN packet with IPv4 addr into c2 and expect *net.UDPAddr
 	pl2 := []byte("tun-rfrom-udp")
-	hdr2 := protocol.AppendSocks5UDPHeader(
+	hdr2 := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(pl2)), //nolint
 		protocol.AddrFromIP(net.ParseIP("5.5.5.5"), 5555, "udp"),
@@ -2223,7 +2365,7 @@ func TestProxySocks5UDPTun_Unbinded(t *testing.T) {
 	// 1) tun -> proxy: write a TUN packet into tunRemote and expect proxyB to receive raw payload
 	payload := []byte("proxy-tun-unbinded")
 	addr := protocol.AddrFromIP(net.ParseIP("10.11.12.13"), 31337, "udp")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(payload)), //nolint
 		addr,
@@ -2340,7 +2482,7 @@ func TestProxySocks5UDPTun_Binded(t *testing.T) {
 	// 1) tun -> proxy (binded uses proxy.Write)
 	payload := []byte("proxy-tun-binded")
 	addr := protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 4444, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(
+	hdr := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(payload)), //nolint
 		addr,
@@ -2526,7 +2668,7 @@ func TestProxySocks5UDPAssoc_Unbinded(t *testing.T) {
 	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50001}
 	payload := []byte("assoc-to-proxy-unbinded")
 	dst := protocol.AddrFromIP(net.ParseIP("9.9.9.9"), 9999, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	hdr := mustAppendSocks5UDPHeader(t, nil, 0, dst)
 	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
 
 	// Expect proxyB to receive payload forwarded from assoc
@@ -2630,7 +2772,7 @@ func TestProxySocks5UDPAssoc_Binded(t *testing.T) {
 	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
 	payload := []byte("assoc-to-proxy-binded")
 	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	hdr := mustAppendSocks5UDPHeader(t, nil, 0, dst)
 	assocA.in <- pkt{data: append(hdr, payload...), from: nil} // Wrong client; skip
 	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
 
@@ -2874,7 +3016,7 @@ func TestProxySocks5UDPAssoc_ErrWriteProxy(t *testing.T) {
 	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
 	payload := []byte("assoc-to-proxy-binded")
 	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	hdr := mustAppendSocks5UDPHeader(t, nil, 0, dst)
 	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
 
 	err := <-doneCh
@@ -2916,7 +3058,7 @@ func TestProxySocks5UDPAssoc_TransientWriteProxyContinues(t *testing.T) {
 
 	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
 	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	hdr := mustAppendSocks5UDPHeader(t, nil, 0, dst)
 	assocA.in <- pkt{
 		data: append(append([]byte(nil), hdr...), []byte("dropped")...),
 		from: clientFrom,
@@ -2987,7 +3129,7 @@ func TestProxySocks5UDPAssoc_ErrWriteAssoc(t *testing.T) {
 	clientFrom := &net.UDPAddr{IP: clientIP, Port: 50002}
 	payload := []byte("assoc-to-proxy-binded")
 	dst := protocol.AddrFromIP(net.ParseIP("8.8.4.4"), 8888, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(nil, 0, dst)
+	hdr := mustAppendSocks5UDPHeader(t, nil, 0, dst)
 	assocA.in <- pkt{data: append(hdr, payload...), from: clientFrom}
 	proxyA.in <- pkt{data: []byte("data"), from: clientFrom}
 
@@ -3029,11 +3171,11 @@ func TestProxySocks5UDPTun_TransientWriteToProxyUnbindedContinues(
 
 	addr := protocol.AddrFromIP(net.ParseIP("10.11.12.13"), 31337, "udp")
 	first := []byte("dropped")
-	firstHdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(first)), addr)
+	firstHdr := mustAppendSocks5UDPHeader(t, nil, uint16(len(first)), addr)
 	_, _ = tunRemote.Write(append(firstHdr, first...)) //nolint
 
 	payload := []byte("tun-after-transient")
-	hdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(payload)), addr)
+	hdr := mustAppendSocks5UDPHeader(t, nil, uint16(len(payload)), addr)
 	_, _ = tunRemote.Write(append(hdr, payload...)) //nolint
 
 	got := make(chan []byte, 1)
@@ -3088,11 +3230,11 @@ func TestProxySocks5UDPTun_TransientWriteProxyBindedContinues(t *testing.T) {
 
 	addr := protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 4444, "udp")
 	first := []byte("dropped")
-	firstHdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(first)), addr)
+	firstHdr := mustAppendSocks5UDPHeader(t, nil, uint16(len(first)), addr)
 	_, _ = tunRemote.Write(append(firstHdr, first...)) //nolint
 
 	payload := []byte("tun-binded-after-transient")
-	hdr := protocol.AppendSocks5UDPHeader(nil, uint16(len(payload)), addr)
+	hdr := mustAppendSocks5UDPHeader(t, nil, uint16(len(payload)), addr)
 	_, _ = tunRemote.Write(append(hdr, payload...)) //nolint
 
 	got := make(chan []byte, 1)
@@ -3144,7 +3286,7 @@ func TestProxySocks5UDPTun_ErrWriteProxy(t *testing.T) {
 	// 1) tun -> proxy (binded uses proxy.Write)
 	payload := []byte("proxy-tun-binded")
 	addr := protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 4444, "udp")
-	hdr := protocol.AppendSocks5UDPHeader(
+	hdr := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(payload)), //nolint
 		addr,
@@ -3224,7 +3366,7 @@ func TestSocks5UDPClientAssoc_ReadFromUDPAddrPort(t *testing.T) {
 
 	// Push a valid SOCKS5 UDP packet into the underlying conn
 	payload := []byte("addrport-read")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		0,
 		protocol.AddrFromIP(net.ParseIP("192.168.1.100"), 8080, "udp"),
@@ -3261,7 +3403,7 @@ func TestSocks5UDPClientAssoc_ReadFromUDPAddrPort_FQDN_Retry(t *testing.T) {
 			{
 				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
 				Payload: append(
-					protocol.AppendSocks5UDPHeader(
+					mustAppendSocks5UDPHeader(t,
 						nil,
 						0,
 						protocol.AddrFromFQDN("example.com:80", 80, "udp"),
@@ -3272,7 +3414,7 @@ func TestSocks5UDPClientAssoc_ReadFromUDPAddrPort_FQDN_Retry(t *testing.T) {
 			{
 				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
 				Payload: append(
-					protocol.AppendSocks5UDPHeader(
+					mustAppendSocks5UDPHeader(t,
 						nil,
 						0,
 						protocol.AddrFromIP(
@@ -3322,7 +3464,7 @@ func TestSocks5UDPClientAssoc_ReadMsgUDP_FQDN_Retry(t *testing.T) {
 			{
 				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
 				Payload: append(
-					protocol.AppendSocks5UDPHeader(
+					mustAppendSocks5UDPHeader(t,
 						nil,
 						0,
 						protocol.AddrFromFQDN("example.com:80", 80, "udp"),
@@ -3333,7 +3475,7 @@ func TestSocks5UDPClientAssoc_ReadMsgUDP_FQDN_Retry(t *testing.T) {
 			{
 				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
 				Payload: append(
-					protocol.AppendSocks5UDPHeader(
+					mustAppendSocks5UDPHeader(t,
 						nil,
 						0,
 						protocol.AddrFromIP(
@@ -3390,7 +3532,7 @@ func TestSocks5UDPClientAssoc_ReadMsgUDPAddrPort_FQDN_Retry(t *testing.T) {
 			{
 				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
 				Payload: append(
-					protocol.AppendSocks5UDPHeader(
+					mustAppendSocks5UDPHeader(t,
 						nil,
 						0,
 						protocol.AddrFromFQDN("example.com:80", 80, "udp"),
@@ -3401,7 +3543,7 @@ func TestSocks5UDPClientAssoc_ReadMsgUDPAddrPort_FQDN_Retry(t *testing.T) {
 			{
 				Addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 10000},
 				Payload: append(
-					protocol.AppendSocks5UDPHeader(
+					mustAppendSocks5UDPHeader(t,
 						nil,
 						0,
 						protocol.AddrFromIP(
@@ -3508,7 +3650,7 @@ func TestSocks5UDPClientAssoc_ReadMsgUDP(t *testing.T) {
 
 	// Push a valid SOCKS5 UDP packet
 	payload := []byte("read-msg-udp")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		0,
 		protocol.AddrFromIP(net.ParseIP("1.2.3.4"), 1234, "udp"),
@@ -3553,7 +3695,7 @@ func TestSocks5UDPClientAssoc_ReadMsgUDPAddrPort(t *testing.T) {
 
 	// Push a valid SOCKS5 UDP packet
 	payload := []byte("read-msg-addrport")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		0,
 		protocol.AddrFromIP(net.ParseIP("5.6.7.8"), 5678, "udp"),
@@ -3719,14 +3861,14 @@ func TestSocks5UDPClientTUN_ReadFromUDPAddrPort_FQDN_Retry(t *testing.T) {
 
 	// Write FQDN packet first, then IP packet
 	fqdnPayload := []byte("fqdn-tun-packet")
-	fqdnHeader := protocol.AppendSocks5UDPHeader(
+	fqdnHeader := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(fqdnPayload)), //nolint
 		protocol.AddrFromFQDN("example.com:80", 80, "udp"),
 	)
 
 	ipPayload := []byte("ip-tun-packet")
-	ipHeader := protocol.AppendSocks5UDPHeader(
+	ipHeader := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(ipPayload)), //nolint
 		protocol.AddrFromIP(net.ParseIP("192.168.1.200"), 9090, "udp"),
@@ -3774,14 +3916,14 @@ func TestSocks5UDPClientTUN_ReadMsgUDP_FQDN_Retry(t *testing.T) {
 	defer tun.Close()
 
 	fqdnPayload := []byte("fqdn-tun-msg-packet")
-	fqdnHeader := protocol.AppendSocks5UDPHeader(
+	fqdnHeader := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(fqdnPayload)), //nolint
 		protocol.AddrFromFQDN("example.com:80", 80, "udp"),
 	)
 
 	ipPayload := []byte("ip-tun-msg-packet")
-	ipHeader := protocol.AppendSocks5UDPHeader(
+	ipHeader := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(ipPayload)), //nolint
 		protocol.AddrFromIP(net.ParseIP("10.20.30.40"), 2020, "udp"),
@@ -3834,14 +3976,14 @@ func TestSocks5UDPClientTUN_ReadMsgUDPAddrPort_FQDN_Retry(t *testing.T) {
 	defer tun.Close()
 
 	fqdnPayload := []byte("fqdn-tun-addrport-packet")
-	fqdnHeader := protocol.AppendSocks5UDPHeader(
+	fqdnHeader := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(fqdnPayload)), //nolint
 		protocol.AddrFromFQDN("example.com:80", 80, "udp"),
 	)
 
 	ipPayload := []byte("ip-tun-addrport-packet")
-	ipHeader := protocol.AppendSocks5UDPHeader(
+	ipHeader := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(ipPayload)), //nolint
 		protocol.AddrFromIP(net.ParseIP("50.60.70.80"), 3030, "udp"),
@@ -3895,7 +4037,7 @@ func TestSocks5UDPClientTUN_ReadFromUDPAddrPort(t *testing.T) {
 
 	// Write a TUN packet from the other side
 	payload := []byte("tun-addrport-read")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(payload)), //nolint
 		protocol.AddrFromIP(net.ParseIP("192.168.1.200"), 9090, "udp"),
@@ -3985,7 +4127,7 @@ func TestSocks5UDPClientTUN_ReadMsgUDP(t *testing.T) {
 
 	// Write a TUN packet
 	payload := []byte("tun-read-msg-udp")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(payload)), //nolint
 		protocol.AddrFromIP(net.ParseIP("10.20.30.40"), 2020, "udp"),
@@ -4033,7 +4175,7 @@ func TestSocks5UDPClientTUN_ReadMsgUDPAddrPort(t *testing.T) {
 
 	// Write a TUN packet
 	payload := []byte("tun-read-msg-addrport")
-	header := protocol.AppendSocks5UDPHeader(
+	header := mustAppendSocks5UDPHeader(t,
 		nil,
 		uint16(len(payload)), //nolint
 		protocol.AddrFromIP(net.ParseIP("50.60.70.80"), 3030, "udp"),

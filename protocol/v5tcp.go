@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"slices"
@@ -37,7 +38,7 @@ import (
 //
 // # Returns
 //
-// The request byte slice, or an error if the hostname is too long.
+// The request byte slice, or an error if the address is invalid.
 // The returned buffer must be returned to the pool after use.
 //
 // # Examples
@@ -48,8 +49,27 @@ import (
 func BuildSocks5TCPRequest(
 	cmd Cmd, addr Addr, pool bufpool.Pool,
 ) (request []byte, err error) {
-	if addr.Len() > MAX_HEADER_STR_LENGTH {
-		return nil, ErrTooLongHost
+	switch addr.Type {
+	case IP4Addr:
+		if len(addr.Host) != net.IPv4len {
+			return nil, fmt.Errorf(
+				"malformed socks IPv4 address length %d",
+				len(addr.Host),
+			)
+		}
+	case IP6Addr:
+		if len(addr.Host) != net.IPv6len {
+			return nil, fmt.Errorf(
+				"malformed socks IPv6 address length %d",
+				len(addr.Host),
+			)
+		}
+	case FQDNAddr:
+		if addr.Len() > MAX_HEADER_STR_LENGTH {
+			return nil, ErrTooLongHost
+		}
+	default:
+		return nil, UnknownAddrTypeError{addr.Type}
 	}
 
 	request = bufpool.GetBuffer(pool, 7+addr.Len())[:0]
@@ -63,7 +83,7 @@ func BuildSocks5TCPRequest(
 		request = append(request, byte(len(addr.Host)))
 		request = append(request, addr.Host...)
 	} else {
-		request = append(request, addr.ToIP()...)
+		request = append(request, addr.Host...)
 	}
 	request = binary.BigEndian.AppendUint16(request, addr.Port)
 	return
@@ -102,6 +122,10 @@ func ReadSocks5TCPRequest(reader io.Reader, pool bufpool.Pool) (
 
 	if buf[0] != 5 {
 		err = WrongProtocolVerError{int(buf[0])}
+		return
+	}
+	if buf[2] != 0 {
+		err = fmt.Errorf("non-zero socks5 reserved byte %d", buf[2])
 		return
 	}
 

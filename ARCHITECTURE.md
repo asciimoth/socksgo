@@ -241,7 +241,7 @@ protocol/
 ├── reply.go          # Reply status codes and conversions
 │
 ├── v4.go             # SOCKS4/4a protocol
-│   ├── BuildSocsk4TCPRequest()
+│   ├── BuildSocks4TCPRequest()
 │   ├── ReadSocks4TCPRequest()
 │   ├── BuildSocks4TCPReply()
 │   └── ReadSocks4TCPReply()
@@ -274,7 +274,7 @@ protocol/
 │   ├── PassAuthMethod
 │   └── PassAuthHandler
 │
-├── v5auth_gss.go     # GSS-API auth (stub)
+├── v5auth_gss.go     # GSS-API auth (experimental; no RFC 1961 protection-level negotiation)
 │   └── GSSAuthMethod
 │
 └── pipe.go           # Connection piping utility
@@ -446,9 +446,10 @@ ips, err := client.LookupIP(ctx, "ip", "example.com")
 - **Unsafe:** Modifying fields after creation
 
 ### Server
-- **Safe:** Concurrent Accept calls
+- **Safe:** Concurrent Accept calls after initialization
 - **Safe:** Handler execution (each connection is independent)
-- **Unsafe:** Modifying Handlers map after starting
+- **Unsafe:** Modifying config fields, Handlers/Auth maps, filters, dialers,
+  listeners, or resolver after starting
 
 ### Protocol Functions
 - All protocol encoding/decoding functions are stateless and thread-safe
@@ -514,7 +515,8 @@ MAX_SOCKS_UDP_HEADER_LEN = 262  // Max UDP header size
 socks5://[user[:pass]@]host[:port][?options]
 
 Options:
-  secure      - Enable TLS verification (default: false)
+  secure      - Enable TLS verification (default: false for URL-created
+                clients, for Gost compatibility)
   insecureudp - Allow plaintext UDP when control TCP connection runs over TLS
                 Doesn't have effect for socks over plain TCP connections
   assocprob   - Enable UDP assoc probber that watch control TCP conn and close
@@ -563,12 +565,14 @@ server := &socksgo.Server{
 - SOCKS5: Multiple auth methods supported
   - No Auth (0x00) - plaintext, no credentials
   - User/Pass (0x02) - plaintext credentials
-  - GSS-API (0x01) - encrypted (stub implementation)
+  - GSS-API (0x01) - experimental token exchange; no RFC 1961
+    protection-level negotiation
 
 ### TLS
 
 - Encrypts entire SOCKS session
-- Certificate verification disabled by default (`InsecureSkipVerify: true`)
+- URL-created clients disable certificate verification by default
+  (`InsecureSkipVerify: true`) for Gost compatibility
 - Enable verification with `secure` URL parameter
 
 ### Address Filters
@@ -582,4 +586,3 @@ server.RaddrFilter = func(addr *protocol.Addr) bool {
     return ip != nil && !ip.IsPrivate()
 }
 ```
-

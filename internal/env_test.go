@@ -80,6 +80,35 @@ func TestGetProxyFromEnvVar(t *testing.T) {
 			expected: "http://proxy:8080",
 		},
 		{
+			name:   "http scheme ignores HTTP_PROXY in CGI environment",
+			scheme: "http",
+			env: map[string]string{
+				"HTTP_PROXY":     "http://proxy:8080",
+				"REQUEST_METHOD": "GET",
+			},
+			expected: "",
+		},
+		{
+			name:   "http scheme uses lowercase proxy in CGI environment",
+			scheme: "http",
+			env: map[string]string{
+				"HTTP_PROXY":     "http://unsafe:8080",
+				"http_proxy":     "http://proxy:8080",
+				"REQUEST_METHOD": "GET",
+			},
+			expected: "http://proxy:8080",
+		},
+		{
+			name:   "http scheme falls back in CGI environment",
+			scheme: "http",
+			env: map[string]string{
+				"HTTP_PROXY":     "http://unsafe:8080",
+				"ALL_PROXY":      "socks5://fallback:1080",
+				"REQUEST_METHOD": "GET",
+			},
+			expected: "socks5://fallback:1080",
+		},
+		{
 			name:   "with scheme, lowercase scheme priority",
 			scheme: "https",
 			env: map[string]string{
@@ -141,6 +170,24 @@ func TestGetProxyFromEnvVar(t *testing.T) {
 			expected: "http://fallback:8080",
 		},
 		{
+			name:   "whitespace env value ignored",
+			scheme: "http",
+			env: map[string]string{
+				"HTTP_PROXY": "   \t\n",
+				"ALL_PROXY":  "http://fallback:8080",
+			},
+			expected: "http://fallback:8080",
+		},
+		{
+			name:   "whitespace SOCKS_PROXY falls back",
+			scheme: "",
+			env: map[string]string{
+				"SOCKS_PROXY": "  ",
+				"ALL_PROXY":   "socks5://fallback:1080",
+			},
+			expected: "socks5://fallback:1080",
+		},
+		{
 			name:   "mixed case scheme",
 			scheme: "HtTp",
 			env: map[string]string{
@@ -185,6 +232,7 @@ func TestGetProxyFromEnvVar(t *testing.T) {
 				"HTTPS_PROXY", "https_proxy",
 				"FTP_PROXY", "ftp_proxy",
 				"ALL_PROXY", "all_proxy",
+				"REQUEST_METHOD",
 			}
 			for _, v := range allProxyVars {
 				if _, exists := tt.env[v]; !exists {

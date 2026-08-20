@@ -35,6 +35,34 @@ func TestAssocHandlerAddrBlocked(t *testing.T) {
 	}
 }
 
+func TestAssocHandlerChecksDefaultListenHostLaddr(t *testing.T) {
+	var checked string
+	server := socksgo.Server{
+		DefaultListenHost: "127.0.0.1",
+		LaddrFilter: func(addr *protocol.Addr) bool {
+			checked = addr.ToHostPort()
+			return false
+		},
+	}
+
+	conn := &net.TCPConn{}
+	err := socksgo.DefaultUDPAssocHandler.Handler(
+		context.Background(),
+		&server,
+		conn,
+		"5",
+		protocol.AuthInfo{},
+		protocol.CmdUDPAssoc,
+		protocol.AddrFromIP(net.IPv4zero, 0, ""),
+	)
+	if err == nil {
+		t.Fatal("error expected")
+	}
+	if checked != "127.0.0.1:0" {
+		t.Fatalf("checked laddr = %q, want 127.0.0.1:0", checked)
+	}
+}
+
 func TestAssocHandlerListenFail(t *testing.T) {
 	errstr := "mock dialer error"
 	server := socksgo.Server{

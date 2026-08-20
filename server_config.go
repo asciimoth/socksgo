@@ -325,7 +325,7 @@ func (s *Server) GetDialer() gonnect.Dial {
 //
 //   - PacketDialer: Server configuration field
 func (s *Server) GetPacketDialer() gonnect.PacketDial {
-	if s == nil || s.Dialer == nil {
+	if s == nil || s.PacketDialer == nil {
 		return func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(raddr, network).ToUDP()
 			return net.DialUDP(network, nil, udpAddr)

@@ -184,7 +184,7 @@ func TestRejectdError(t *testing.T) {
 		{
 			name:     "address type not supported",
 			status:   protocol.AddrNotSuppReply,
-			expected: "socks request rejected with code 128 address type not supported",
+			expected: "socks request rejected with code 8 address type not supported",
 		},
 		{
 			name:     "unknown status",

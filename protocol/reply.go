@@ -43,7 +43,7 @@ const (
 
 	// AddrNotSuppReply indicates the address type is not supported.
 	// Wire value: 0x8
-	AddrNotSuppReply ReplyStatus = 0x80
+	AddrNotSuppReply ReplyStatus = 0x8
 )
 
 // SOCKS4 reply status codes.

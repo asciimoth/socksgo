@@ -224,7 +224,9 @@ func GetAuthParam[T any](info AuthInfo, key string) (ok bool, val T) {
 //
 // # Implementation Requirements
 //
-//   - Code() must return a valid method code (not 0x00 or 0xFF)
+//   - Code() must return a valid method code. NoAccAuthCode (0xFF) is not
+//     valid for client auth methods. NoAuthCode (0x00) is provided by the
+//     default method list and is not added through AuthMethods.Add.
 //   - RunAuth() performs the authentication handshake
 //   - Name() returns a human-readable description
 //
@@ -238,7 +240,7 @@ func GetAuthParam[T any](info AuthInfo, key string) (ok bool, val T) {
 type AuthMethod interface {
 	Name() string
 
-	// AuthMethods with Code() == 0x0 or Code() == 0xff are invalid
+	// AuthMethods.Add ignores Code() == 0x0 and Code() == 0xff.
 	Code() AuthMethodCode
 
 	RunAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
@@ -252,14 +254,16 @@ type AuthMethod interface {
 //
 // # Implementation Requirements
 //
-//   - Code() must return a valid method code (not 0x00 or 0xFF)
+//   - Code() must return a valid method code. NoAccAuthCode (0xFF) is not
+//     valid for server auth handlers. NoAuthCode (0x00) is handled by
+//     NoAuthHandler and by nil/empty AuthHandlers.
 //   - HandleAuth() performs the authentication handshake
 //   - Name() returns a human-readable description
 //
 // # Usage
 //
 //	handlers := (&protocol.AuthHandlers{}).Add(&protocol.PassAuthHandler{
-//	    Verify: func(user, pass string) bool {
+//	    VerifyFn: func(user, pass string) bool {
 //	        return user == "admin" && pass == "secret"
 //	    },
 //	})
@@ -267,7 +271,7 @@ type AuthMethod interface {
 type AuthHandler interface {
 	Name() string
 
-	// AuthHandlers with Code() == 0x0 or Code() == 0xff are invalid
+	// AuthHandlers.Add ignores Code() == 0x0 and Code() == 0xff.
 	Code() AuthMethodCode
 
 	HandleAuth(conn net.Conn, pool bufpool.Pool) (net.Conn, AuthInfo, error)
@@ -275,8 +279,9 @@ type AuthHandler interface {
 
 // NoAuthHandler implements server-side no-authentication.
 //
-// This handler accepts any connection without requiring credentials.
-// It's the simplest auth handler and is commonly used for open proxies.
+// This handler accepts any connection without requiring credentials. Nil or
+// empty AuthHandlers also allow no-auth connections. AuthHandlers.Add ignores
+// NoAuthHandler, so use nil/empty AuthHandlers for no-auth server setup.
 //
 // # Wire Format
 //
@@ -286,7 +291,7 @@ type AuthHandler interface {
 //
 // # Examples
 //
-//	handlers := (&protocol.AuthHandlers{}).Add(&protocol.NoAuthHandler{})
+//	handlers := (*protocol.AuthHandlers)(nil)
 type NoAuthHandler struct{}
 
 func (m *NoAuthHandler) Code() AuthMethodCode {
@@ -426,13 +431,13 @@ func (m *AuthMethods) Rebuild() {
 //
 // # Usage
 //
-//	handlers := (&protocol.AuthHandlers{}).
-//	    Add(&protocol.NoAuthHandler{}).
-//	    Add(&protocol.PassAuthHandler{
-//	        Verify: func(user, pass string) bool {
-//	            return isValid(user, pass)
-//	        },
-//	    })
+//	handlers := (&protocol.AuthHandlers{}).Add(&protocol.PassAuthHandler{
+//	    VerifyFn: func(user, pass string) bool {
+//	        return isValid(user, pass)
+//	    },
+//	})
+//
+// To accept unauthenticated clients, leave AuthHandlers nil or empty.
 //
 //	conn, info, err := protocol.HandleAuth(conn, pool, handlers)
 type AuthHandlers struct {
@@ -562,14 +567,15 @@ func RunAuth(
 //
 // # Negotiation Flow
 //
-// 1. Read client methods: [VER, NMETHODS, METHODS...]
+// 1. Read client methods: [NMETHODS, METHODS...]
 // 2. Select first matching handler
 // 3. Send response: [VER, METHOD]
 // 4. If METHOD requires authentication, execute HandleAuth() on selected handler
 //
 // # Parameters
 //
-//   - conn: Network connection from SOCKS5 client
+//   - conn: Network connection from SOCKS5 client. The SOCKS version byte
+//     must already be consumed.
 //   - pool: Buffer pool for allocations
 //   - handlers: Server's authentication handlers
 //

@@ -1513,12 +1513,13 @@ func TestCheckIDENT_UserMismatch(t *testing.T) {
 	}
 	defer serverConn.Close()
 
+	identConn := &mockConn{
+		readData: []byte("12345, 54321 : DIFFERENTUSER\r\n"),
+	}
 	server := &Server{
 		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 			// Return a mock connection that returns a different user
-			return &mockConn{
-				readData: []byte("12345, 54321 : DIFFERENTUSER\r\n"),
-			}, nil
+			return identConn, nil
 		},
 	}
 
@@ -1533,5 +1534,8 @@ func TestCheckIDENT_UserMismatch(t *testing.T) {
 	}
 	if !errors.Is(err, ErrClientAuthFailed) {
 		t.Fatalf("expected ErrClientAuthFailed, got %v", err)
+	}
+	if !identConn.closed {
+		t.Fatal("expected IDENT connection to be closed")
 	}
 }

@@ -12,14 +12,14 @@ package protocol
 //	+----+------+----------+------+----------+
 //	|VER | ULEN |  UNAME   | PLEN |  PASSWD  |
 //	+----+------+----------+------+----------+
-//	| 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+//	| 1  |  1   | 0 to 255 |  1   | 0 to 255 |
 //	+----+------+----------+------+----------+
 //
 // Where:
 //   - VER: Protocol version (0x01)
-//   - ULEN: Username length (1-255)
+//   - ULEN: Username length (0-255)
 //   - UNAME: Username (variable length)
-//   - PLEN: Password length (1-255)
+//   - PLEN: Password length (0-255)
 //   - PASSWD: Password (variable length)
 //
 // Server response:
@@ -49,7 +49,7 @@ package protocol
 // Server-side:
 //
 //	handler := &protocol.PassAuthHandler{
-//	    Verify: func(user, pass string) bool {
+//	    VerifyFn: func(user, pass string) bool {
 //	        return user == "admin" && pass == "secret"
 //	    },
 //	}
@@ -78,8 +78,8 @@ var (
 //
 // # Fields
 //
-//   - User: Username (1-255 bytes)
-//   - Pass: Password (1-255 bytes)
+//   - User: Username (0-255 bytes)
+//   - Pass: Password (0-255 bytes)
 //
 // # Wire Format
 //
@@ -188,7 +188,7 @@ func (m *PassAuthMethod) RunAuth(
 //
 //	// Strict validation
 //	handler := &protocol.PassAuthHandler{
-//	    Verify: func(user, pass string) bool {
+//	    VerifyFn: func(user, pass string) bool {
 //	        return user == "admin" && pass == "secret"
 //	    },
 //	}

@@ -292,7 +292,7 @@ func TestConstants(t *testing.T) {
 		{"ConnRefusedReply", protocol.ConnRefusedReply, 0x5},
 		{"TTLExpiredReply", protocol.TTLExpiredReply, 0x6},
 		{"CmdNotSuppReply", protocol.CmdNotSuppReply, 0x7},
-		{"AddrNotSuppReply", protocol.AddrNotSuppReply, 0x80},
+		{"AddrNotSuppReply", protocol.AddrNotSuppReply, 0x8},
 
 		{"Granted", protocol.Granted, 90},
 		{"Rejected", protocol.Rejected, 91},

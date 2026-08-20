@@ -130,6 +130,45 @@ func (m *mockConnForHooks) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
+type deadlineFailConn struct {
+	mockConnForHooks
+}
+
+func (d *deadlineFailConn) SetDeadline(time.Time) error {
+	return errors.New("clear deadline failed")
+}
+
+func TestClient_Request_ClearDeadlineErrorClosesAndNilsProxy(t *testing.T) {
+	oldHook := testRequestHook
+	defer func() { testRequestHook = oldHook }()
+
+	conn := &deadlineFailConn{}
+	testRequestHook = func(
+		context.Context,
+		protocol.Cmd,
+		protocol.Addr,
+	) (net.Conn, protocol.Addr, bool) {
+		return conn, protocol.AddrFromHostPort("127.0.0.1:1", "tcp"), true
+	}
+
+	client := &Client{}
+	proxy, _, err := client.Request(
+		context.Background(),
+		protocol.CmdConnect,
+		protocol.AddrFromHostPort("example.com:80", "tcp"),
+	)
+
+	if err == nil {
+		t.Fatal("expected clear deadline error")
+	}
+	if proxy != nil {
+		t.Fatal("expected nil proxy")
+	}
+	if !conn.closed {
+		t.Fatal("expected proxy to be closed")
+	}
+}
+
 // Test listenSmuxWithHook with simulated error
 func TestListenSmuxWithHook_Error(t *testing.T) {
 	// Note: Not using t.Parallel() because this test modifies global hook state

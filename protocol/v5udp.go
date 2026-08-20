@@ -53,6 +53,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -66,6 +67,8 @@ import (
 	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo/internal"
 )
+
+const maxSocks5TUNUDPPayloadLen = 65535
 
 func spawn(spawner gonnect.Spawner, worker func(), name string) error {
 	if spawner == nil {
@@ -126,11 +129,10 @@ func WriteToAddrUDP(conn gonnect.PacketConn, addr Addr, b []byte) (err error) {
 	addr = addr.WithNetTyp("udp")
 	if udpProxy := unwrapUDPPacketWriter(conn); udpProxy != nil {
 		udpAddr := addr.ToUDP()
-		if udpAddr == nil {
-			return nil
+		if udpAddr != nil {
+			_, err = udpProxy.WriteToUDP(b, udpAddr)
+			return
 		}
-		_, err = udpProxy.WriteToUDP(b, udpAddr)
-		return
 	}
 
 	// For all other PacketConn implementations.
@@ -176,12 +178,36 @@ func isTransientUDPDeliveryError(err error) bool {
 //
 // # Returns
 //
-// The buffer with the header appended.
+// The buffer with the header appended, or an error if the address type,
+// address length, or hostname length is invalid.
 func AppendSocks5UDPHeader(
 	buf []byte,
 	rsv uint16,
 	addr Addr,
-) []byte {
+) ([]byte, error) {
+	switch addr.Type {
+	case IP4Addr:
+		if len(addr.Host) != net.IPv4len {
+			return nil, fmt.Errorf(
+				"malformed socks IPv4 address length %d",
+				len(addr.Host),
+			)
+		}
+	case IP6Addr:
+		if len(addr.Host) != net.IPv6len {
+			return nil, fmt.Errorf(
+				"malformed socks IPv6 address length %d",
+				len(addr.Host),
+			)
+		}
+	case FQDNAddr:
+		if len(addr.Host) > MAX_HEADER_STR_LENGTH {
+			return nil, ErrTooLongHost
+		}
+	default:
+		return nil, UnknownAddrTypeError{addr.Type}
+	}
+
 	buf = binary.BigEndian.AppendUint16(buf, rsv)
 	frag := byte(0)
 	if rsv != 0 {
@@ -189,16 +215,15 @@ func AppendSocks5UDPHeader(
 		frag = GOST_UDP_FRAG_FLAG
 	}
 	buf = append(buf, frag, byte(addr.Type))
-	if ip := addr.ToIP(); ip != nil {
-		buf = append(buf, ip...)
-	} else {
+	if addr.Type == FQDNAddr {
 		host := addr.Host
-		host = host[:min(len(host), MAX_HEADER_STR_LENGTH)]
 		buf = append(buf, byte(len(host)))
 		buf = append(buf, host...)
+	} else {
+		buf = append(buf, addr.Host...)
 	}
 	buf = binary.BigEndian.AppendUint16(buf, addr.Port)
-	return buf
+	return buf, nil
 }
 
 // Builds and writes socks5 UDP Assoc packet to conn
@@ -215,7 +240,10 @@ func WriteSocksAssoc5UDPPacket(
 	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN+len(data))[:0]
 	defer bufpool.PutBuffer(pool, buf)
 
-	buf = AppendSocks5UDPHeader(buf, 0, addr)
+	buf, err = AppendSocks5UDPHeader(buf, 0, addr)
+	if err != nil {
+		return 0, err
+	}
 	hlen := len(buf) // header length
 	buf = append(buf, data...)
 
@@ -235,15 +263,18 @@ func WriteSocks5TUNUDPPacket(
 	addr Addr,
 	data []byte,
 ) (n int, err error) {
-	if len(data) > 65535 {
-		data = data[:65535]
+	if len(data) > maxSocks5TUNUDPPayloadLen {
+		return 0, ErrPacketTooLarge
 	}
 	rsv := uint16(len(data)) //nolint
 
 	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
 	defer bufpool.PutBuffer(pool, buf)
 
-	header := AppendSocks5UDPHeader(buf, rsv, addr)
+	header, err := AppendSocks5UDPHeader(buf, rsv, addr)
+	if err != nil {
+		return 0, err
+	}
 	_, err = io.Copy(conn, bytes.NewReader(header))
 	if err == nil {
 		var n64 int64
@@ -471,12 +502,16 @@ func NewSocks5UDPClientAssoc(
 	raddr := AddrFromHostPort("0.0.0.0:0", "udp").WithDefaultAddr(addr)
 
 	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+	header, err := AppendSocks5UDPHeader(buf, 0, raddr)
+	if err != nil {
+		bufpool.PutBuffer(pool, buf)
+	}
 
 	client := &Socks5UDPClientAssoc{
 		PacketConn:    conn,
 		Pool:          pool,
 		Raddr:         raddr,
-		DefaultHeader: AppendSocks5UDPHeader(buf, 0, raddr),
+		DefaultHeader: header,
 	}
 
 	client.OnClose = sync.OnceFunc(func() {
@@ -513,6 +548,12 @@ func (uc *Socks5UDPClientAssoc) Read(b []byte) (n int, err error) {
 }
 
 func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
+	if uc.DefaultHeader == nil {
+		return WriteSocksAssoc5UDPPacket(
+			uc.Pool, uc.PacketConn, nil, AddrFromNetAddr(uc.Raddr), b,
+		)
+	}
+
 	buf := bufpool.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
 	defer bufpool.PutBuffer(uc.Pool, buf)
 	buf = append(buf, uc.DefaultHeader...)
@@ -523,7 +564,7 @@ func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
 		n = max(0, n-len(uc.DefaultHeader))
 	}
 
-	return n, nil
+	return n, err
 }
 
 func (uc *Socks5UDPClientAssoc) ReadFrom(
@@ -756,13 +797,19 @@ func NewSocks5UDPClientTUN(
 	}
 
 	buf := bufpool.GetBuffer(pool, MAX_SOCKS_UDP_HEADER_LEN)[:0]
+	header, err := AppendSocks5UDPHeader(buf, 0, nraddr)
+	if err != nil {
+		bufpool.PutBuffer(pool, buf)
+	} else {
+		header[2] = GOST_UDP_FRAG_FLAG
+	}
 
 	client := &Socks5UDPClientTUN{
 		Conn:          conn,
 		Pool:          pool,
 		Raddr:         raddr,
 		Laddr:         laddr,
-		DefaultHeader: AppendSocks5UDPHeader(buf, 0, nraddr),
+		DefaultHeader: header,
 	}
 
 	client.OnClose = sync.OnceFunc(func() {
@@ -795,8 +842,15 @@ func (uc *Socks5UDPClientTUN) Read(b []byte) (n int, err error) {
 }
 
 func (uc *Socks5UDPClientTUN) Write(b []byte) (n int, err error) {
-	// Trim b cause we do not support fragmentation
-	b = b[:min(len(b), 65535)]
+	if len(b) > maxSocks5TUNUDPPayloadLen {
+		return 0, ErrPacketTooLarge
+	}
+
+	if uc.DefaultHeader == nil {
+		return WriteSocks5TUNUDPPacket(
+			uc.Pool, uc.Conn, AddrFromNetAddr(uc.Raddr), b,
+		)
+	}
 
 	buf := bufpool.GetBuffer(uc.Pool, len(uc.DefaultHeader)+len(b))[:0]
 	defer bufpool.PutBuffer(uc.Pool, buf)

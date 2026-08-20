@@ -182,8 +182,7 @@ func TestGetListenerAndDialerAndPacketListenerAndPacketDialer(t *testing.T) {
 	_ = pc.Close()
 
 	// GetPacketDialer default: create a UDP server and dial to it
-	// Ensure c.Dialer == nil so default PacketDialer is returned
-	c = &socksgo.Client{Dialer: nil}
+	c = &socksgo.Client{PacketDialer: nil}
 	pd := c.GetPacketDialer()
 	udpSrv, err := net.ListenUDP(
 		"udp",
@@ -434,8 +433,7 @@ func TestGetPacketListener_DirectPacketListener(t *testing.T) {
 	}
 }
 
-// Test GetPacketDialer when Dialer != nil so client returns c.PacketDialer.
-func TestGetPacketDialer_WhenDialerNonNil_UsesPacketDialer(t *testing.T) {
+func TestGetPacketDialer_UsesPacketDialer(t *testing.T) {
 	ctx := context.Background()
 
 	// start a UDP server to dial to
@@ -450,10 +448,6 @@ func TestGetPacketDialer_WhenDialerNonNil_UsesPacketDialer(t *testing.T) {
 
 	called := false
 	c := &socksgo.Client{
-		// non-nil Dialer ensures GetPacketDialer returns PacketDialer field
-		Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return nil, nil //nolint
-		},
 		PacketDialer: func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			called = true
 			ra, err := net.ResolveUDPAddr(network, raddr)

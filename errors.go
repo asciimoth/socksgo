@@ -31,6 +31,8 @@ var (
 	ErrClientAuthFailed = errors.New("client auth failed")
 )
 
+// WrongNetworkError is returned when a network is not supported by the
+// selected SOCKS version.
 type WrongNetworkError struct {
 	SocksVersion string // "4" | "4a" | "5"
 	Network      string

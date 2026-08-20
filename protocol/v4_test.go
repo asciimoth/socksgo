@@ -96,7 +96,7 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 			pool := bufpool.NewTestDebugPool(t)
 			defer pool.Close()
 
-			got, err := protocol.BuildSocsk4TCPRequest(
+			got, err := protocol.BuildSocks4TCPRequest(
 				tt.cmd,
 				tt.addr,
 				tt.user,
@@ -118,7 +118,7 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 
 			if !bytes.Equal(got, tt.expected) {
 				t.Errorf(
-					"BuildSocsk4TCPRequest() = %v, want %v",
+					"BuildSocks4TCPRequest() = %v, want %v",
 					got,
 					tt.expected,
 				)
@@ -127,12 +127,46 @@ func TestBuildSocks4TCPRequest(t *testing.T) {
 			// Verify buffer is properly sized
 			if len(got) != len(tt.expected) {
 				t.Errorf(
-					"BuildSocsk4TCPRequest() length = %d, want %d",
+					"BuildSocks4TCPRequest() length = %d, want %d",
 					len(got),
 					len(tt.expected),
 				)
 			}
 		})
+	}
+}
+
+func TestBuildSocsk4TCPRequestDeprecatedWrapper(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	defer pool.Close()
+
+	addr := protocol.AddrFromFQDN("example.com", 80, "tcp")
+	got, err := protocol.BuildSocsk4TCPRequest(
+		protocol.CmdConnect,
+		addr,
+		"user",
+		pool,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bufpool.PutBuffer(pool, got)
+
+	want, err := protocol.BuildSocks4TCPRequest(
+		protocol.CmdConnect,
+		addr,
+		"user",
+		pool,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bufpool.PutBuffer(pool, want)
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("deprecated wrapper = %v, want %v", got, want)
 	}
 }
 
@@ -380,7 +414,7 @@ func TestBuildAndReadSocks4TCPRequest_RoundTrip(t *testing.T) {
 			defer pool.Close()
 
 			// Build the request
-			request, err := protocol.BuildSocsk4TCPRequest(
+			request, err := protocol.BuildSocks4TCPRequest(
 				tc.cmd,
 				tc.addr,
 				tc.user,

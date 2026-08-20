@@ -106,7 +106,7 @@ var DefaultUDPAssocHandler = CommandHandler{
 			// UDP socket should not be binded to any specific raddr
 			// aka UDP server
 			laddr := addr.WithDefaultHost(server.GetDefaultListenHost())
-			err = server.CheckLaddr(&addr)
+			err = server.CheckLaddr(&laddr)
 			if err == nil {
 				proxy, err = server.GetPacketListener()(
 					ctx, laddr.Network(), laddr.ToHostPort(),

@@ -33,7 +33,7 @@ func (c *Client) request4(
 	}
 
 	var request []byte
-	request, err = protocol.BuildSocsk4TCPRequest(
+	request, err = protocol.BuildSocks4TCPRequest(
 		cmd,
 		address,
 		c.Auth.User(),

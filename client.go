@@ -58,10 +58,15 @@ func ClientNoProxy() *Client {
 	}
 }
 
-// ClientFromURLObjSafe creates a Client from a URL without insecure options.
+// ClientFromURLObjSafe creates a Client from a URL without unsafe UDP options.
 //
-// This is a safe constructor that parses a URL and creates a Client with
-// secure defaults. Insecure options like insecureudp are ignored.
+// This constructor parses a URL and ignores options that can expose data
+// outside the requested proxy path, such as insecureudp.
+//
+// For compatibility with Gost and other SOCKS-over-TLS implementations,
+// TLS certificate verification is disabled by default for URL-created clients.
+// Use the secure option to enable certificate verification. This default is
+// compatible, but it is not a strict TLS security default.
 //
 // # URL Format
 //
@@ -72,11 +77,12 @@ func ClientNoProxy() *Client {
 //   - pass: Enable PassAllFilter (all connections through proxy, no bypass)
 //   - gost: Enable Gost extensions (MBIND, UDPTun)
 //   - tor: Enable Tor lookup extensions
-//   - secure: Enable TLS certificate verification (default: skip verification)
+//   - secure: Enable TLS certificate verification
 //
 // # Defaults
 //
-//   - TLS: InsecureSkipVerify = true (disable with "secure" option)
+//   - TLS: InsecureSkipVerify = true for Gost compatibility; use secure to
+//     verify certificates
 //   - UDP: Plaintext UDP over TLS disabled (use "insecureudp" in unsafe version)
 //   - Filter: LoopbackFilter (bypass proxy for localhost)
 //
@@ -208,10 +214,10 @@ func ClientFromURLSafe(urlstr string) (*Client, error) {
 //
 // # Environment Variable Priority
 //
-// 1. {scheme}_proxy (lowercase)
-// 2. {scheme}_PROXY (uppercase)
-// 3. ALL_PROXY (lowercase)
-// 4. all_proxy (uppercase)
+// 1. {SCHEME}_PROXY (uppercase)
+// 2. {scheme}_proxy (lowercase)
+// 3. ALL_PROXY
+// 4. all_proxy
 //
 // # See Also
 //
@@ -227,15 +233,15 @@ func ClientFromENVSafe(scheme string) (*Client, error) {
 
 // ClientFromURLObj creates a Client from a URL with all options.
 //
-// This is the unsafe constructor that supports all URL options including
-// insecure ones. Use ClientFromURLObjSafe for secure defaults.
+// This constructor supports all URL options, including insecure ones.
+// Use ClientFromURLObjSafe to ignore unsafe UDP options.
 //
 // # Supported Options
 //
 //   - pass: Enable PassAllFilter (all connections through proxy, no bypass)
 //   - gost: Enable Gost extensions (MBIND, UDPTun)
 //   - tor: Enable Tor lookup extensions
-//   - secure: Disable TLS certificate verification (default: skip)
+//   - secure: Enable TLS certificate verification
 //   - insecureudp: Allow plaintext UDP over TLS (security risk!)
 //   - assocprob: Enable UDP assoc prober (monitors control connection)
 //
@@ -266,6 +272,9 @@ func ClientFromENVSafe(scheme string) (*Client, error) {
 //   - ClientFromURL: Parse URL string with all options
 func ClientFromURLObj(u *url.URL) *Client {
 	client := ClientFromURLObjSafe(u)
+	if u == nil {
+		return client
+	}
 
 	q := u.Query()
 	if f, s := gonnect.CheckURLBoolKey(q, "insecureudp"); s {
@@ -546,9 +555,9 @@ type Client struct {
 
 	// TLSConfig configures TLS behavior.
 	//
-	// If nil, a default config is used with:
-	//   - InsecureSkipVerify: true (disable with "secure" URL option)
-	//   - ServerName: Auto-set from ProxyAddr or WebSocketURL
+	// If nil, a default config is used and certificates are verified.
+	// URL constructors install a compatibility config with InsecureSkipVerify
+	// enabled unless the secure option is set.
 	//
 	// Example for secure connections:
 	//
@@ -599,6 +608,10 @@ func (c *Client) IsNoProxy() bool {
 	return c == nil || (c.ProxyAddr == "" && c.WebSocketURL == "")
 }
 
+// IsNative reports whether the client uses the native network directly.
+//
+// This is equivalent to IsNoProxy. It returns true when no proxy address and
+// no WebSocket URL are configured.
 func (c *Client) IsNative() bool {
 	return c.IsNoProxy()
 }
@@ -720,6 +733,10 @@ func (c *Client) Request(
 	if err == nil {
 		// Unset timeout after successful socks handshake
 		err = proxy.SetDeadline(time.Time{})
+		if err != nil {
+			_ = proxy.Close()
+			proxy = nil
+		}
 	}
 	return
 }
@@ -1300,6 +1317,10 @@ func (c *Client) LookupHost(
 	return addrs, nil
 }
 
+// LookupCNAME looks up the canonical name for host.
+//
+// Direct clients use the configured resolver. Proxied clients return a DNS
+// unsupported error because SOCKS does not provide this lookup.
 func (c *Client) LookupCNAME(ctx context.Context, host string) (string, error) {
 	if c.IsNoProxy() {
 		return c.GetResolver().LookupCNAME(ctx, host)
@@ -1307,6 +1328,10 @@ func (c *Client) LookupCNAME(ctx context.Context, host string) (string, error) {
 	return "", gonnect.DnsReqErr(host, "nodns")
 }
 
+// LookupPort maps a service name to a port number.
+//
+// Direct clients use the configured resolver. Proxied clients use the
+// offline service table because SOCKS does not provide this lookup.
 func (c *Client) LookupPort(
 	ctx context.Context,
 	network, service string,
@@ -1317,6 +1342,10 @@ func (c *Client) LookupPort(
 	return gonnect.LookupPortOffline(network, service)
 }
 
+// LookupNS looks up the NS records for name.
+//
+// Direct clients use the configured resolver. Proxied clients return a DNS
+// unsupported error because SOCKS does not provide this lookup.
 func (c *Client) LookupNS(ctx context.Context, name string) ([]*net.NS, error) {
 	if c.IsNoProxy() {
 		return c.GetResolver().LookupNS(ctx, name)
@@ -1324,6 +1353,10 @@ func (c *Client) LookupNS(ctx context.Context, name string) ([]*net.NS, error) {
 	return nil, gonnect.DnsReqErr(name, "nodns")
 }
 
+// LookupMX looks up the MX records for name.
+//
+// Direct clients use the configured resolver. Proxied clients return a DNS
+// unsupported error because SOCKS does not provide this lookup.
 func (c *Client) LookupMX(ctx context.Context, name string) ([]*net.MX, error) {
 	if c.IsNoProxy() {
 		return c.GetResolver().LookupMX(ctx, name)
@@ -1331,6 +1364,10 @@ func (c *Client) LookupMX(ctx context.Context, name string) ([]*net.MX, error) {
 	return nil, gonnect.DnsReqErr(name, "nodns")
 }
 
+// LookupSRV looks up the SRV records for service, proto, and name.
+//
+// Direct clients use the configured resolver. Proxied clients return a DNS
+// unsupported error because SOCKS does not provide this lookup.
 func (c *Client) LookupSRV(
 	ctx context.Context,
 	service, proto, name string,
@@ -1341,6 +1378,10 @@ func (c *Client) LookupSRV(
 	return "", nil, gonnect.DnsReqErr(name, "nodns")
 }
 
+// LookupTXT looks up the TXT records for name.
+//
+// Direct clients use the configured resolver. Proxied clients return a DNS
+// unsupported error because SOCKS does not provide this lookup.
 func (c *Client) LookupTXT(ctx context.Context, name string) ([]string, error) {
 	if c.IsNoProxy() {
 		return c.GetResolver().LookupTXT(ctx, name)

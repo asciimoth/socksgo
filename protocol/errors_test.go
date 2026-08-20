@@ -34,6 +34,11 @@ func TestErrorVariables(t *testing.T) {
 			err:      protocol.ErrUDPAssocTimeout,
 			expected: "socks udp assoc timeout",
 		},
+		{
+			name:     "ErrPacketTooLarge",
+			err:      protocol.ErrPacketTooLarge,
+			expected: "socks packet too large",
+		},
 	}
 
 	for _, tc := range tests {

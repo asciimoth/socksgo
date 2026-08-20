@@ -73,7 +73,6 @@ func (a *wsBufferPoolAdapter) Put(x any) {
 //	    SocksVersion:   "5",
 //	    WebSocketURL:   "wss://proxy.example.com/ws",
 //	    WebSocketConfig: &socksgo.WebSocketConfig{
-//	        ReadBufferSize:    32768,
 //	        Subprotocols:      []string{"binary"},
 //	        EnableCompression: true,
 //	        RequestHeader: http.Header{
@@ -85,7 +84,7 @@ func (a *wsBufferPoolAdapter) Put(x any) {
 // # See Also
 //
 //   - Client.WebSocketURL: Enable WebSocket transport
-//   - github.com/gorilla/websocket: Underlying WebSocket library
+//   - github.com/coder/websocket: Underlying WebSocket library
 type WebSocketConfig struct {
 	// Subprotocols is the list of WebSocket subprotocols to negotiate.
 	//
@@ -374,7 +373,7 @@ func (c *Client) GetDialer() gonnect.Dial {
 //
 //   - PacketDialer: Custom dialer configuration
 func (c *Client) GetPacketDialer() gonnect.PacketDial {
-	if c.Dialer == nil {
+	if c.PacketDialer == nil {
 		return func(ctx context.Context, network, raddr string) (gonnect.PacketConn, error) {
 			udpAddr := protocol.AddrFromHostPort(raddr, network).ToUDP()
 			return net.DialUDP(network, nil, udpAddr)
@@ -413,10 +412,13 @@ func (c *Client) GetSpawner() gonnect.Spawner {
 	return c.Spawner
 }
 
-// GetTLSConfig builds the TLS configuration for secure connections.
+// GetTLSConfig builds the TLS configuration for encrypted connections.
 //
 // GetTLSConfig creates a TLS configuration from TLSConfig field or
 // returns a default configuration. If TLS is not enabled, returns nil.
+// URL constructors set TLSConfig with InsecureSkipVerify enabled by default
+// for Gost compatibility unless the URL has the secure option. Programmatic
+// clients with TLS enabled and nil TLSConfig use Go's certificate verification.
 //
 // # Behavior
 //
@@ -436,10 +438,10 @@ func (c *Client) GetSpawner() gonnect.Spawner {
 //
 // # Examples
 //
-//	// Default TLS config
+//	// Programmatic default TLS config
 //	client.TLS = true
 //	config := client.GetTLSConfig()
-//	// config.InsecureSkipVerify = true (default)
+//	// config.InsecureSkipVerify = false (Go TLS default)
 //	// config.ServerName = "proxy.example.com" (from ProxyAddr)
 //
 //	// Custom TLS config
@@ -511,11 +513,11 @@ func (c *Client) connectWebSocket(
 	ctx context.Context,
 ) (conn net.Conn, err error) {
 	ws, resp, err := websocket.Dial(ctx, c.WebSocketURL, c.GetWsDialer())
-	if err != nil {
-		return nil, err
-	}
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return &wsCoderConn{

@@ -2,6 +2,8 @@ package socksgo_test
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +15,75 @@ import (
 	socksgo "github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
+
+func TestClientServerSocks5PreCmdErrorZeroStatusRejects(t *testing.T) {
+	t.Parallel()
+
+	pool := bufpool.NewTestDebugPool(t)
+	pool.OnLog = nil
+	defer pool.Close()
+
+	markerErr := errors.New("precmd rejected")
+	cancel, addr, err := runTCPServer(&socksgo.Server{
+		Pool: pool,
+		PreCmd: func(
+			context.Context,
+			net.Conn,
+			string,
+			protocol.AuthInfo,
+			protocol.Cmd,
+			protocol.Addr,
+		) (protocol.ReplyStatus, error) {
+			return protocol.SuccReply, markerErr
+		},
+	}, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	conn, err := net.Dial("tcp", addr.String()) //nolint:noctx
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if _, err = conn.Write(
+		[]byte{5, 1, byte(protocol.NoAuthCode)},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var authReply [2]byte
+	if _, err = io.ReadFull(conn, authReply[:]); err != nil {
+		t.Fatal(err)
+	}
+	if authReply != [2]byte{5, byte(protocol.NoAuthCode)} {
+		t.Fatalf("auth reply = %v, want [5 0]", authReply)
+	}
+
+	req, err := protocol.BuildSocks5TCPRequest(
+		protocol.CmdConnect,
+		protocol.AddrFromFQDN("example.com", 80, "tcp"),
+		pool,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bufpool.PutBuffer(pool, req)
+
+	if _, err = conn.Write(req); err != nil {
+		t.Fatal(err)
+	}
+
+	stat, _, err := protocol.ReadSocks5TCPReply(conn, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat != protocol.FailReply {
+		t.Fatalf("reply status = %v, want %v", stat, protocol.FailReply)
+	}
+}
 
 func runClientHttp(t *testing.T, srv string, urls []string) {
 	socks, err := socksgo.ClientFromURL(srv)

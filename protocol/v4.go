@@ -10,7 +10,7 @@ import (
 	"github.com/asciimoth/gonnect"
 )
 
-// BuildSocsk4TCPRequest builds a SOCKS4 or SOCKS4a TCP request.
+// BuildSocks4TCPRequest builds a SOCKS4 or SOCKS4a TCP request.
 //
 // For IPv4 addresses, builds a standard SOCKS4 request.
 // For other address types (FQDN), builds a SOCKS4a request with the
@@ -45,9 +45,9 @@ import (
 // # Examples
 //
 //	addr := protocol.AddrFromIP(net.ParseIP("192.168.1.1"), 80, "")
-//	req, err := protocol.BuildSocsk4TCPRequest(protocol.CmdConnect, addr, "", pool)
+//	req, err := protocol.BuildSocks4TCPRequest(protocol.CmdConnect, addr, "", pool)
 //	defer bufpool.PutBuffer(pool, req)
-func BuildSocsk4TCPRequest(
+func BuildSocks4TCPRequest(
 	cmd Cmd, addr Addr, user string, pool bufpool.Pool,
 ) (request []byte, err error) {
 	if addr.Type == IP4Addr {
@@ -76,6 +76,15 @@ func BuildSocsk4TCPRequest(
 	request = append(request, []byte(host)...)
 	request = append(request, 0)
 	return
+}
+
+// BuildSocsk4TCPRequest builds a SOCKS4 or SOCKS4a TCP request.
+//
+// Deprecated: Use BuildSocks4TCPRequest.
+func BuildSocsk4TCPRequest(
+	cmd Cmd, addr Addr, user string, pool bufpool.Pool,
+) (request []byte, err error) {
+	return BuildSocks4TCPRequest(cmd, addr, user, pool)
 }
 
 // ReadSocks4TCPRequest reads and parses a SOCKS4/4a TCP request.

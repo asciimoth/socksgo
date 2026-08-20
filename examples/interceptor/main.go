@@ -193,8 +193,7 @@ func preCmdLogger(
 		authInfo = "no-auth"
 	case protocol.PassAuthCode:
 		if user, ok := info.Info["user"].(string); ok {
-			pass, _ := info.Info["pass"].(string)
-			authInfo = fmt.Sprintf("user=%s pass=%s", user, pass)
+			authInfo = fmt.Sprintf("user=%s", user)
 		} else {
 			authInfo = "password-auth"
 		}
