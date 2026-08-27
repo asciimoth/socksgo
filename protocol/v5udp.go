@@ -560,9 +560,7 @@ func (uc *Socks5UDPClientAssoc) Write(b []byte) (n int, err error) {
 	buf = append(buf, b...)
 
 	n, err = uc.PacketConn.Write(buf)
-	if err == nil {
-		n = max(0, n-len(uc.DefaultHeader))
-	}
+	n = max(0, n-len(uc.DefaultHeader))
 
 	return n, err
 }
