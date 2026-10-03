@@ -23,6 +23,21 @@ or 1080 on the host cannot conflict with these tests.
 Use `just test` for host tests and `just test-e2e` for container tests. The
 `just check` command runs both groups.
 
+Run all untrusted-input fuzz coverage for one minute:
+
+```bash
+just fuzz
+```
+
+Set `FUZZ_TIME` to change the time budget for one run:
+
+```bash
+FUZZ_TIME=10m just fuzz
+```
+
+The `just check` command includes fuzzing on a local system. The fuzz command
+detects GitHub Actions and skips fuzzing there.
+
 ### Test Hooks Build Tag
 
 The `testhooks` build tag enables test hooks for improved coverage of error paths:
