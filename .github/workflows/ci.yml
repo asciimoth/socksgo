@@ -18,18 +18,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install Tor
-        run: |
-          sudo apt-get install -y tor
-      - name: Start Tor
-        run: |
-          sudo systemctl start tor --now
       - name: Setup Nix
         uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-      - name: Run tests with testhooks
-        run: nix develop --command go test ./... -tags="compattest testhooks" -coverprofile=coverage.out -coverpkg=./...
+      - name: Run tests in the E2E container
+        env:
+          SOCKSGO_E2E_COVERAGE_FILE: coverage.out
+        run: ./scripts/run_e2e.sh
       - name: Filter internal test files from coverage
         run: ./scripts/filter_coverage.sh coverage.out coverage.out
       - name: Send coverage
@@ -77,8 +73,5 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Nix
-        uses: cachix/install-nix-action@v25
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-      - run: nix develop --command go test ./... -tags="compattest testhooks"
+      - name: Run tests in the E2E container
+        run: ./scripts/run_e2e.sh

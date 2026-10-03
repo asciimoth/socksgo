@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # filter_coverage.sh - Filter internal test files from Go coverage reports
 #
 # Usage: ./scripts/filter_coverage.sh [input_file] [output_file]

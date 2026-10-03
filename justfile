@@ -4,10 +4,13 @@ set dotenv-load := true
 typos:
   typos
 
-check: tidy typos fmt lint vet test
+check: tidy typos fmt lint vet test test-e2e
 
 test:
-  go test ./... -tags="compattest testhooks" --race -count=1
+  go test ./... -tags=testhooks --race -count=1
+
+test-e2e:
+  ./scripts/run_e2e.sh go test ./... -tags="compattest testhooks" --race -count=1
 
 vet:
 	go vet ./...
@@ -20,4 +23,3 @@ lint:
 
 fmt:
   golangci-lint fmt ./...
-

@@ -4,11 +4,24 @@ Comprehensive testing documentation for socksgo.
 
 ## Commands
 
-Tag `compattest` needed to run all tests.
+Run unit and in-process integration tests on the host:
 
 ```bash
-go test ./... -tags=compattest
+go test ./... -tags=testhooks
 ```
+
+Run the E2E and compatibility tests in Docker:
+
+```bash
+./scripts/run_e2e.sh
+```
+
+The E2E image contains Go, curl, Gost, and Tor. The container starts its own
+Tor daemon and does not publish a port to the host. A proxy that uses port 9050
+or 1080 on the host cannot conflict with these tests.
+
+Use `just test` for host tests and `just test-e2e` for container tests. The
+`just check` command runs both groups.
 
 ### Test Hooks Build Tag
 
@@ -16,10 +29,10 @@ The `testhooks` build tag enables test hooks for improved coverage of error path
 
 ```bash
 # Run tests with test hooks enabled
-go test ./... -tags="compattest testhooks"
+./scripts/run_e2e.sh
 
 # Run tests with race detector and test hooks
-go test -race -tags="compattest testhooks" ./...
+just test-e2e
 ```
 
 The test hooks allow testing of error paths that are difficult to trigger through normal API usage, such as:
@@ -42,7 +55,7 @@ inflating coverage metrics with test-only code that is not part of the productio
 
 ```bash
 # Generate coverage profile
-go test ./... -tags="compattest testhooks" -coverprofile=coverage.out -coverpkg=./...
+SOCKSGO_E2E_COVERAGE_FILE=coverage.out ./scripts/run_e2e.sh
 
 # Filter using the helper script
 ./scripts/filter_coverage.sh
