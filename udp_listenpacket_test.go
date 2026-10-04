@@ -2,7 +2,9 @@ package socksgo_test
 
 import (
 	"context"
+	"errors"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -26,6 +28,113 @@ func TestGostUDPTunListenPacketEcho(t *testing.T) {
 	defer cleanup()
 
 	assertUDPEchoThroughNetwork(t, client)
+}
+
+func TestGostUDPTunWildcardFamiliesEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	type listenCall struct {
+		network string
+		address string
+	}
+	listenCalls := make(chan listenCall, 2)
+	listenErr := errors.New("stop after recording listen call")
+	server := &socksgo.Server{
+		PacketListener: func(
+			_ context.Context,
+			network string,
+			address string,
+		) (gonnect.PacketConn, error) {
+			listenCalls <- listenCall{network, address}
+			return nil, listenErr
+		},
+	}
+
+	listener, err := (&net.ListenConfig{}).Listen(
+		ctx,
+		"tcp4",
+		"127.0.0.1:0",
+	)
+	if err != nil {
+		t.Fatalf("listen for SOCKS server: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	serverDone := make(chan error, 2)
+	go func() {
+		for range 2 {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				serverDone <- acceptErr
+				continue
+			}
+			serverDone <- server.Accept(ctx, conn, false)
+		}
+	}()
+
+	client, err := socksgo.ClientFromURL(
+		"socks5://" + listener.Addr().String() + "?gost",
+	)
+	if err != nil {
+		t.Fatalf("create SOCKS client: %v", err)
+	}
+	client.Filter = gonnect.FalseFilter
+
+	const port = "25120"
+	requests := []struct {
+		network string
+		address string
+	}{
+		{network: "udp4", address: "0.0.0.0:" + port},
+		{network: "udp6", address: "[::]:" + port},
+	}
+	for _, request := range requests {
+		conn, requestErr := client.ListenPacket(
+			ctx,
+			request.network,
+			request.address,
+		)
+		if conn != nil {
+			_ = conn.Close()
+			t.Errorf("ListenPacket(%q, %q) returned a connection",
+				request.network, request.address)
+		}
+		if requestErr == nil {
+			t.Errorf("ListenPacket(%q, %q) error = nil",
+				request.network, request.address)
+		}
+	}
+
+	got := make([]listenCall, 0, len(requests))
+	for range requests {
+		select {
+		case call := <-listenCalls:
+			got = append(got, call)
+		case <-ctx.Done():
+			t.Fatalf("wait for packet listener call: %v", ctx.Err())
+		}
+	}
+	want := []listenCall{
+		{network: "udp4", address: "0.0.0.0:" + port},
+		{network: "udp6", address: "[::]:" + port},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("packet listener calls = %#v, want %#v", got, want)
+	}
+
+	for range requests {
+		select {
+		case serverErr := <-serverDone:
+			if !errors.Is(serverErr, listenErr) {
+				t.Errorf("server error = %v, want %v", serverErr, listenErr)
+			}
+		case <-ctx.Done():
+			t.Fatalf("wait for SOCKS server: %v", ctx.Err())
+		}
+	}
 }
 
 func newUDPListenPacketSocksClientServer(

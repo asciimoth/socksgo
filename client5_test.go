@@ -1676,14 +1676,22 @@ func TestClient5_DialPacket5_UDPDisallowed(t *testing.T) {
 	c := &socksgo.Client{
 		SocksVersion: "5",
 		ProxyAddr:    "127.0.0.1:1080",
+		TLS:          true,
 		Filter: func(_, _ string) bool {
-			return false // Block all
+			return false // Force the proxy path.
 		},
 	}
 
-	_, err := c.PacketDial(ctx, "udp", "8.8.8.8:53")
-	if err == nil {
-		t.Fatal("expected error when UDP disallowed")
+	conn, err := c.PacketDial(ctx, "udp", "8.8.8.8:53")
+	if !errors.Is(err, socksgo.ErrUDPDisallowed) {
+		t.Fatalf(
+			"PacketDial error = %v, want %v",
+			err,
+			socksgo.ErrUDPDisallowed,
+		)
+	}
+	if conn != nil {
+		t.Fatal("PacketDial returned a connection")
 	}
 }
 
@@ -1692,17 +1700,29 @@ func TestClient5_SetupUDPTun5_ErrorPath(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	dialErr := errors.New("dial failed")
 	c := &socksgo.Client{
 		SocksVersion: "5",
 		ProxyAddr:    "127.0.0.1:1080",
+		GostUDPTun:   true,
 		Filter: func(_, _ string) bool {
-			return false // Block all
+			return false // Force the proxy path.
+		},
+		Dialer: func(
+			context.Context,
+			string,
+			string,
+		) (net.Conn, error) {
+			return nil, dialErr
 		},
 	}
 
-	_, err := c.PacketDial(ctx, "udp", "8.8.8.8:53")
-	if err == nil {
-		t.Fatal("expected error when UDP tunnel setup fails")
+	conn, err := c.PacketDial(ctx, "udp", "8.8.8.8:53")
+	if !errors.Is(err, dialErr) {
+		t.Fatalf("PacketDial error = %v, want %v", err, dialErr)
+	}
+	if conn != nil {
+		t.Fatal("PacketDial returned a connection")
 	}
 }
 

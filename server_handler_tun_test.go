@@ -2,9 +2,12 @@ package socksgo_test
 
 import (
 	"context"
+	"errors"
 	"net"
+	"reflect"
 	"testing"
 
+	"github.com/asciimoth/gonnect"
 	"github.com/asciimoth/socksgo"
 	"github.com/asciimoth/socksgo/protocol"
 )
@@ -75,5 +78,48 @@ func TestTunHandlerReplyFail(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("error expected")
+	}
+}
+
+func TestTunHandlerPreservesWildcardAddressFamily(t *testing.T) {
+	t.Parallel()
+
+	listenErr := errors.New("stop after recording listen call")
+	type listenCall struct {
+		network string
+		address string
+	}
+	var calls []listenCall
+	server := socksgo.Server{}
+	server.PacketListener = func(
+		_ context.Context,
+		network string,
+		address string,
+	) (gonnect.PacketConn, error) {
+		calls = append(calls, listenCall{network, address})
+		return nil, listenErr
+	}
+
+	for _, address := range []string{"0.0.0.0:25120", "[::]:25120"} {
+		err := socksgo.DefaultGostUDPTUNHandler.Handler(
+			context.Background(),
+			&server,
+			&net.TCPConn{},
+			"5",
+			protocol.AuthInfo{},
+			protocol.CmdGostUDPTun,
+			protocol.AddrFromHostPort(address, "udp"),
+		)
+		if !errors.Is(err, listenErr) {
+			t.Fatalf("handler error = %v, want %v", err, listenErr)
+		}
+	}
+
+	want := []listenCall{
+		{network: "udp4", address: "0.0.0.0:25120"},
+		{network: "udp6", address: "[::]:25120"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("packet listener calls = %#v, want %#v", calls, want)
 	}
 }

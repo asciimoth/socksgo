@@ -917,6 +917,124 @@ func TestAddrWithDefaultHostEdgeCases(t *testing.T) {
 	})
 }
 
+func TestAddrWithDefaultHostPreservesWildcardFamily(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		network  string
+		input    string
+		wantType protocol.AddrType
+		wantNet  string
+		wantAddr string
+	}{
+		{
+			name:    "IPv4 UDP",
+			network: "udp4", input: "0.0.0.0:1234",
+			wantType: protocol.IP4Addr, wantNet: "udp4",
+			wantAddr: "0.0.0.0:1234",
+		},
+		{
+			name:    "IPv6 UDP",
+			network: "udp6", input: "[::]:1234",
+			wantType: protocol.IP6Addr, wantNet: "udp6",
+			wantAddr: "[::]:1234",
+		},
+		{
+			name:    "IPv4 TCP",
+			network: "tcp4", input: "0.0.0.0:1234",
+			wantType: protocol.IP4Addr, wantNet: "tcp4",
+			wantAddr: "0.0.0.0:1234",
+		},
+		{
+			name:    "IPv6 TCP",
+			network: "tcp6", input: "[::]:1234",
+			wantType: protocol.IP6Addr, wantNet: "tcp6",
+			wantAddr: "[::]:1234",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			before := protocol.AddrFromHostPort(tt.input, tt.network)
+			after := before.WithDefaultHost("")
+
+			if after.Type != tt.wantType {
+				t.Errorf("Type = %v, want %v", after.Type, tt.wantType)
+			}
+			if got := after.Network(); got != tt.wantNet {
+				t.Errorf("Network() = %q, want %q", got, tt.wantNet)
+			}
+			if got := after.ToHostPort(); got != tt.wantAddr {
+				t.Errorf("ToHostPort() = %q, want %q", got, tt.wantAddr)
+			}
+			if after.Port != before.Port {
+				t.Errorf("Port = %d, want %d", after.Port, before.Port)
+			}
+			if after.NetTyp != before.NetTyp {
+				t.Errorf("NetTyp = %q, want %q", after.NetTyp, before.NetTyp)
+			}
+
+			before.Host[0]++
+			if bytes.Equal(after.Host, before.Host) {
+				t.Error("WithDefaultHost returned an aliased Host slice")
+			}
+		})
+	}
+}
+
+func TestAddrWithDefaultHostReplacementBehavior(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		addr     protocol.Addr
+		host     string
+		wantType protocol.AddrType
+		wantAddr string
+	}{
+		{
+			name: "IPv6 wildcard with IPv4 default",
+			addr: protocol.AddrFromHostPort("[::]:53", "udp6"),
+			host: "127.0.0.1", wantType: protocol.IP4Addr,
+			wantAddr: "127.0.0.1:53",
+		},
+		{
+			name: "IPv4 wildcard with IPv6 default",
+			addr: protocol.AddrFromHostPort("0.0.0.0:53", "udp4"),
+			host: "::1", wantType: protocol.IP6Addr,
+			wantAddr: "[::1]:53",
+		},
+		{
+			name: "zero value keeps compatibility default",
+			addr: protocol.Addr{}, host: "", wantType: protocol.IP4Addr,
+			wantAddr: "0.0.0.0:0",
+		},
+		{
+			name: "specified IPv6 ignores default",
+			addr: protocol.AddrFromHostPort("[2001:db8::1]:443", "tcp6"),
+			host: "127.0.0.1", wantType: protocol.IP6Addr,
+			wantAddr: "[2001:db8::1]:443",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tt.addr.WithDefaultHost(tt.host)
+			if got.Type != tt.wantType {
+				t.Errorf("Type = %v, want %v", got.Type, tt.wantType)
+			}
+			if hostPort := got.ToHostPort(); hostPort != tt.wantAddr {
+				t.Errorf("ToHostPort() = %q, want %q", hostPort, tt.wantAddr)
+			}
+		})
+	}
+}
+
 func TestAddrWithDefaultAddrEdgeCases(t *testing.T) {
 	t.Parallel()
 

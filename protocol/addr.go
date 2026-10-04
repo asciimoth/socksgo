@@ -420,8 +420,9 @@ func (a Addr) WithNetTyp(nt string) Addr {
 // replaced with the provided host.
 //
 // If the address is already specified (IsUnspecified returns false), it is
-// returned unchanged. If the address is unspecified and host is empty,
-// the IPv4 wildcard "0.0.0.0" is used.
+// returned unchanged. If an IPv4 or IPv6 address is unspecified and host is
+// empty, its address family is preserved. Other unspecified address types use
+// the IPv4 wildcard "0.0.0.0" for compatibility.
 //
 // # Examples
 //
@@ -439,10 +440,12 @@ func (a Addr) WithNetTyp(nt string) Addr {
 func (a Addr) WithDefaultHost(host string) Addr {
 	if a.IsUnspecified() {
 		if host == "" {
+			if a.Type == IP4Addr || a.Type == IP6Addr {
+				return a.Copy()
+			}
 			return AddrFromString("0.0.0.0", a.Port, a.NetTyp)
-		} else {
-			return AddrFromString(host, a.Port, a.NetTyp)
 		}
+		return AddrFromString(host, a.Port, a.NetTyp)
 	}
 	var nhost []byte // nil
 	if a.Host != nil {
